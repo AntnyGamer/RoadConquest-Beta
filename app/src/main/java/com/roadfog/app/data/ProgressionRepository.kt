@@ -47,7 +47,8 @@ data class ProgressionSnapshot(
     val countries: Long,
     val adsWatched: Long,
     val lowestBatteryPercent: Int,
-    val purchasedItems: Set<String>
+    val purchasedItems: Set<String>,
+    val rewardedAchievements: Set<String>
 )
 
 enum class PurchaseResult { PURCHASED, OWNED, INSUFFICIENT_POINTS }
@@ -299,8 +300,19 @@ class ProgressionRepository(context: Context) {
 
     fun snapshot(): ProgressionSnapshot {
         val db = dbHelper.readableDatabase
-        val earned = db.rawQuery("SELECT COALESCE(SUM(points), 0) FROM progression_rewards", null)
-            .use { check(it.moveToFirst()); it.getLong(0) }
+        var earned = 0L
+        val rewardedAchievements = linkedSetOf<String>()
+        db.query(
+            "progression_rewards",
+            arrayOf("reward_key", "points"),
+            null, null, null, null, null
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val key = cursor.getString(0)
+                earned += cursor.getLong(1)
+                if (key.startsWith("achievement:")) rewardedAchievements += key.removePrefix("achievement:")
+            }
+        }
         val spent = db.rawQuery("SELECT COALESCE(SUM(points_spent), 0) FROM progression_purchases", null)
             .use { check(it.moveToFirst()); it.getLong(0) }
         val counts = mutableMapOf<PlaceKind, Long>()
@@ -325,7 +337,8 @@ class ProgressionRepository(context: Context) {
             adsWatched = counter(db, COUNTER_ADS_WATCHED),
             lowestBatteryPercent = (counterOrNull(db, COUNTER_LOWEST_BATTERY) ?: 101L)
                 .toInt().coerceIn(0, 101),
-            purchasedItems = purchases
+            purchasedItems = purchases,
+            rewardedAchievements = rewardedAchievements
         )
     }
 
