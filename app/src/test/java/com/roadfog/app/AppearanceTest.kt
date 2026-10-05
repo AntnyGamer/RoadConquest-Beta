@@ -6,6 +6,7 @@ import android.view.ContextThemeWrapper
 import android.widget.Button
 import android.widget.Switch
 import com.roadfog.app.map.MapMode
+import com.roadfog.app.map.PlaceOverlayMode
 import com.roadfog.app.util.Appearance
 import com.roadfog.app.util.Prefs
 import com.roadfog.app.util.UiTheme
@@ -85,7 +86,8 @@ class AppearanceTest {
                 R.id.trackingSettingsCard,
                 R.id.accountSettingsCard,
                 R.id.progressSettingsCard,
-                R.id.privacySettingsCard
+                R.id.privacySettingsCard,
+                R.id.aboutSettingsCard
             )) {
                 val card = activity.findViewById<android.view.View>(id)
                 assertNotNull(card.background)
@@ -94,6 +96,15 @@ class AppearanceTest {
             assertNotNull(activity.findViewById<Button>(R.id.mapStyleButton).background)
             assertNotNull(activity.findViewById<Button>(R.id.shopButton).background)
         } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun placeOverlayPreferenceDefaultsToNoneAndPersistsOneMode() {
+        val app = RuntimeEnvironment.getApplication()
+        assertEquals(PlaceOverlayMode.NONE, Prefs.placeOverlayMode(app))
+        Prefs.setPlaceOverlayMode(app, PlaceOverlayMode.STATE)
+        assertEquals(PlaceOverlayMode.STATE, Prefs.placeOverlayMode(app))
+        Prefs.setPlaceOverlayMode(app, PlaceOverlayMode.TOWN)
+        assertEquals(PlaceOverlayMode.TOWN, Prefs.placeOverlayMode(app))
     }
 
     @Test fun unknownPreferencesFallBackAndAppKeepsItsUpgradeIdentity() {
