@@ -149,7 +149,6 @@ class SettingsActivity : Activity() {
             }
         }
 
-        refreshSummary()
     }
 
     override fun onResume() {
