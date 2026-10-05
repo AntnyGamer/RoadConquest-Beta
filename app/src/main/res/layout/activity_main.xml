@@ -28,6 +28,22 @@
         android:textSize="13sp"
         android:lineSpacingExtra="3dp" />
 
+    <TextView
+        android:id="@+id/pointsText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="88dp"
+        android:background="@drawable/panel_background"
+        android:clickable="true"
+        android:elevation="8dp"
+        android:focusable="true"
+        android:text="★ 0 points"
+        android:textColor="?attr/rcTextPrimary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
     <ImageButton
         android:id="@+id/settingsButton"
         android:layout_width="52dp"
