@@ -21,6 +21,7 @@ import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.progression.ShopCatalog
 import com.roadfog.app.progression.ShopItem
 import com.roadfog.app.util.Appearance
+import com.roadfog.app.util.ForegroundSession
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -48,6 +49,11 @@ class ShopActivity : Activity() {
         pointsText = findViewById(R.id.shopPointsText)
         progressText = findViewById(R.id.shopProgressText)
         items = findViewById(R.id.shopItems)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ForegroundSession.app.onStart()
     }
 
     override fun onResume() {
@@ -207,6 +213,11 @@ class ShopActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    override fun onStop() {
+        ForegroundSession.app.onStop(isChangingConfigurations)
+        super.onStop()
+    }
 
     override fun onDestroy() {
         generation++
