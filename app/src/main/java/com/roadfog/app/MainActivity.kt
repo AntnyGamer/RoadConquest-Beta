@@ -263,6 +263,7 @@ class MainActivity : Activity() {
         renderer?.setFogEnabled(Prefs.isFogEnabled(this))
         renderer?.setMapMode(Prefs.mapMode(this))
         renderer?.setPlaceOverlayMode(Prefs.placeOverlayMode(this))
+        if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
         renderer?.refreshCosmetics()
         ProgressionManager.recordBatteryFromSystem(this)
         // Road updates can finish while this activity is stopped and its receiver is
@@ -323,6 +324,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         ForegroundSession.app.onStop(isChangingConfigurations || recreatingForAppearance)
         refreshRoadsAfterStop = true
+        renderer?.cancelPlaceOverlayLoads()
         runCatching { unregisterReceiver(locationReceiver) }
         mapView.onStop()
         super.onStop()
