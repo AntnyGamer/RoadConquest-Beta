@@ -210,7 +210,7 @@ class MapRenderingDeviceTest {
         } finally { repository.readableDatabase().execSQL("DELETE FROM roads") }
     }
 
-    @Test fun nativeFogAndCarSurvivePanningZoom22RecenteringAndSatelliteStyleReload() {
+    @Test fun nativeFogAndCarSurvivePanningZoom20RecenteringAndSatelliteStyleReload() {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         Prefs.setManualOnly(app, true)
         Prefs.setAccountPromptShown(app, true)
@@ -239,7 +239,7 @@ class MapRenderingDeviceTest {
                 MainActivity::class.java.getDeclaredMethod("stopPreviewLocation")
                     .apply { isAccessible = true }.invoke(activity)
                 renderer.updateCar(car.latitude, car.longitude, 15.0)
-                assertEquals(22.0, map.maxZoomLevel, 0.0)
+                assertEquals(20.0, map.maxZoomLevel, 0.0)
                 assertTrue("Map stays on its native render surface", view.renderView is TextureView)
                 assertTrue(map.style!!.getSource("roadconquest-fog") is ImageSource)
                 assertTrue(map.style!!.getLayer("roadconquest-fog-raster") is RasterLayer)
@@ -282,8 +282,8 @@ class MapRenderingDeviceTest {
             }
 
             moveAndAssert(car, 18.0, 0.0)
-            moveAndAssert(LatLng(car.latitude + 0.00008, car.longitude - 0.00008), 20.0, 55.0)
-            moveAndAssert(LatLng(car.latitude - 0.00004, car.longitude + 0.00006), 22.0, 125.0)
+            moveAndAssert(LatLng(car.latitude + 0.00008, car.longitude - 0.00008), 19.0, 55.0)
+            moveAndAssert(LatLng(car.latitude - 0.00004, car.longitude + 0.00006), 20.0, 125.0)
 
             scenario.onActivity { activity ->
                 activity.findViewById<ImageButton>(R.id.centerCarButton).performClick()
@@ -293,14 +293,14 @@ class MapRenderingDeviceTest {
                 var centered = false
                 scenario.onActivity {
                     centered = map.cameraPosition.target!!.distanceTo(car) < 1.0 &&
-                        kotlin.math.abs(map.cameraPosition.zoom - 22.0) < 0.01
+                        kotlin.math.abs(map.cameraPosition.zoom - 20.0) < 0.01
                 }
                 if (centered) break
                 SystemClock.sleep(50)
             }
             scenario.onActivity {
                 assertTrue("Icon recenters on the live fix", map.cameraPosition.target!!.distanceTo(car) < 1.0)
-                assertEquals("Recenter preserves close zoom", 22.0, map.cameraPosition.zoom, 0.01)
+                assertEquals("Recenter preserves close zoom", 20.0, map.cameraPosition.zoom, 0.01)
                 renderer.setFogEnabled(false)
                 renderer.setFogEnabled(true)
             }
