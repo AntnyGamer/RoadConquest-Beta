@@ -26,7 +26,8 @@ class PlaceOverlayTest {
             }]
         """.trimIndent()
 
-        val data = assertNotNull(PlaceOverlayClient.parseResponse(place, body))
+        val data = PlaceOverlayClient.parseResponse(place, body)
+        assertNotNull(data)
         data!!
         assertEquals("United States", data.name)
         assertEquals(331_000_000L, data.population)
