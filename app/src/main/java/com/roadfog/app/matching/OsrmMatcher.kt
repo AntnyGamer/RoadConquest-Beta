@@ -115,7 +115,8 @@ class OsrmMatcher(
             // Inside a confident trace, fixes on both sides already disambiguate the route;
             // discarding those legs creates holes at ordinary turns and junctions.
             fun reliable(index: Int): Boolean = trace[index].alternatives == 0 ||
-                (index > 0 && index < trace.lastIndex && confidences[m] >= 0.80)
+                (index > 0 && index < trace.lastIndex &&
+                    confidences[m] >= MIN_ACCEPTABLE_CONFIDENCE)
             var first = 0
             while (first < trace.size) {
                 while (first < trace.size && !reliable(first)) first++
@@ -311,6 +312,10 @@ class OsrmMatcher(
     companion object {
         // The public OSRM demo rejects larger traces with TooBig (verified 2026-10-03).
         const val MAX_MATCH_POINTS = 10
+        // A point with alternatives is only accepted when it is internal to a trace, so fixes
+        // on both sides constrain the route. Keep this identical to TrackingService's road
+        // acceptance threshold; otherwise a 0.45-0.79 contextual match can retry forever.
+        internal const val MIN_ACCEPTABLE_CONFIDENCE = 0.45
         private const val EARTH_RADIUS_M = 6_371_008.8
         private const val MIN_GEOMETRY_LENGTH_M = 0.001
         private const val DUPLICATE_POINT_TOLERANCE_M = 0.01
