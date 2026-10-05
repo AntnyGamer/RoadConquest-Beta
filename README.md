@@ -69,11 +69,12 @@ the signup disclosure. Users can hide their profile or stop sharing live evidenc
 Deleting an account revokes its sessions and removes its cloud competitive data; the default
 deletion option also clears history on this phone. Other devices and exported files are separate.
 
-The update recalculates existing road identities offline and requeues saved GPS history once
-with the corrected matcher. Existing map geometry and mileage remain available during repair, while
-time ranges that have been successfully rematched replace obsolete road evidence instead of leaving
-stale blue geometry behind. Moving GPS gaps longer than 30 seconds start a new matching interval;
-nearby stationary pauses can still reconnect without inventing a route across a location outage.
+The update requeues saved GPS history once with matcher revision 3 and rebuilds matched road
+geometry from those raw points. Mileage and the GPS history remain intact during the rebuild; old
+road geometry is cleared first so overlapping matcher windows cannot delete or preserve the wrong
+pieces. A local-data reset also clears any stale repair state before new driving begins. Moving GPS
+gaps longer than 30 seconds start a new matching interval; nearby stationary pauses can still
+reconnect without inventing a route across a location outage.
 
 The fog keeps a cached world layer ready during fast gestures and refreshes detailed reveals
 while the camera moves. A detailed reveal stays visible during a gesture while its georeferenced
