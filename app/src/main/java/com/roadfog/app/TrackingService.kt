@@ -50,6 +50,7 @@ class TrackingService : Service(), LocationListener {
     private var lastAccepted: Location? = null
     private var lastExplored: Location? = null
     private var lastPlaceCandidate: Location? = null
+    private var baselineCandidateCaptured = false
     private var lastBearingDegrees = 0.0
     @Volatile private var lastMatchAttempt = 0L
     @Volatile private var ready = false
@@ -144,6 +145,26 @@ class TrackingService : Service(), LocationListener {
         verifiedDriving.offer(location)
         val previous = lastObserved
         if (!LocationProviders.isBetterFix(location, previous)) return
+
+        // A fresh/reset profile gets its zero-point place from the first good LIVE fix,
+        // never from a later sparse discovery candidate. If Location was off, this naturally
+        // waits until the first good fix after the user turns it back on.
+        if (!baselineCandidateCaptured && !location.isMock &&
+            location.hasAccuracy() && location.accuracy in 0.01f..MAX_ACCURACY_M
+        ) {
+            baselineCandidateCaptured = true
+            val baseline = Location(location)
+            storageExecutor.execute {
+                try {
+                    if (progressionRepository.recordBaselineCandidate(baseline)) {
+                        sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+                    }
+                } catch (error: Exception) {
+                    Log.e("RoadConquest", "Could not save starting place location", error)
+                    baselineCandidateCaptured = false
+                }
+            }
+        }
         if (previous != null && elapsedMillis(previous, location) == 0L) {
             // A better simultaneous source may improve the marker/next baseline, never add mileage twice.
             if (location.hasAccuracy() && location.accuracy <= MAX_ACCURACY_M) lastObserved = Location(location)
