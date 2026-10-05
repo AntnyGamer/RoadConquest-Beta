@@ -97,6 +97,40 @@ class ProgressionRepositoryTest {
         }
     }
 
+    @Test fun stalePreResetWorkCannotRestoreProgressAfterDeletion() {
+        val tracking = TrackingRepository(context)
+        tracking.upsertRoads(
+            listOf(
+                MatchedRoad(
+                    "Before reset",
+                    "[[-74.0,40.0],[-74.001,40.0]]",
+                    1_000L,
+                    2_000L,
+                    1.0
+                )
+            )
+        )
+        val staleSummary = tracking.getSummary()
+        assertEquals(1L, staleSummary.roadsUnlockedCount)
+
+        // Simulate a long-lived/queued progression writer that existed before deletion.
+        val staleProgression = ProgressionRepository(context)
+        tracking.clearHistory()
+
+        ProgressionManager.sync(context, staleSummary)
+        assertEquals(0L, ProgressionRepository(context).snapshot().balance)
+        assertEquals(0L, ProgressionRepository(context).snapshot().rewardedRoads)
+
+        val queuedLocation = android.location.Location("gps").apply {
+            latitude = 39.9
+            longitude = -75.0
+            accuracy = 5f
+            time = 3_000L
+        }
+        assertFalse(staleProgression.recordBaselineCandidate(queuedLocation))
+        assertTrue(ProgressionRepository(context).pendingPlaceCandidates(nowMillis = 4_000L).isEmpty())
+    }
+
     @Test fun freshBaselineUsesExactFirstLiveFixAndBlocksOrdinaryCandidatesUntilThen() {
         val progression = ProgressionRepository(context)
 
