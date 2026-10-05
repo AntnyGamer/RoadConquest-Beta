@@ -25,6 +25,7 @@ import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.layers.TransitionOptions
 import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
@@ -110,6 +111,12 @@ class MapRenderer(
     private val expireLocation = Runnable {
         if (!destroyed && liveLocation.current(SystemClock.elapsedRealtime()) == null) clearCurrentLocation()
     }
+    private val cameraMoveStartedListener = MapLibreMap.OnCameraMoveStartedListener {
+        // Native animations can advance before the next Java camera-move callback.
+        // Cover the whole world before motion starts, not after a bitmap edge escapes.
+        cameraMoving = true
+        updateFogCoverage()
+    }
     private val cameraMoveListener = MapLibreMap.OnCameraMoveListener {
         cameraMoving = true
         viewportRevision++
@@ -119,6 +126,7 @@ class MapRenderer(
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
         cameraMoving = false
+        updateFogCoverage()
         refreshViewport()
         scheduleFogRender()
     }
@@ -129,6 +137,7 @@ class MapRenderer(
         map.uiSettings.setTiltGesturesEnabled(false)
         mapView.addOnLayoutChangeListener(layoutListener)
         updateCameraLimits()
+        map.addOnCameraMoveStartedListener(cameraMoveStartedListener)
         map.addOnCameraMoveListener(cameraMoveListener)
         map.addOnCameraIdleListener(cameraIdleListener)
         loadStyle(onReady)
@@ -383,14 +392,14 @@ class MapRenderer(
         style.addSource(ImageSource(WORLD_FOG_SOURCE_ID, worldFogQuad(), overviewFog))
         style.addLayer(RasterLayer(WORLD_FOG_LAYER_ID, WORLD_FOG_SOURCE_ID).withProperties(
             rasterOpacity(if (fogEnabled) 1f else 0f), rasterFadeDuration(0f)
-        ))
+        ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) })
         val transparent = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         style.addSource(ImageSource(FOG_SOURCE_ID, currentFogQuad(), transparent))
         style.addLayer(
             RasterLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
                 rasterOpacity(0f),
                 rasterFadeDuration(0f)
-            )
+            ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) }
         )
         transparent.recycle()
     }
@@ -416,17 +425,23 @@ class MapRenderer(
 
     private fun updateFogCoverage(force: Boolean = false) {
         val coordinates = detailedFogCoordinates
-        val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
+        val detailed = fogEnabled && !cameraMoving && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
                 FogCoverage.coversViewport(fogCoverageScreen, mapView.width, mapView.height)
             }
         if (!force && detailed == showingDetailedFog) return
         showingDetailedFog = detailed
-        (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)?.setProperties(rasterOpacity(if (detailed) 1f else 0f))
-        (map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer)?.setProperties(
-            rasterOpacity(if (fogEnabled && !detailed) 1f else 0f)
-        )
+        val detailedLayer = map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer
+        val worldLayer = map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer
+        // Enable the incoming coverage before hiding the outgoing native layer.
+        if (detailed) {
+            detailedLayer?.setProperties(rasterOpacity(1f))
+            worldLayer?.setProperties(rasterOpacity(0f))
+        } else {
+            worldLayer?.setProperties(rasterOpacity(if (fogEnabled) 1f else 0f))
+            detailedLayer?.setProperties(rasterOpacity(0f))
+        }
     }
 
     private fun installCarLayer(style: Style) {
@@ -738,6 +753,7 @@ class MapRenderer(
     fun destroy() {
         destroyed = true
         resumeGeneration++
+        map.removeOnCameraMoveStartedListener(cameraMoveStartedListener)
         map.removeOnCameraMoveListener(cameraMoveListener)
         map.removeOnCameraIdleListener(cameraIdleListener)
         mapView.removeOnLayoutChangeListener(layoutListener)

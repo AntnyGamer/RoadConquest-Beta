@@ -69,7 +69,7 @@ class AppearanceTest {
             activity.findViewById<Button>(R.id.githubButton).performClick()
             val github = shadowOf(activity).nextStartedActivity
             assertEquals(android.content.Intent.ACTION_VIEW, github.action)
-            assertEquals("https://github.com/AntnyGamer/RoadConquest", github.data.toString())
+            assertEquals("https://github.com/AntnyGamer/RoadConquest-Beta", github.data.toString())
             assertTrue(github.hasCategory(android.content.Intent.CATEGORY_BROWSABLE))
             assertTrue(activity.assets.open("licenses/RoadConquest-AGPL-3.0.txt").bufferedReader().use { it.readText() }
                 .contains("GNU AFFERO GENERAL PUBLIC LICENSE"))
