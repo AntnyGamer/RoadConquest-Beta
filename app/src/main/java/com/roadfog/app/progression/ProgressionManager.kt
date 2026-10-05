@@ -49,7 +49,7 @@ object ProgressionManager {
     fun recordCompletedAd(context: Context): Long {
         val repository = ProgressionRepository(context)
         val count = repository.recordCompletedAd()
-        val metrics = repository.snapshot().metrics()
+        val metrics = metrics(repository.snapshot())
         Achievements.progress(DataSummary(0, 0, null, null), metrics)
             .asSequence()
             .filter { it.unlocked && it.id.startsWith("ads_") }
