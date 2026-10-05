@@ -53,6 +53,12 @@ object ProgressionManager {
         return count
     }
 
+    fun resetLocalProgression(context: Context) {
+        ProgressionRepository(context).clearProgression()
+        com.roadfog.app.util.Prefs.resetCosmetics(context)
+        LauncherIcon.apply(context, false)
+    }
+
     fun resolvePendingPlaces(context: Context, limit: Int = 6): Int {
         val repository = ProgressionRepository(context)
         var added = 0
