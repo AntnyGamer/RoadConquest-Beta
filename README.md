@@ -1,4 +1,4 @@
-# RoadConquest 1.0 Beta 5
+# RoadConquest 1.0 Beta 6
 
 RoadConquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,10 +17,7 @@ location settings and allow background battery use. Settings includes shortcuts 
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
 This release keeps the permanent signing identity and application ID `com.roadfog.app`.
-Its internal Android version code is 32 so it can update the latest signed development build
-without uninstalling it. The current database schema, saved history, settings and accounts are
-preserved. Older unsupported database schemas require a fresh installation; export history before
-uninstalling, because exports currently have no in-app import.
+Its internal Android version code is 32.
 
 ## Explore
 
@@ -69,12 +66,8 @@ the signup disclosure. Users can hide their profile or stop sharing live evidenc
 Deleting an account revokes its sessions and removes its cloud competitive data; the default
 deletion option also clears history on this phone. Other devices and exported files are separate.
 
-The update requeues saved GPS history once with matcher revision 3 and rebuilds matched road
-geometry from those raw points. Mileage and the GPS history remain intact during the rebuild; old
-road geometry is cleared first so overlapping matcher windows cannot delete or preserve the wrong
-pieces. A local-data reset also clears any stale repair state before new driving begins. Moving GPS
-gaps longer than 30 seconds start a new matching interval; nearby stationary pauses can still
-reconnect without inventing a route across a location outage.
+Moving GPS gaps longer than 30 seconds start a new matching interval; nearby stationary pauses can
+still reconnect without inventing a route across a location outage.
 
 The fog keeps a cached world layer ready during fast gestures and refreshes detailed reveals
 while the camera moves. A detailed reveal stays visible during a gesture while its georeferenced

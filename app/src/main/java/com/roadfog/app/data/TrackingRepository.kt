@@ -12,7 +12,6 @@ import java.util.Locale
 import kotlin.math.*
 
 class TrackingRepository(context: Context) {
-    private val appContext = context.applicationContext
     private val dbHelper = AppDatabase.get(context)
     private val historyGeneration = synchronized(dbHelper.historyLock) { dbHelper.historyGeneration }
 
@@ -649,42 +648,6 @@ class TrackingRepository(context: Context) {
         }
     }
 
-    /**
-     * Re-evaluate saved GPS once after a matcher revision. Rebuild road geometry from raw points
-     * instead of destructively replacing overlapping visits batch-by-batch: matching windows share
-     * anchor points, so overlap-based deletion can erase a much longer road that a prior batch
-     * already saved. Mileage remains intact because it lives on track_points.
-     */
-    @Synchronized
-    fun prepareRoadHistoryRepair(): Boolean {
-        synchronized(dbHelper.historyLock) {
-            if (historyGeneration != dbHelper.historyGeneration) return false
-            val preferences = appContext.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
-            if (preferences.getInt(KEY_ROAD_MATCHING_REVISION, 0) >= ROAD_MATCHING_REVISION) return false
-            val db = dbHelper.writableDatabase
-            var hasPoints = false
-            db.beginTransaction()
-            try {
-                hasPoints = db.rawQuery("SELECT 1 FROM track_points LIMIT 1", null)
-                    .use { it.moveToFirst() }
-                if (hasPoints) {
-                    db.delete("road_visits", null, null)
-                    db.delete("roads", null, null)
-                    db.execSQL("UPDATE track_points SET matched = 0, next_match_attempt_ms = 0")
-                    dbHelper.roadGroupsReady = true
-                }
-                db.setTransactionSuccessful()
-            } finally {
-                db.endTransaction()
-            }
-            preferences.edit()
-                .putInt(KEY_ROAD_MATCHING_REVISION, ROAD_MATCHING_REVISION)
-                .remove(KEY_ROAD_HISTORY_REPAIR_ACTIVE)
-                .commit()
-            return hasPoints
-        }
-    }
-
     /** Copy history at one database revision, then release locks before slow ZIP I/O. */
     @Synchronized
     fun copyExportSnapshot(destination: SQLiteDatabase) {
@@ -744,11 +707,6 @@ class TrackingRepository(context: Context) {
             } finally {
                 db.endTransaction()
             }
-            appContext.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
-                .edit()
-                .putInt(KEY_ROAD_MATCHING_REVISION, ROAD_MATCHING_REVISION)
-                .remove(KEY_ROAD_HISTORY_REPAIR_ACTIVE)
-                .commit()
             dbHelper.roadGroupsReady = true
             dbHelper.historyGeneration++
         }
@@ -1028,9 +986,6 @@ class TrackingRepository(context: Context) {
         private const val MAX_STOP_GAP_DISTANCE_M = 120f
         private const val STOP_GAP_SPEED_MPS = 2.2f
         private const val MAX_MATCH_SPEED_MPS = 100f
-        private const val ROAD_MATCHING_REVISION = 3
-        private const val KEY_ROAD_MATCHING_REVISION = "road_matching_revision"
-        private const val KEY_ROAD_HISTORY_REPAIR_ACTIVE = "road_history_repair_active"
         private val MATCH_DISTANCE_RESULT = ThreadLocal.withInitial { FloatArray(1) }
 
         private val TRACK_COLUMNS = arrayOf(

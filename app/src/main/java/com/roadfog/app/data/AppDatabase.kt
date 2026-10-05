@@ -134,11 +134,7 @@ class AppDatabase private constructor(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion == 9 && newVersion == 10) {
-            createProgressionTables(db)
-            return
-        }
-        error("Old RoadConquest database schemas are unsupported")
+        error("Database upgrade $oldVersion -> $newVersion is unsupported")
     }
 
     companion object {
