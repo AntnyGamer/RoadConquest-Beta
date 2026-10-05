@@ -6,6 +6,8 @@
   privacy details, credits, and project links into the sections where they belong.
 - Treat the first resolved town, state/region, and country after a fresh install or data reset as
   the starting baseline instead of awarding 2,100 points and three discoveries for opening the app.
+- Safely convert an existing unspent Beta 4 starter trio into that zero-point baseline when it can
+  be identified without rewriting purchases or place-achievement rewards.
 - Keep later town, state/region, and country discoveries rewardable exactly once, while preserving
   existing place progress from earlier builds.
 - Add a mutually exclusive map overlay picker: explored countries are blue, states/regions purple, and towns green, with semi-transparent native map fills below the fog.
