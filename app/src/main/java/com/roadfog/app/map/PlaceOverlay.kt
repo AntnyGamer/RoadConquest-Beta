@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -56,6 +57,9 @@ data class PlaceOverlayCacheResult(val cached: Boolean, val data: PlaceOverlayDa
 object PlaceOverlayCache {
     private const val DIRECTORY = "place-overlays"
     private const val NEGATIVE_CACHE_MS = 24L * 60L * 60L * 1000L
+    private val generation = AtomicLong()
+
+    fun generation(): Long = generation.get()
 
     fun read(context: Context, place: PlaceDiscovery): PlaceOverlayCacheResult {
         val file = file(context, place)
@@ -106,6 +110,7 @@ object PlaceOverlayCache {
     }
 
     fun clear(context: Context) {
+        generation.incrementAndGet()
         File(context.applicationContext.filesDir, DIRECTORY).deleteRecursively()
     }
 
