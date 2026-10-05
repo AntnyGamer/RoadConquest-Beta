@@ -25,13 +25,28 @@ class AchievementsTest {
         val progress = Achievements.progress(summary)
         assertEquals(
             listOf("Newbie Explorer", "Casual Explorer", "Road Conquerer", "Beginner Driver", "Average Driver", "Expert Driver"),
-            progress.map { it.title }
+            progress.take(6).map { it.title }
         )
+        assertTrue(progress.size > 6)
         assertTrue(progress.first { it.id == "roads_10" }.unlocked)
         assertTrue(progress.first { it.id == "roads_100" }.unlocked)
         assertFalse(progress.first { it.id == "roads_1000" }.unlocked)
         assertTrue(progress.first { it.id == "miles_100" }.unlocked)
         assertFalse(progress.first { it.id == "miles_1000" }.unlocked)
+    }
+
+    @Test fun placeBatteryAndAdMilestonesUseTheirDedicatedMetrics() {
+        val summary = DataSummary(0, 0, null, null, 0.0, 0)
+        val metrics = AchievementMetrics(towns = 25, states = 3, countries = 2, adsWatched = 10, lowestBatteryPercent = 1)
+        val progress = Achievements.progress(summary, metrics)
+        assertTrue(progress.first { it.id == "towns_25" }.unlocked)
+        assertTrue(progress.first { it.id == "states_3" }.unlocked)
+        assertTrue(progress.first { it.id == "countries_2" }.unlocked)
+        assertTrue(progress.first { it.id == "battery_5" }.unlocked)
+        assertTrue(progress.first { it.id == "battery_1" }.unlocked)
+        assertTrue(progress.first { it.id == "ads_5" }.unlocked)
+        assertTrue(progress.first { it.id == "ads_10" }.unlocked)
+        assertFalse(progress.first { it.id == "ads_25" }.unlocked)
     }
 
     @Test fun correctedRoadGroupingCannotRelockAnEarnedMilestone() {
