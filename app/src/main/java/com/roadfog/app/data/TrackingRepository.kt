@@ -252,12 +252,101 @@ class TrackingRepository(context: Context) {
             val db = dbHelper.writableDatabase
             db.beginTransaction()
             try {
+                if (isRoadHistoryRepairActive()) replaceRoadEvidenceInTransaction(db, roads)
                 upsertRoads(roads)
                 markMatched(ids)
+                finishRoadHistoryRepairIfComplete(db)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
             }
+        }
+    }
+
+    /**
+     * During a matcher revision, replace only the time ranges that have just been rematched.
+     * This keeps untouched history visible while preventing obsolete geometry from surviving
+     * beside its corrected replacement.
+     */
+    private fun replaceRoadEvidenceInTransaction(db: SQLiteDatabase, roads: List<MatchedRoad>) {
+        val ranges = roads.map {
+            min(it.firstTimestamp, it.lastTimestamp) to max(it.firstTimestamp, it.lastTimestamp)
+        }.sortedBy { it.first }
+        if (ranges.isEmpty()) return
+
+        val merged = ArrayList<Pair<Long, Long>>(ranges.size)
+        for ((start, end) in ranges) {
+            val previous = merged.lastOrNull()
+            if (previous != null && start <= previous.second) {
+                merged[merged.lastIndex] = previous.first to max(previous.second, end)
+            } else {
+                merged += start to end
+            }
+        }
+
+        val affected = LinkedHashSet<String>()
+        for ((start, end) in merged) {
+            db.query(
+                true,
+                "road_visits",
+                arrayOf("segment_id"),
+                "started_at <= ? AND ended_at >= ?",
+                arrayOf(end.toString(), start.toString()),
+                null,
+                null,
+                null,
+                null
+            ).use { cursor ->
+                while (cursor.moveToNext()) affected += cursor.getString(0)
+            }
+            db.delete(
+                "road_visits",
+                "started_at <= ? AND ended_at >= ?",
+                arrayOf(end.toString(), start.toString())
+            )
+        }
+
+        for (segmentId in affected) {
+            val remaining = db.rawQuery(
+                "SELECT COUNT(*), MIN(started_at), MAX(ended_at) FROM road_visits WHERE segment_id = ?",
+                arrayOf(segmentId)
+            ).use { cursor ->
+                check(cursor.moveToFirst())
+                Triple(
+                    cursor.getLong(0),
+                    if (cursor.isNull(1)) 0L else cursor.getLong(1),
+                    if (cursor.isNull(2)) 0L else cursor.getLong(2)
+                )
+            }
+            if (remaining.first == 0L) {
+                db.delete("roads", "segment_id = ?", arrayOf(segmentId))
+            } else {
+                db.update(
+                    "roads",
+                    ContentValues().apply {
+                        put("first_unlocked_at", remaining.second)
+                        put("last_driven_at", remaining.third)
+                        put("drive_count", remaining.first)
+                    },
+                    "segment_id = ?",
+                    arrayOf(segmentId)
+                )
+            }
+        }
+        if (affected.isNotEmpty()) dbHelper.roadGroupsReady = false
+    }
+
+    private fun isRoadHistoryRepairActive(): Boolean =
+        appContext.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
+            .getBoolean(KEY_ROAD_HISTORY_REPAIR_ACTIVE, false)
+
+    private fun finishRoadHistoryRepairIfComplete(db: SQLiteDatabase) {
+        if (!isRoadHistoryRepairActive()) return
+        val pending = db.rawQuery("SELECT 1 FROM track_points WHERE matched = 0 LIMIT 1", null)
+            .use { it.moveToFirst() }
+        if (!pending) {
+            appContext.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_ROAD_HISTORY_REPAIR_ACTIVE, false).apply()
         }
     }
 
@@ -655,12 +744,15 @@ class TrackingRepository(context: Context) {
         synchronized(dbHelper.historyLock) {
             if (historyGeneration != dbHelper.historyGeneration) return false
             val preferences = appContext.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
-            if (preferences.getInt("road_matching_revision", 0) >= 1) return false
+            if (preferences.getInt("road_matching_revision", 0) >= ROAD_MATCHING_REVISION) return false
             val db = dbHelper.writableDatabase
             dbHelper.roadGroupsReady = false
             rebuildRoadGroupsIfNeeded()
             db.execSQL("UPDATE track_points SET matched = 0, next_match_attempt_ms = 0")
-            preferences.edit().putInt("road_matching_revision", 1).commit()
+            preferences.edit()
+                .putInt("road_matching_revision", ROAD_MATCHING_REVISION)
+                .putBoolean(KEY_ROAD_HISTORY_REPAIR_ACTIVE, true)
+                .commit()
             return true
         }
     }
@@ -924,12 +1016,12 @@ class TrackingRepository(context: Context) {
 
     private fun isMatchingContinuation(older: TrackPoint, newer: TrackPoint, ordinaryGapMs: Long): Boolean {
         val gap = newer.timestampMillis - older.timestampMillis
-        if (gap < 0L) return false
-        if (gap <= ordinaryGapMs) return true
-        if (gap > MAX_STOP_CONTINUATION_MS) return false
+        if (gap <= 0L || gap > MAX_STOP_CONTINUATION_MS) return false
         val distance = MATCH_DISTANCE_RESULT.get()
         Location.distanceBetween(older.latitude, older.longitude, newer.latitude, newer.longitude, distance)
-        if (!distance[0].isFinite() || distance[0] > MAX_STOP_GAP_DISTANCE_M) return false
+        if (!distance[0].isFinite() || distance[0] > gap / 1_000f * MAX_MATCH_SPEED_MPS) return false
+        if (gap <= ordinaryGapMs) return true
+        if (distance[0] > MAX_STOP_GAP_DISTANCE_M) return false
         return gap <= MAX_STOP_GAP_MS ||
             older.speedMps < STOP_GAP_SPEED_MPS || newer.speedMps < STOP_GAP_SPEED_MPS
     }
@@ -962,12 +1054,15 @@ class TrackingRepository(context: Context) {
             )
         }
 
-        private const val MATCH_CLUSTER_GAP_MS = 60_000L
+        private const val MATCH_CLUSTER_GAP_MS = 30_000L
         private const val MATCH_ANCHOR_MAX_GAP_MS = 30_000L
         private const val MAX_STOP_GAP_MS = 5 * 60_000L
         private const val MAX_STOP_CONTINUATION_MS = 15 * 60_000L
         private const val MAX_STOP_GAP_DISTANCE_M = 120f
         private const val STOP_GAP_SPEED_MPS = 2.2f
+        private const val MAX_MATCH_SPEED_MPS = 100f
+        private const val ROAD_MATCHING_REVISION = 2
+        private const val KEY_ROAD_HISTORY_REPAIR_ACTIVE = "road_history_repair_active"
         private val MATCH_DISTANCE_RESULT = ThreadLocal.withInitial { FloatArray(1) }
 
         private val TRACK_COLUMNS = arrayOf(
