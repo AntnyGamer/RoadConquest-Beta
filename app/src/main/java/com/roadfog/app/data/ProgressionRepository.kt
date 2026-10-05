@@ -158,15 +158,55 @@ class ProgressionRepository(context: Context) {
         nowMillis: Long = System.currentTimeMillis()
     ): List<PendingPlaceCandidate> {
         require(limit in 1..50)
+        val db = dbHelper.readableDatabase
+
+        // Before any place is known, the zero-point baseline must describe where this fresh
+        // history actually started. Pin resolution to the oldest recorded candidate; if its
+        // geocoder lookup is temporarily deferred, later driving must not steal the baseline.
+        val hasKnownPlace = db.rawQuery(
+            "SELECT 1 FROM visited_places LIMIT 1",
+            null
+        ).use { it.moveToFirst() }
+        if (!hasKnownPlace) {
+            return db.query(
+                "place_candidates",
+                arrayOf(
+                    "cell_x", "cell_y", "latitude", "longitude",
+                    "first_seen_at", "attempts", "next_attempt_ms"
+                ),
+                null,
+                null,
+                null,
+                null,
+                "first_seen_at ASC, cell_x ASC, cell_y ASC",
+                "1"
+            ).use { cursor ->
+                if (!cursor.moveToFirst() || cursor.getLong(6) > nowMillis) {
+                    emptyList()
+                } else {
+                    listOf(
+                        PendingPlaceCandidate(
+                            cursor.getLong(0),
+                            cursor.getLong(1),
+                            cursor.getDouble(2),
+                            cursor.getDouble(3),
+                            cursor.getLong(4),
+                            cursor.getInt(5)
+                        )
+                    )
+                }
+            }
+        }
+
         val result = ArrayList<PendingPlaceCandidate>(limit)
-        dbHelper.readableDatabase.query(
+        db.query(
             "place_candidates",
             arrayOf("cell_x", "cell_y", "latitude", "longitude", "first_seen_at", "attempts"),
             "next_attempt_ms <= ?",
             arrayOf(nowMillis.toString()),
             null,
             null,
-            "attempts ASC, next_attempt_ms ASC, cell_x, cell_y",
+            "attempts ASC, next_attempt_ms ASC, first_seen_at ASC, cell_x ASC, cell_y ASC",
             limit.toString()
         ).use { cursor ->
             while (cursor.moveToNext()) {
