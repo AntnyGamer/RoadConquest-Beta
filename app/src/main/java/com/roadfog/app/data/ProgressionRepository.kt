@@ -300,17 +300,18 @@ class ProgressionRepository(context: Context) {
 
     fun snapshot(): ProgressionSnapshot {
         val db = dbHelper.readableDatabase
-        var earned = 0L
+        val earned = db.rawQuery("SELECT COALESCE(SUM(points), 0) FROM progression_rewards", null)
+            .use { check(it.moveToFirst()); it.getLong(0) }
         val rewardedAchievements = linkedSetOf<String>()
         db.query(
             "progression_rewards",
-            arrayOf("reward_key", "points"),
-            null, null, null, null, null
+            arrayOf("reward_key"),
+            "reward_key LIKE ?",
+            arrayOf("achievement:%"),
+            null, null, null
         ).use { cursor ->
             while (cursor.moveToNext()) {
-                val key = cursor.getString(0)
-                earned += cursor.getLong(1)
-                if (key.startsWith("achievement:")) rewardedAchievements += key.removePrefix("achievement:")
+                rewardedAchievements += cursor.getString(0).removePrefix("achievement:")
             }
         }
         val spent = db.rawQuery("SELECT COALESCE(SUM(points_spent), 0) FROM progression_purchases", null)
