@@ -619,7 +619,9 @@ class TrackingRepository(context: Context) {
     }
 
     @Synchronized
-    fun getSummary(): DataSummary = summaryOf(dbHelper.readableDatabase)
+    fun getSummary(): DataSummary = synchronized(dbHelper.historyLock) {
+        summaryOf(dbHelper.readableDatabase).copy(historyGeneration = dbHelper.historyGeneration)
+    }
 
     /** Copy history at one database revision, then release locks before slow ZIP I/O. */
     @Synchronized
