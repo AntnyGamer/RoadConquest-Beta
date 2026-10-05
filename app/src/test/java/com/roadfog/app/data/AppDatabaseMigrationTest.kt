@@ -14,7 +14,7 @@ import org.robolectric.annotation.SQLiteMode
 @SQLiteMode(SQLiteMode.Mode.LEGACY)
 class AppDatabaseMigrationTest {
     @Test fun beta2SchemaNineUpgradesWithoutLosingRoadHistory() {
-        val context = RuntimeEnvironment.getApplication<android.content.Context>()
+        val context: android.content.Context = RuntimeEnvironment.getApplication()
         resetSingleton()
         val repository = TrackingRepository(context)
         repository.clearHistory()
