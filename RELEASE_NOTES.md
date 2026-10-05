@@ -1,16 +1,13 @@
-# RoadConquest 1.0 Beta 1
+# RoadConquest 1.0 Beta 2
 
-- Preserve continuous recorded driving while matching is pending, including offline driving.
-- Retain confident, context-supported route geometry through ordinary junctions instead of discarding every alternative-candidate fix.
-- Reject snaps far from GPS evidence and unsupported route detours.
-- Count nearby street fragments and connected unnamed access lanes as road identities, rather than one road per fragment.
-- Recalculate saved road identities and reprocess recorded GPS history while retaining mileage and existing map geometry.
-- Keep cached world fog ready while rapid zooming or panning outruns the detailed fog bitmap.
-- Refresh detailed fog during gestures with throttled background rendering and immutable projection snapshots.
-- Account for screen size, rotation and camera latitude when limiting the widest zoom, preventing exposed world edges.
-- Add regression checks for fast zooming, rotated coverage and invalid fog footprints.
-- Add weekly dependency update pull requests for Android, the account server and GitHub Actions.
-- Add consistent editor formatting and correct links to the new beta repository.
+- Replace obsolete saved road evidence as corrected matcher results arrive, while leaving untouched history visible during repair.
+- Start a new moving-road matching interval after GPS gaps longer than 30 seconds instead of allowing OSRM to infer a long missing route.
+- Keep nearby stationary pauses reconnectable so ordinary traffic-light or parking stops do not create unnecessary road gaps.
+- Preserve queued verified-drive fixes across temporary Play Integrity or account-service failures and retry them after the cooldown.
+- Keep detailed georeferenced fog visible during camera gestures while it still covers the viewport, falling back to world fog only when necessary.
+- Keep verified-scoring version documentation synchronized with the Android build in CI; beta.2 uses Android version code 28.
+- Attach the exact backend function bundle that passed server/database tests to every GitHub release.
+- Correct the AGPL corresponding-source URL in NOTICE.
 
-Android 12 or newer is required. This update retains the existing application ID, signing identity
-and saved data, with internal version code 27.
+Android 12 or newer is required. This update retains the existing application ID, permanent signing
+identity, current database schema and saved user data. Existing beta installs can update in place.
