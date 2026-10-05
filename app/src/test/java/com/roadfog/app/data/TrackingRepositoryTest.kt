@@ -19,7 +19,10 @@ class TrackingRepositoryTest {
         val context: Context = RuntimeEnvironment.getApplication()
         repository = TrackingRepository(context)
         repository.readableDatabase().execSQL("DELETE FROM track_points")
+        repository.readableDatabase().execSQL("DELETE FROM road_visits")
         repository.readableDatabase().execSQL("DELETE FROM roads")
+        context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE).edit()
+            .remove("road_history_repair_active").commit()
     }
 
     private fun point(time: Long, lat: Double = 40.0, lon: Double = -74.0, speed: Float = 5f): Long =
@@ -108,14 +111,26 @@ class TrackingRepositoryTest {
             .remove("road_matching_revision").commit()
         val ids = (0..2).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
         repository.markMatched(ids)
-        repository.upsertRoads(listOf(MatchedRoad("Main", "[[-74,40],[-73.9998,40]]", 1, 2, 1.0)))
+        repository.upsertRoads(listOf(
+            MatchedRoad("Wrong old road", "[[-74,40],[-73.9998,40]]", 1_000_000L, 1_006_000L, 1.0)
+        ))
         val before = repository.getSummary()
         assertTrue(repository.prepareRoadHistoryRepair())
         assertEquals(before, repository.getSummary())
         assertEquals(ids.toSet(), repository.loadMatchingWindow().markableIds)
-        repository.markMatched(ids)
+
+        repository.completeMatch(
+            listOf(MatchedRoad("Correct road", "[[-74,40],[-73.9999,40],[-73.9998,40]]",
+                1_000_000L, 1_006_000L, 1.0)),
+            ids
+        )
+
         assertFalse(repository.prepareRoadHistoryRepair())
         assertTrue(repository.loadMatchingWindow().points.isEmpty())
+        val roads = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)
+        assertEquals(1, roads.size)
+        assertEquals("Correct road", roads.single().name)
+        assertFalse(roads.single().geometryJson.contains("Wrong old road"))
     }
 
     @Test fun separatedUnmatchedIslandsRetryWithResolvedNeighbors() {
@@ -188,6 +203,21 @@ class TrackingRepositoryTest {
         val window = repository.loadMatchingWindow()
         assertEquals(current, window.points.map { it.id })
         assertEquals(current.toSet(), window.markableIds)
+    }
+
+    @Test fun fortyFiveSecondGpsBlackoutCannotInventAConnectingRoad() {
+        point(1_000_000L, 40.0)
+        val current = listOf(
+            point(1_045_000L, 40.01),
+            point(1_048_000L, 40.0102)
+        )
+        val window = repository.loadMatchingWindow()
+        assertEquals(current, window.points.map { it.id })
+        assertEquals(current.toSet(), window.markableIds)
+        assertEquals(1, repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0).size)
+        assertEquals(2, org.json.JSONArray(
+            repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0).single().geometryJson
+        ).length())
     }
 
     @Test fun deferredNewestBatchDoesNotStarveOlderTrip() {
