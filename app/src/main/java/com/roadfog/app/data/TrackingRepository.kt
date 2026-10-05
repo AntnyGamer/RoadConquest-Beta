@@ -619,34 +619,7 @@ class TrackingRepository(context: Context) {
     }
 
     @Synchronized
-    fun getSummary(): DataSummary {
-        rebuildRoadGroupsIfNeeded()
-        return summaryOf(dbHelper.readableDatabase)
-    }
-
-    /** Refresh derived identities offline; old fragment IDs must not inflate the new count. */
-    @Synchronized
-    private fun rebuildRoadGroupsIfNeeded() {
-        synchronized(dbHelper.historyLock) {
-            if (dbHelper.roadGroupsReady) return
-            val db = dbHelper.writableDatabase
-            val roads = ArrayList<RoadGrouping.Road>()
-            db.query("roads", arrayOf("segment_id", "name", "geometry_json", "min_lat", "max_lat",
-                "min_lon", "max_lon"), null, null, null, null, null).use { cursor ->
-                while (cursor.moveToNext()) roads += RoadGrouping.Road(cursor.getString(0), cursor.getString(1),
-                    cursor.getString(2), cursor.getDouble(3), cursor.getDouble(4), cursor.getDouble(5), cursor.getDouble(6))
-            }
-            db.beginTransaction()
-            try {
-                for ((segment, group) in RoadGrouping.assignGroups(roads)) {
-                    db.update("roads", ContentValues().apply { put("road_group_id", group) },
-                        "segment_id = ?", arrayOf(segment))
-                }
-                db.setTransactionSuccessful()
-            } finally { db.endTransaction() }
-            dbHelper.roadGroupsReady = true
-        }
-    }
+    fun getSummary(): DataSummary = summaryOf(dbHelper.readableDatabase)
 
     /** Copy history at one database revision, then release locks before slow ZIP I/O. */
     @Synchronized
@@ -687,7 +660,7 @@ class TrackingRepository(context: Context) {
         } finally { source.endTransaction() }
     }
 
-    /** Old repositories can still read, but queued pre-deletion writes become no-ops. */
+    /** Queued pre-deletion writes become no-ops after the history generation changes. */
     @Synchronized
     fun clearHistory() {
         synchronized(dbHelper.historyLock) {
@@ -707,7 +680,6 @@ class TrackingRepository(context: Context) {
             } finally {
                 db.endTransaction()
             }
-            dbHelper.roadGroupsReady = true
             dbHelper.historyGeneration++
         }
     }
@@ -863,7 +835,7 @@ class TrackingRepository(context: Context) {
         val incomingKey = canonicalGeometryKey(coordinates)
         val normalizedName = name.trim().lowercase(Locale.US).ifBlank { "unnamed road" }
         if (storedGeometry == null) {
-            // A previous geometry collision can outlive the primary row during history repair.
+            // A geometry collision can outlive the primary row after later cleanup.
             // Reuse its deterministic alternate ID instead of recreating identical geometry
             // under the now-free primary ID.
             db.query(
