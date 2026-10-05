@@ -1,6 +1,7 @@
 package com.roadfog.app.account
 
 import android.location.Location
+import android.os.SystemClock
 import com.roadfog.app.util.Prefs
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -27,6 +28,29 @@ class VerifiedDrivingTest {
         val context = RuntimeEnvironment.getApplication()
         AccountClient.endpointOverrideForTests = ""
         AccountStore.clear(context)
+    }
+
+    @Test fun retryCooldownKeepsFreshFixesBufferedInsteadOfDiscardingThem() {
+        val context = RuntimeEnvironment.getApplication()
+        val verified = VerifiedDriving(context)
+        VerifiedDriving::class.java.getDeclaredField("retryAfter").apply { isAccessible = true }
+            .setLong(verified, SystemClock.elapsedRealtime() + 60_000L)
+
+        verified.offer(Location("gps").apply {
+            latitude = 40.0
+            longitude = -74.0
+            accuracy = 5f
+            speed = 10f
+            time = System.currentTimeMillis()
+            elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+        })
+
+        @Suppress("UNCHECKED_CAST")
+        val queue = VerifiedDriving::class.java.getDeclaredField("pendingLocations").apply { isAccessible = true }
+            .get(verified) as ArrayDeque<Location>
+        assertEquals(1, queue.size)
+
+        verified.close()
     }
 
     @Test fun busyVerificationBuffersTheNewestLiveFixesWithinABound() {
