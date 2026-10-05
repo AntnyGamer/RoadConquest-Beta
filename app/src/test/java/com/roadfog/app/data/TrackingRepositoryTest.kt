@@ -105,7 +105,7 @@ class TrackingRepositoryTest {
         assertEquals(2, org.json.JSONArray(pending.single().geometryJson).length())
     }
 
-    @Test fun savedRouteRepairRetainsMileageAndMapWhileRequeuingGpsEvidenceOnlyOnce() {
+    @Test fun savedRouteRepairKeepsRawMileageAndRebuildsGeometryOnlyOnce() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE).edit()
             .remove("road_matching_revision").commit()
@@ -116,7 +116,11 @@ class TrackingRepositoryTest {
         ))
         val before = repository.getSummary()
         assertTrue(repository.prepareRoadHistoryRepair())
-        assertEquals(before, repository.getSummary())
+        val rebuilding = repository.getSummary()
+        assertEquals(before.trackPointCount, rebuilding.trackPointCount)
+        assertEquals(before.distanceMeters, rebuilding.distanceMeters, 0.0)
+        assertEquals(0L, rebuilding.roadSegmentCount)
+        assertEquals(0L, rebuilding.roadsUnlockedCount)
         assertEquals(ids.toSet(), repository.loadMatchingWindow().markableIds)
 
         repository.completeMatch(
@@ -130,7 +134,36 @@ class TrackingRepositoryTest {
         val roads = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)
         assertEquals(1, roads.size)
         assertEquals("Correct road", roads.single().name)
-        assertFalse(roads.single().geometryJson.contains("Wrong old road"))
+    }
+
+    @Test fun resetClearsStaleRepairStateAndFutureMatchesNeverDeleteEarlierGeometry() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE).edit()
+            .putBoolean("road_history_repair_active", true)
+            .remove("road_matching_revision")
+            .commit()
+        repository.clearHistory()
+        assertFalse(context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
+            .getBoolean("road_history_repair_active", false))
+        assertFalse(repository.prepareRoadHistoryRepair())
+
+        val ids = (0..3).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.completeMatch(
+            listOf(MatchedRoad("Main", "[[-74,40],[-73.9999,40]]", 1_000_000L, 1_003_000L, 1.0)),
+            ids.take(2)
+        )
+        // This mimics an overlapping matcher window. The second completion must not erase
+        // the first piece merely because their time/anchor ranges touch.
+        context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE).edit()
+            .putBoolean("road_history_repair_active", true).commit()
+        repository.completeMatch(
+            listOf(MatchedRoad("Main", "[[-73.9999,40],[-73.9998,40]]", 1_003_000L, 1_006_000L, 1.0)),
+            ids.subList(1, 3)
+        )
+        val roads = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)
+        assertEquals(2, roads.size)
+        assertEquals(2, roads.map { it.geometryJson }.toSet().size)
+        assertEquals(1L, repository.getSummary().roadsUnlockedCount)
     }
 
     @Test fun separatedUnmatchedIslandsRetryWithResolvedNeighbors() {
