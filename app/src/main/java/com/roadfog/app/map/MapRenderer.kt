@@ -466,7 +466,7 @@ class MapRenderer(
 
     private fun installPlaceOverlayLayers(style: Style) {
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
-            style.addSource(GeoJsonSource(overlaySourceId(mode), EMPTY_OVERLAY_COLLECTION))
+            style.addSource(GeoJsonSource(overlaySourceId(mode), EMPTY_FEATURES))
             val color = when (mode) {
                 PlaceOverlayMode.COUNTRY -> Color.parseColor("#2F80ED")
                 PlaceOverlayMode.STATE -> Color.parseColor("#8E44AD")
@@ -487,7 +487,7 @@ class MapRenderer(
 
     private fun clearPlaceOverlaySources() {
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
-            (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_OVERLAY_COLLECTION)
+            (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
         }
     }
 
@@ -951,7 +951,6 @@ class MapRenderer(
         private const val COUNTRY_OVERLAY_LAYER_ID = "roadconquest-country-overlays-fill"
         private const val STATE_OVERLAY_LAYER_ID = "roadconquest-state-overlays-fill"
         private const val TOWN_OVERLAY_LAYER_ID = "roadconquest-town-overlays-fill"
-        private const val EMPTY_OVERLAY_COLLECTION = "{\"type\":\"FeatureCollection\",\"features\":[]}"
         private const val ROAD_SOURCE_ID = "roadconquest-traveled-roads"
         private const val PENDING_ROUTE_SOURCE_ID = "roadconquest-recorded-route"
         private const val PENDING_ROUTE_LAYER_ID = "roadconquest-recorded-route-line"
