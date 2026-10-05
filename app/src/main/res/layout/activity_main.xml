@@ -24,9 +24,25 @@
         android:background="@drawable/panel_background"
         android:elevation="8dp"
         android:text="@string/stats_initial"
-        android:textColor="@color/text_primary"
+        android:textColor="?attr/rcTextPrimary"
         android:textSize="13sp"
         android:lineSpacingExtra="3dp" />
+
+    <TextView
+        android:id="@+id/pointsText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="88dp"
+        android:background="@drawable/panel_background"
+        android:clickable="true"
+        android:elevation="8dp"
+        android:focusable="true"
+        android:text="★ 0 points"
+        android:textColor="?attr/rcTextPrimary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
 
     <ImageButton
         android:id="@+id/settingsButton"
@@ -68,7 +84,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Not tracking"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/rcTextPrimary"
             android:textSize="16sp"
             android:textStyle="bold" />
 

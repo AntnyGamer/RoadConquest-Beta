@@ -10,8 +10,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
-import androidx.core.content.ContextCompat
-import com.roadfog.app.R
+import com.roadfog.app.progression.Cosmetics
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.util.Prefs
 import org.maplibre.android.camera.CameraPosition
@@ -71,6 +70,10 @@ class MapRenderer(
     private var fogRunning = false
     private var fogAgain = false
     private var reusableFogBitmap: Bitmap? = null
+    private var carIconBitmap: Bitmap? = null
+    private var appliedCarStyle = ""
+    private var appliedCarColor = ""
+    private var appliedRoadColor = ""
     private var fogEnabled = Prefs.isFogEnabled(context)
     @Volatile private var destroyed = false
     private val liveLocation = LiveLocation()
@@ -154,6 +157,25 @@ class MapRenderer(
         fogEnabled = enabled
         updateFogCoverage(force = true)
         if (enabled) scheduleFogRender()
+    }
+
+    fun refreshCosmetics() {
+        if (destroyed) return
+        val style = map.style ?: return
+        val road = Prefs.roadColor(context)
+        if (road != appliedRoadColor) {
+            val color = Cosmetics.roadColor(context).argb
+            (style.getLayer(ROAD_LAYER_ID) as? LineLayer)?.setProperties(lineColor(color))
+            (style.getLayer(PENDING_ROUTE_LAYER_ID) as? LineLayer)?.setProperties(lineColor(color))
+            appliedRoadColor = road
+        }
+        val carStyle = Prefs.carStyle(context)
+        val carColor = Prefs.carColor(context)
+        if (carStyle != appliedCarStyle || carColor != appliedCarColor) {
+            updateCarImage(style)
+            appliedCarStyle = carStyle
+            appliedCarColor = carColor
+        }
     }
 
     private fun loadStyle(onReady: () -> Unit) {
@@ -373,8 +395,9 @@ class MapRenderer(
 
     private fun installRoadLayer(style: Style) {
         style.addSource(GeoJsonSource(ROAD_SOURCE_ID, displayedRoadFeatures))
+        appliedRoadColor = Prefs.roadColor(context)
         val layer = LineLayer(ROAD_LAYER_ID, ROAD_SOURCE_ID).withProperties(
-            lineColor(Color.rgb(37, 99, 235)),
+            lineColor(Cosmetics.roadColor(context).argb),
             lineOpacity(242f / 255f),
             lineWidth(4f),
             lineCap(Property.LINE_CAP_ROUND),
@@ -407,7 +430,7 @@ class MapRenderer(
     private fun installRecordedRouteLayer(style: Style) {
         style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, emptyRoadFeatures()))
         val layer = LineLayer(PENDING_ROUTE_LAYER_ID, PENDING_ROUTE_SOURCE_ID).withProperties(
-            lineColor(Color.rgb(37, 99, 235)), lineWidth(4f), lineOpacity(0.65f),
+            lineColor(Cosmetics.roadColor(context).argb), lineWidth(4f), lineOpacity(0.65f),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
         layer.setMinZoom(FogBitmapRenderer.MIN_ROAD_ZOOM.toFloat())
@@ -448,7 +471,9 @@ class MapRenderer(
     }
 
     private fun installCarLayer(style: Style) {
-        style.addImage(CAR_IMAGE_ID, requireNotNull(ContextCompat.getDrawable(context, R.drawable.ic_car)))
+        updateCarImage(style)
+        appliedCarStyle = Prefs.carStyle(context)
+        appliedCarColor = Prefs.carColor(context)
         style.addSource(GeoJsonSource(CAR_SOURCE_ID, emptyRoadFeatures()))
         style.addLayer(
             SymbolLayer(CAR_LAYER_ID, CAR_SOURCE_ID).withProperties(
@@ -459,6 +484,16 @@ class MapRenderer(
                 iconRotate(0f)
             )
         )
+    }
+
+    private fun updateCarImage(style: Style) {
+        val next = Cosmetics.renderCarIcon(context)
+        runCatching { style.addImage(CAR_IMAGE_ID, next) }
+            .onSuccess {
+                carIconBitmap?.recycle()
+                carIconBitmap = next
+            }
+            .onFailure { next.recycle() }
     }
 
     private fun setDisplayedRoads(roads: OverlayRoads, features: FeatureCollection) {
@@ -765,6 +800,8 @@ class MapRenderer(
         resumeFrameListener = null
         reusableFogBitmap?.recycle()
         reusableFogBitmap = null
+        carIconBitmap?.recycle()
+        carIconBitmap = null
         executor.shutdownNow()
         fogExecutor.shutdownNow()
     }

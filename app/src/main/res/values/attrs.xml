@@ -1,0 +1,7 @@
+<resources>
+    <attr name="rcScreenBg" format="color" />
+    <attr name="rcPanelBg" format="color" />
+    <attr name="rcTextPrimary" format="color" />
+    <attr name="rcTextSecondary" format="color" />
+    <attr name="rcAccent" format="color" />
+</resources>

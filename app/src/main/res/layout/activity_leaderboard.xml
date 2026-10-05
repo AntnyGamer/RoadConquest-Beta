@@ -2,19 +2,19 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/leaderboardRoot"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@color/screen_bg" android:fillViewport="true">
+    android:background="?attr/rcScreenBg" android:fillViewport="true">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:padding="20dp">
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="Global leaderboards" android:textSize="28sp"
-            android:textStyle="bold" android:textColor="@color/text_primary" />
+            android:textStyle="bold" android:textColor="?attr/rcTextPrimary" />
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="12dp" android:textSize="14sp" android:textColor="@color/text_secondary"
+            android:layout_marginTop="12dp" android:textSize="14sp" android:textColor="?attr/rcTextSecondary"
             android:text="Top 50 visible profiles. Only verified live drives count. Repeat trips add miles; each road section counts once per map season." />
         <Button android:id="@+id/milesRankingButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Miles driven" />
         <Button android:id="@+id/roadsRankingButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Road sections unlocked" />
         <Button android:id="@+id/refreshRankingButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Refresh" />
         <TextView android:id="@+id/rankingEntriesText" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="12dp" android:textSize="16sp" android:textColor="@color/text_primary" />
+            android:layout_marginTop="12dp" android:textSize="16sp" android:textColor="?attr/rcTextPrimary" />
     </LinearLayout>
 </ScrollView>

@@ -20,7 +20,10 @@ This checklist is for final device-level validation on supported Android 12+ pho
 6. Confirm the map centers on the first fresh phone-location fix and the car icon follows current position.
 7. Zoom in fully and confirm fog, blue unlocked-road lines, and the car marker remain visible at RoadConquest's maximum zoom on the device.
 8. Zoom progressively outward and confirm the cloud pattern stays broad instead of collapsing into many tiny repeated texture tiles.
-9. At world zoom and the next three zoom levels, pan through several full world copies in both directions. Confirm fog stays over the whole map while crossing the date line and looping. At intermediate zooms, blue lines stay visibly above fog as they load.
+9. At world zoom and the next three zoom levels, pan through several full world copies in both directions. Confirm fog stays over the whole map while crossing the date line and looping. At intermediate zooms, unlocked road lines stay visibly above fog as they load.
+10. Confirm the points chip is visible below the map stats and opens Garage & Shop.
+11. Buy/equip at least one car shape/color and one road color; return to the map and verify each changes without restarting tracking.
+12. If enough test points are available, equip Golden RoadConquest and verify the app palette and launcher icon change, then switch back to Standard UI.
 
 ## Driving and fog
 
@@ -39,11 +42,28 @@ This checklist is for final device-level validation on supported Android 12+ pho
 4. Switch Manual -> Always and confirm tracking starts without needing another app restart.
 5. Force-stop RoadConquest and confirm it does **not** restart itself until manually launched; this is expected Android behavior.
 
+## Progression and achievements
+
+1. Unlock a previously unseen road and verify the point balance increases by 5 exactly once.
+2. Cross into a locality/state/country not already recorded, keep RoadConquest foregrounded briefly,
+   and verify the relevant discovery count/points appear without repeated rewards on a revisit.
+3. Verify town/state/country achievement progress reflects the discovery counts.
+4. At 5% battery while RoadConquest is open or tracking, verify **Running on Fumes** unlocks once.
+   At 1%, verify **Last Percent** unlocks once. Ordinary battery levels must not affect progression.
+5. Confirm ad achievements display 5/10/25/50/100 goals but cannot advance in Beta 3 because no ad
+   provider is bundled yet.
+
 ## Export
 
 1. Use **Export driving data** in Settings.
-2. Open the ZIP and verify `metadata.json`, `track_points.csv`, `roads.csv`, and `explored_places.csv` are present. Metadata schema version is 6 and the explored-place count matches its CSV.
-3. Verify road rows contain segment ID, road name, first-unlocked time, last-driven time, and the `coordinates_json` geometry array.
+2. Open the ZIP and verify `metadata.json`, `track_points.csv`, `roads.csv`,
+   `explored_places.csv`, `visited_places.csv`, `place_candidates.csv`,
+   `progression_rewards.csv`, `progression_purchases.csv`, and
+   `progression_counters.csv` are present. Metadata schema version is 7.
+3. Verify metadata point/discovery counts agree with their CSVs and equipped car/road/gold settings
+   match the app.
+4. Verify road rows contain segment ID, road name, first-unlocked time, last-driven time, and the
+   `coordinates_json` geometry array.
 
 If all of the above pass on the target Android device and firmware, that provides the device-level validation that static analysis cannot substitute for.
 
@@ -54,7 +74,7 @@ If all of the above pass on the target Android device and firmware, that provide
   must leave the original account unchanged.
 - Cancel both deletion confirmations and verify that all data remains.
 - Delete an account with the current password; verify that all old sessions stop working.
-  The default local-history option clears trips, mileage, roads and explored places.
+  The default local-history option clears trips, mileage, roads, explored places, points, purchases and cosmetics.
 - Delete device data while offline and signed out. Tracking stops, history and fog reveals
   clear, and delayed road matches cannot restore them. The cloud account remains when only
   device data is deleted. Tracking can be explicitly restarted.

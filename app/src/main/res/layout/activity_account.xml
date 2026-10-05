@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="@color/screen_bg">
+    android:background="?attr/rcScreenBg">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -16,7 +16,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Account"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/rcTextPrimary"
             android:textSize="28sp"
             android:textStyle="bold" />
 
@@ -25,7 +25,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/rcTextSecondary"
             android:textSize="14sp" />
 
         <LinearLayout
@@ -106,7 +106,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:text="Usernames are unique regardless of capitalization. Passwords must be 8-128 characters. New accounts are visible on leaderboards and verified-drive sharing is enabled by default; both can be turned off in Settings."
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/rcTextSecondary"
                 android:textSize="13sp" />
 
             <Button
@@ -135,7 +135,7 @@
                 android:id="@+id/accountSignedInText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/rcTextPrimary"
                 android:textSize="18sp"
                 android:textStyle="bold" />
 
@@ -145,7 +145,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:text="Show my profile on global leaderboards"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/rcTextPrimary"
                 android:textSize="16sp" />
 
             <TextView
@@ -153,7 +153,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:text="Turn this off to hide your profile without deleting your account."
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/rcTextSecondary"
                 android:textSize="13sp" />
 
             <Button
@@ -188,7 +188,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Deletes local trips, mileage, roads and explored places. Your cloud account and leaderboard scores stay."
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/rcTextSecondary"
             android:textSize="13sp" />
     </LinearLayout>
 </ScrollView>

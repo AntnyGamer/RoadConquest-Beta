@@ -29,6 +29,7 @@ import com.roadfog.app.util.UiTheme
 import com.roadfog.app.util.SystemSettingsNavigator
 import com.roadfog.app.util.StatsText
 import com.roadfog.app.util.ForegroundSession
+import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.map.MapMode
 import java.time.Instant
 import java.util.concurrent.Executors
@@ -60,10 +61,12 @@ class SettingsActivity : Activity() {
     private val summaryExecutor = Executors.newSingleThreadExecutor()
     private val accountExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var summaryGeneration = 0
+    private var appliedGoldUi = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        setTheme(R.style.Theme_RoadConquest)
+        setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
+        appliedGoldUi = Prefs.isGoldUiEnabled(this)
         WindowCompat.enableEdgeToEdge(window)
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = !Appearance.isDark(this@SettingsActivity)
@@ -110,6 +113,9 @@ class SettingsActivity : Activity() {
         findViewById<Button>(R.id.achievementsButton).setOnClickListener {
             startActivity(Intent(this, AchievementsActivity::class.java))
         }
+        findViewById<Button>(R.id.shopButton).setOnClickListener {
+            startActivity(Intent(this, ShopActivity::class.java))
+        }
         leaderboardPrivacySwitch.setOnCheckedChangeListener { _, visible ->
             if (!renderingAccountPrivacy) updateLeaderboardPrivacy(visible)
         }
@@ -143,11 +149,14 @@ class SettingsActivity : Activity() {
             }
         }
 
-        refreshSummary()
     }
 
     override fun onResume() {
         super.onResume()
+        if (appliedGoldUi != Prefs.isGoldUiEnabled(this)) {
+            recreate()
+            return
+        }
         if (enteredForeground && Prefs.isTrackingPaused(this)) {
             Prefs.setTrackingPaused(this, false)
             startAutomaticTrackingIfPossible()
@@ -368,14 +377,23 @@ class SettingsActivity : Activity() {
         val background = if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) "Granted" else "Missing"
         summaryExecutor.execute {
             if (generation != summaryGeneration) return@execute
-            val result = runCatching { repository.getSummary() }
+            val result = runCatching {
+                val summary = repository.getSummary()
+                summary to ProgressionManager.sync(this, summary)
+            }
             runOnUiThread {
                 if (isDestroyed || generation != summaryGeneration) return@runOnUiThread
                 result.fold(
-                    onSuccess = { summary ->
+                    onSuccess = { (summary, progression) ->
                         summaryText.text = buildString {
                             append(StatsText.format(this@SettingsActivity, summary))
                             append("\n")
+                            append(String.format(java.util.Locale.getDefault(), "★ %,d points\n", progression.balance))
+                            append(String.format(
+                                java.util.Locale.getDefault(),
+                                "%,d towns • %,d states/regions • %,d countries\n",
+                                progression.towns, progression.states, progression.countries
+                            ))
                             append("Tracking mode: $mode\n")
                             append("Precise location: $precise\n")
                             append("Allow all the time: $background")

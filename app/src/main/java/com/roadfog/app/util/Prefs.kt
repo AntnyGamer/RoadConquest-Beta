@@ -75,4 +75,33 @@ object Prefs {
     fun setAccountPromptShown(context: Context, shown: Boolean) {
         prefs(context).edit().putBoolean(KEY_ACCOUNT_PROMPT_SHOWN, shown).apply()
     }
+
+    fun carStyle(context: Context): String = prefs(context).getString("car_style", "classic") ?: "classic"
+    fun setCarStyle(context: Context, value: String) {
+        prefs(context).edit().putString("car_style", value).apply()
+    }
+
+    fun carColor(context: Context): String = prefs(context).getString("car_color", "blue") ?: "blue"
+    fun setCarColor(context: Context, value: String) {
+        prefs(context).edit().putString("car_color", value).apply()
+    }
+
+    fun roadColor(context: Context): String = prefs(context).getString("road_color", "blue") ?: "blue"
+    fun setRoadColor(context: Context, value: String) {
+        prefs(context).edit().putString("road_color", value).apply()
+    }
+
+    fun isGoldUiEnabled(context: Context): Boolean = prefs(context).getBoolean("gold_ui_enabled", false)
+    fun setGoldUiEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean("gold_ui_enabled", enabled).commit()
+    }
+
+    fun resetCosmetics(context: Context) {
+        prefs(context).edit()
+            .remove("car_style")
+            .remove("car_color")
+            .remove("road_color")
+            .remove("gold_ui_enabled")
+            .apply()
+    }
 }

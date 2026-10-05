@@ -765,7 +765,11 @@ class TrackingRepository(context: Context) {
         try {
             destination.beginTransaction()
             try {
-                for (table in listOf("track_points", "roads", "road_visits", "explored_places")) {
+                for (table in listOf(
+                    "track_points", "roads", "road_visits", "explored_places",
+                    "visited_places", "place_candidates", "progression_rewards",
+                    "progression_purchases", "progression_counters"
+                )) {
                     val createSql = source.rawQuery("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", arrayOf(table)).use {
                         check(it.moveToFirst()); it.getString(0)
                     }
@@ -803,6 +807,11 @@ class TrackingRepository(context: Context) {
                 db.delete("road_visits", null, null)
                 db.delete("roads", null, null)
                 db.delete("explored_places", null, null)
+                db.delete("place_candidates", null, null)
+                db.delete("visited_places", null, null)
+                db.delete("progression_rewards", null, null)
+                db.delete("progression_purchases", null, null)
+                db.delete("progression_counters", null, null)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()

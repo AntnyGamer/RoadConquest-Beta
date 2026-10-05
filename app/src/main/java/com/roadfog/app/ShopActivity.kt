@@ -1,0 +1,216 @@
+package com.roadfog.app
+
+import android.app.Activity
+import android.content.Context
+import android.os.Bundle
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.roadfog.app.data.ProgressionRepository
+import com.roadfog.app.data.ProgressionSnapshot
+import com.roadfog.app.data.PurchaseResult
+import com.roadfog.app.data.TrackingRepository
+import com.roadfog.app.progression.CosmeticType
+import com.roadfog.app.progression.Cosmetics
+import com.roadfog.app.progression.ProgressionManager
+import com.roadfog.app.progression.ShopCatalog
+import com.roadfog.app.progression.ShopItem
+import com.roadfog.app.util.Appearance
+import java.util.Locale
+import java.util.concurrent.Executors
+
+class ShopActivity : Activity() {
+    private val executor = Executors.newSingleThreadExecutor()
+    private lateinit var pointsText: TextView
+    private lateinit var progressText: TextView
+    private lateinit var items: LinearLayout
+    @Volatile private var generation = 0
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(Appearance.wrap(newBase))
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(Appearance.themeRes(this))
+        super.onCreate(savedInstanceState)
+        WindowCompat.enableEdgeToEdge(window)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !Appearance.isDark(this@ShopActivity)
+            isAppearanceLightNavigationBars = !Appearance.isDark(this@ShopActivity)
+        }
+        setContentView(R.layout.activity_shop)
+        applyInsets()
+        pointsText = findViewById(R.id.shopPointsText)
+        progressText = findViewById(R.id.shopProgressText)
+        items = findViewById(R.id.shopItems)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::items.isInitialized) refresh()
+    }
+
+    private fun refresh() {
+        val current = ++generation
+        executor.execute {
+            val result = runCatching {
+                val summary = TrackingRepository(this).getSummary()
+                ProgressionManager.sync(this, summary)
+            }
+            runOnUiThread {
+                if (isDestroyed || current != generation) return@runOnUiThread
+                result.fold(
+                    onSuccess = ::render,
+                    onFailure = {
+                        pointsText.text = "Points unavailable"
+                        progressText.text = "Could not load local progression."
+                        items.removeAllViews()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun render(snapshot: ProgressionSnapshot) {
+        pointsText.text = String.format(Locale.getDefault(), "★ %,d points", snapshot.balance)
+        progressText.text = String.format(
+            Locale.getDefault(),
+            "%,d roads rewarded • %,d towns • %,d states/regions • %,d countries\n%,d lifetime points earned • %,d spent",
+            snapshot.rewardedRoads,
+            snapshot.towns,
+            snapshot.states,
+            snapshot.countries,
+            snapshot.lifetimeEarned,
+            snapshot.pointsSpent
+        )
+        items.removeAllViews()
+        var previousType: CosmeticType? = null
+        for (item in ShopCatalog.items) {
+            if (item.type != previousType) {
+                previousType = item.type
+                addSectionTitle(sectionName(item.type))
+            }
+            addShopItem(item, snapshot)
+        }
+    }
+
+    private fun addSectionTitle(title: String) {
+        items.addView(TextView(this).apply {
+            text = title
+            setTextColor(Appearance.color(this@ShopActivity, R.attr.rcTextPrimary))
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(16), 0, dp(8))
+        })
+    }
+
+    private fun addShopItem(item: ShopItem, snapshot: ProgressionSnapshot) {
+        val owned = item.cost == 0L || item.id in snapshot.purchasedItems
+        val equipped = Cosmetics.isEquipped(this, item)
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.panel_background)
+            elevation = dp(2).toFloat()
+            val padding = dp(16)
+            setPadding(padding, padding, padding, padding)
+        }
+        card.addView(TextView(this).apply {
+            text = item.name
+            setTextColor(Appearance.color(this@ShopActivity, R.attr.rcTextPrimary))
+            textSize = 17f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        card.addView(TextView(this).apply {
+            text = item.description
+            setTextColor(Appearance.color(this@ShopActivity, R.attr.rcTextSecondary))
+            textSize = 13f
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        val action = Button(this).apply {
+            text = when {
+                equipped -> "Equipped"
+                owned -> "Equip"
+                else -> String.format(Locale.getDefault(), "Buy • %,d points", item.cost)
+            }
+            isEnabled = !equipped
+            setOnClickListener { onItemPressed(item, owned) }
+        }
+        card.addView(action, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        items.addView(card, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(10) })
+    }
+
+    private fun onItemPressed(item: ShopItem, alreadyOwned: Boolean) {
+        if (alreadyOwned) {
+            equipAndRefresh(item)
+            return
+        }
+        val current = ++generation
+        executor.execute {
+            val result = runCatching { ProgressionRepository(this).purchase(item.id, item.cost) }
+            runOnUiThread {
+                if (isDestroyed || current != generation) return@runOnUiThread
+                result.fold(
+                    onSuccess = { purchase ->
+                        when (purchase) {
+                            PurchaseResult.PURCHASED, PurchaseResult.OWNED -> equipAndRefresh(item)
+                            PurchaseResult.INSUFFICIENT_POINTS -> {
+                                Toast.makeText(this, "Not enough points yet.", Toast.LENGTH_SHORT).show()
+                                refresh()
+                            }
+                        }
+                    },
+                    onFailure = {
+                        Toast.makeText(this, "Could not complete purchase.", Toast.LENGTH_SHORT).show()
+                        refresh()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun equipAndRefresh(item: ShopItem) {
+        if (!Cosmetics.equip(this, item)) {
+            Toast.makeText(this, "Purchase this item first.", Toast.LENGTH_SHORT).show()
+            refresh()
+            return
+        }
+        Toast.makeText(this, item.name + " equipped", Toast.LENGTH_SHORT).show()
+        if (item.type == CosmeticType.APP_THEME) recreate() else refresh()
+    }
+
+    private fun sectionName(type: CosmeticType): String = when (type) {
+        CosmeticType.CAR_STYLE -> "Car icons"
+        CosmeticType.CAR_COLOR -> "Car colors"
+        CosmeticType.ROAD_COLOR -> "Road colors"
+        CosmeticType.APP_THEME -> "App themes"
+    }
+
+    private fun applyInsets() {
+        val root = findViewById<android.view.View>(R.id.shopRoot)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    override fun onDestroy() {
+        generation++
+        executor.shutdownNow()
+        super.onDestroy()
+    }
+}

@@ -2,6 +2,7 @@ package com.roadfog.app.export
 
 import android.location.Location
 import com.roadfog.app.data.MatchedRoad
+import com.roadfog.app.data.ProgressionRepository
 import com.roadfog.app.data.TrackingRepository
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -24,6 +25,7 @@ class DataExporterTest {
     @Test fun exportsReadableZipWithAccurateCountsAndSafeRoadNames() {
         val context = RuntimeEnvironment.getApplication()
         val repository = TrackingRepository(context)
+        ProgressionRepository(context).clearProgression()
         repository.readableDatabase().execSQL("DELETE FROM track_points")
         repository.readableDatabase().execSQL("DELETE FROM roads")
         repository.readableDatabase().execSQL("DELETE FROM explored_places")
@@ -43,13 +45,20 @@ class DataExporterTest {
                 entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
             }
         }
-        assertEquals(setOf("metadata.json", "track_points.csv", "roads.csv", "road_visits.csv", "explored_places.csv"), entries.keys)
+        assertEquals(setOf(
+            "metadata.json", "track_points.csv", "roads.csv", "road_visits.csv", "explored_places.csv",
+            "visited_places.csv", "place_candidates.csv", "progression_rewards.csv",
+            "progression_purchases.csv", "progression_counters.csv"
+        ), entries.keys)
         val metadata = JSONObject(entries.getValue("metadata.json"))
         assertEquals(1L, metadata.getLong("track_point_count"))
         assertEquals(1L, metadata.getLong("road_segment_count"))
-        assertEquals(6, metadata.getInt("schema_version"))
+        assertEquals(7, metadata.getInt("schema_version"))
         assertEquals(1L, metadata.getLong("explored_place_count"))
         assertEquals(1L, metadata.getLong("road_visit_count"))
+        assertEquals(0L, metadata.getLong("points_balance"))
+        assertEquals(0L, metadata.getLong("towns_visited"))
+        assertEquals(1, entries.getValue("visited_places.csv").lineSequence().filter { it.isNotEmpty() }.count())
         assertEquals(2, entries.getValue("explored_places.csv").lineSequence().filter { it.isNotEmpty() }.count())
         assertEquals(1L, metadata.getLong("roads_unlocked_count"))
         assertTrue(entries.getValue("track_points.csv").lineSequence().first().endsWith(",distance_m"))
