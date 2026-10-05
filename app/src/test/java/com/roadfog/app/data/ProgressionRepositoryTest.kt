@@ -136,7 +136,7 @@ class ProgressionRepositoryTest {
             PlaceKind.TOWN, "us|new jersey|glassboro", "Glassboro", "New Jersey", "United States",
             1_000L, 39.7, -75.1
         )
-        progression.readableDatabase().execSQL(
+        TrackingRepository(context).readableDatabase().execSQL(
             "INSERT OR REPLACE INTO progression_counters(counter_key,value) VALUES(?,1)",
             arrayOf("baseline:town:${baseline.key}")
         )
