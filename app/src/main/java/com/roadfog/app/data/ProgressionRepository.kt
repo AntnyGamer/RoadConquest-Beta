@@ -55,10 +55,15 @@ enum class PurchaseResult { PURCHASED, OWNED, INSUFFICIENT_POINTS }
 
 class ProgressionRepository(context: Context) {
     private val dbHelper = AppDatabase.get(context.applicationContext)
+    private val historyGeneration = synchronized(dbHelper.historyLock) { dbHelper.historyGeneration }
 
-    fun syncRoadRewards(roadsUnlocked: Long): Long = synchronized(dbHelper.historyLock) {
-        val target = roadsUnlocked.coerceAtLeast(0L)
+    fun syncRoadRewards(
+        roadsUnlocked: Long,
+        expectedHistoryGeneration: Long? = null
+    ): Long = synchronized(dbHelper.historyLock) {
         val db = dbHelper.writableDatabase
+        if (!isCurrentHistory(expectedHistoryGeneration)) return@synchronized counter(db, COUNTER_REWARDED_ROADS)
+        val target = roadsUnlocked.coerceAtLeast(0L)
         db.beginTransaction()
         try {
             val previous = counter(db, COUNTER_REWARDED_ROADS)
@@ -74,9 +79,14 @@ class ProgressionRepository(context: Context) {
         }
     }
 
-    fun awardAchievement(id: String, points: Long): Boolean {
+    fun awardAchievement(
+        id: String,
+        points: Long,
+        expectedHistoryGeneration: Long? = null
+    ): Boolean {
         require(points > 0L)
         return synchronized(dbHelper.historyLock) {
+            if (!isCurrentHistory(expectedHistoryGeneration)) return@synchronized false
             val db = dbHelper.writableDatabase
             db.beginTransaction()
             try {
@@ -90,6 +100,7 @@ class ProgressionRepository(context: Context) {
     }
 
     fun recordPlace(discovery: PlaceDiscovery): Boolean = synchronized(dbHelper.historyLock) {
+        if (!isCurrentHistory()) return@synchronized false
         val db = dbHelper.writableDatabase
         db.beginTransaction()
         try {
@@ -127,6 +138,7 @@ class ProgressionRepository(context: Context) {
      * a geocoder/network request; candidates are resolved later while the app is foregrounded.
      */
     fun recordPlaceCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
+        if (!isCurrentHistory()) return@synchronized false
         if (location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0) return@synchronized false
         val radius = 6_378_137.0
         val longitude = ((location.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
@@ -158,6 +170,7 @@ class ProgressionRepository(context: Context) {
      * sparse place candidates never substitute for this zero-point starting location.
      */
     fun recordBaselineCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
+        if (!isCurrentHistory()) return@synchronized false
         if (!location.latitude.isFinite() || !location.longitude.isFinite() ||
             location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0
         ) return@synchronized false
@@ -257,6 +270,7 @@ class ProgressionRepository(context: Context) {
 
     fun resolveCandidate(candidate: PendingPlaceCandidate, discoveries: List<PlaceDiscovery>): Int =
         synchronized(dbHelper.historyLock) {
+            if (!isCurrentHistory()) return@synchronized 0
             val db = dbHelper.writableDatabase
             val baseline = candidate.cellX == BASELINE_CANDIDATE_X &&
                 candidate.cellY == BASELINE_CANDIDATE_Y
@@ -295,6 +309,7 @@ class ProgressionRepository(context: Context) {
 
     fun deferCandidate(candidate: PendingPlaceCandidate, nowMillis: Long = System.currentTimeMillis()) =
         synchronized(dbHelper.historyLock) {
+            if (!isCurrentHistory()) return@synchronized
             val attempts = (candidate.attempts + 1).coerceAtMost(10)
             val delay = (30L * 60_000L * (1L shl attempts.coerceAtMost(5))).coerceAtMost(24L * 60L * 60_000L)
             dbHelper.writableDatabase.update(
@@ -309,6 +324,7 @@ class ProgressionRepository(context: Context) {
         }
 
     fun recordBatteryPercent(percent: Int): Boolean = synchronized(dbHelper.historyLock) {
+        if (!isCurrentHistory()) return@synchronized false
         if (percent !in 0..100) return@synchronized false
         val db = dbHelper.writableDatabase
         val previous = counterOrNull(db, COUNTER_LOWEST_BATTERY) ?: 101L
@@ -485,6 +501,10 @@ class ProgressionRepository(context: Context) {
 
     private fun baselineKey(discovery: PlaceDiscovery): String =
         "baseline:${discovery.kind.name.lowercase()}:${discovery.key}"
+
+    private fun isCurrentHistory(expectedHistoryGeneration: Long? = null): Boolean =
+        historyGeneration == dbHelper.historyGeneration &&
+            (expectedHistoryGeneration == null || expectedHistoryGeneration == dbHelper.historyGeneration)
 
     private fun currentBalance(db: SQLiteDatabase): Long {
         val earned = db.rawQuery("SELECT COALESCE(SUM(points), 0) FROM progression_rewards", null)
