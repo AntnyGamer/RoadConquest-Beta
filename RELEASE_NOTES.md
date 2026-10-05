@@ -12,7 +12,7 @@
 - Make highlighted areas tappable for place type, population when available, and computed boundary area.
 - Cache overlay boundaries locally and throttle opt-in boundary lookups so overlays do not add continuous background work.
 - Add regression coverage for the fresh-slate place baseline behavior and overlay parsing.
-- Keep the Beta 4 classic car marker, zoom cap, sword points icon, progression shop, map behavior,
-  tracking, account, and leaderboard systems unchanged.
+- Keep the Beta 4 classic car marker, zoom cap, sword points icon, progression shop, tracking,
+  account, and leaderboard systems unchanged.
 
 Android version code is 31. Android 12 or newer is required.
