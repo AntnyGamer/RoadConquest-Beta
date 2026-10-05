@@ -2,6 +2,7 @@ package com.roadfog.app.util
 
 import android.content.Context
 import com.roadfog.app.map.MapMode
+import com.roadfog.app.map.PlaceOverlayMode
 
 object Prefs {
     private const val FILE = "roadfog_preferences"
@@ -27,6 +28,14 @@ object Prefs {
 
     fun setMapMode(context: Context, mode: MapMode) {
         prefs(context).edit().putString("map_mode", mode.name).apply()
+    }
+
+    fun placeOverlayMode(context: Context): PlaceOverlayMode =
+        PlaceOverlayMode.entries.firstOrNull { it.name == prefs(context).getString("place_overlay_mode", null) }
+            ?: PlaceOverlayMode.NONE
+
+    fun setPlaceOverlayMode(context: Context, mode: PlaceOverlayMode) {
+        prefs(context).edit().putString("place_overlay_mode", mode.name).apply()
     }
 
     fun isFogEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_FOG_ENABLED, true)

@@ -190,6 +190,15 @@ class ProgressionRepository(context: Context) {
             try {
                 var added = 0
                 for (discovery in discoveries) {
+                    val baselineKey = baselineKey(discovery)
+                    if (counterOrNull(db, baselineKey) != null) continue
+                    if (!hasKnownPlaceKind(db, discovery.kind)) {
+                        // A fresh install/reset starts inside one town, state/region and country.
+                        // Treat those first resolved places as the starting baseline rather than
+                        // awarding 2,100 points and three discoveries for simply opening the app.
+                        putCounter(db, baselineKey, 1L)
+                        continue
+                    }
                     val inserted = db.insertWithOnConflict(
                         "visited_places",
                         null,
@@ -343,6 +352,133 @@ class ProgressionRepository(context: Context) {
         )
     }
 
+    fun repairLegacyStarterPlaceRewards(): Boolean = synchronized(dbHelper.historyLock) {
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+        try {
+            if (counterOrNull(db, COUNTER_STARTER_REPAIR) != null) {
+                db.setTransactionSuccessful()
+                return@synchronized false
+            }
+
+            var repaired = false
+            val hasPurchases = db.rawQuery(
+                "SELECT 1 FROM progression_purchases LIMIT 1",
+                null
+            ).use { it.moveToFirst() }
+            val hasPlaceAchievementRewards = db.rawQuery(
+                """SELECT 1 FROM progression_rewards
+                   WHERE reward_key LIKE 'achievement:towns_%'
+                      OR reward_key LIKE 'achievement:states_%'
+                      OR reward_key LIKE 'achievement:countries_%'
+                   LIMIT 1""",
+                null
+            ).use { it.moveToFirst() }
+            if (!hasPurchases && !hasPlaceAchievementRewards) {
+                val earliest = db.rawQuery(
+                    "SELECT MIN(first_visited_at) FROM visited_places",
+                    null
+                ).use { cursor ->
+                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+                }
+                if (earliest != null) {
+                    val first = ArrayList<PlaceDiscovery>(3)
+                    db.query(
+                        "visited_places",
+                        arrayOf(
+                            "kind", "place_key", "display_name", "parent_name", "country_name",
+                            "first_visited_at", "latitude", "longitude"
+                        ),
+                        "first_visited_at = ?",
+                        arrayOf(earliest.toString()),
+                        null,
+                        null,
+                        "rowid ASC"
+                    ).use { cursor ->
+                        while (cursor.moveToNext()) {
+                            val kind = PlaceKind.entries.firstOrNull { it.name == cursor.getString(0) }
+                                ?: continue
+                            first += PlaceDiscovery(
+                                kind,
+                                cursor.getString(1),
+                                cursor.getString(2),
+                                cursor.getString(3),
+                                cursor.getString(4),
+                                cursor.getLong(5),
+                                cursor.getDouble(6),
+                                cursor.getDouble(7)
+                            )
+                        }
+                    }
+                    val sameFix = first.size == 3 &&
+                        first.map { it.kind }.toSet() == PlaceKind.entries.toSet() &&
+                        first.all {
+                            it.latitude == first[0].latitude && it.longitude == first[0].longitude
+                        }
+                    val exactRewards = sameFix && first.all { discovery ->
+                        db.rawQuery(
+                            "SELECT points FROM progression_rewards WHERE reward_key = ?",
+                            arrayOf("place:${discovery.kind.name.lowercase()}:${discovery.key}")
+                        ).use { cursor ->
+                            cursor.moveToFirst() && cursor.getLong(0) == discovery.kind.points
+                        }
+                    }
+                    if (exactRewards) {
+                        first.forEach { discovery ->
+                            db.delete(
+                                "visited_places",
+                                "kind = ? AND place_key = ?",
+                                arrayOf(discovery.kind.name, discovery.key)
+                            )
+                            db.delete(
+                                "progression_rewards",
+                                "reward_key = ?",
+                                arrayOf("place:${discovery.kind.name.lowercase()}:${discovery.key}")
+                            )
+                            putCounter(db, baselineKey(discovery), 1L)
+                        }
+                        repaired = true
+                    }
+                }
+            }
+            putCounter(db, COUNTER_STARTER_REPAIR, 1L)
+            db.setTransactionSuccessful()
+            repaired
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun visitedPlaces(kind: PlaceKind): List<PlaceDiscovery> {
+        val result = ArrayList<PlaceDiscovery>()
+        dbHelper.readableDatabase.query(
+            "visited_places",
+            arrayOf(
+                "kind", "place_key", "display_name", "parent_name", "country_name",
+                "first_visited_at", "latitude", "longitude"
+            ),
+            "kind = ?",
+            arrayOf(kind.name),
+            null,
+            null,
+            "first_visited_at ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result += PlaceDiscovery(
+                    kind = kind,
+                    key = cursor.getString(1),
+                    displayName = cursor.getString(2),
+                    parentName = cursor.getString(3),
+                    countryName = cursor.getString(4),
+                    visitedAt = cursor.getLong(5),
+                    latitude = cursor.getDouble(6),
+                    longitude = cursor.getDouble(7)
+                )
+            }
+        }
+        return result
+    }
+
     fun clearProgression() = synchronized(dbHelper.historyLock) {
         val db = dbHelper.writableDatabase
         db.beginTransaction()
@@ -358,6 +494,22 @@ class ProgressionRepository(context: Context) {
         } finally {
             db.endTransaction()
         }
+    }
+
+    private fun baselineKey(discovery: PlaceDiscovery): String =
+        "baseline:${discovery.kind.name.lowercase()}:${discovery.key}"
+
+    private fun hasKnownPlaceKind(db: SQLiteDatabase, kind: PlaceKind): Boolean {
+        val kindName = kind.name
+        val hasVisited = db.rawQuery(
+            "SELECT 1 FROM visited_places WHERE kind = ? LIMIT 1",
+            arrayOf(kindName)
+        ).use { it.moveToFirst() }
+        if (hasVisited) return true
+        return db.rawQuery(
+            "SELECT 1 FROM progression_counters WHERE counter_key LIKE ? LIMIT 1",
+            arrayOf("baseline:${kindName.lowercase()}:%")
+        ).use { it.moveToFirst() }
     }
 
     private fun currentBalance(db: SQLiteDatabase): Long {
@@ -406,5 +558,6 @@ class ProgressionRepository(context: Context) {
         private const val COUNTER_REWARDED_ROADS = "rewarded_roads"
         private const val COUNTER_ADS_WATCHED = "ads_watched"
         private const val COUNTER_LOWEST_BATTERY = "lowest_battery_percent"
+        private const val COUNTER_STARTER_REPAIR = "starter_place_baseline_repair_v1"
     }
 }

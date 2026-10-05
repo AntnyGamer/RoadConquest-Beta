@@ -33,6 +33,8 @@ import com.roadfog.app.data.RoadRecord
 import com.roadfog.app.account.AccountOnboarding
 import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.map.MapRenderer
+import com.roadfog.app.map.PlaceOverlayInfo
+import com.roadfog.app.map.PlaceOverlayMode
 import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.util.LocationProviders
 import com.roadfog.app.util.Prefs
@@ -181,6 +183,7 @@ class MainActivity : Activity() {
 
         val settingsButton = findViewById<ImageButton>(R.id.settingsButton)
         val centerButton = findViewById<ImageButton>(R.id.centerCarButton)
+        val overlayButton = findViewById<ImageButton>(R.id.overlayButton)
         val controlPanel = findViewById<View>(R.id.controlPanel)
         settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -193,20 +196,27 @@ class MainActivity : Activity() {
                 }
             }
         }
-        applySafeAreaInsets(settingsButton, centerButton, controlPanel, statsText, pointsText)
+        overlayButton.setOnClickListener { showOverlayPicker() }
+        applySafeAreaInsets(settingsButton, centerButton, overlayButton, controlPanel, statsText, pointsText)
         enableButton.setOnClickListener { handleEnableButton() }
 
         mapView.getMapAsync { map ->
             if (isDestroyed) return@getMapAsync
             configureMapChrome(map, controlPanel)
             map.addOnMapClickListener { point ->
-                if (map.cameraPosition.zoom >= 9.0) {
-                    val radiusMeters = (
-                        map.projection.getMetersPerPixelAtLatitude(point.latitude) * 16.0
-                    ).coerceIn(12.0, 100.0)
-                    loadRoadDetails(point.latitude, point.longitude, radiusMeters)
+                val overlayInfo = renderer?.overlayInfoAt(map.projection.toScreenLocation(point))
+                if (overlayInfo != null) {
+                    showOverlayInfo(overlayInfo)
+                    true
+                } else {
+                    if (map.cameraPosition.zoom >= 9.0) {
+                        val radiusMeters = (
+                            map.projection.getMetersPerPixelAtLatitude(point.latitude) * 16.0
+                        ).coerceIn(12.0, 100.0)
+                        loadRoadDetails(point.latitude, point.longitude, radiusMeters)
+                    }
+                    false
                 }
-                false
             }
             renderer = MapRenderer(this, map, repository, mapView, mapWasCentered).also { renderer ->
                 renderer.initialize { showFreshCachedLocation() }
@@ -252,6 +262,8 @@ class MainActivity : Activity() {
         mapView.onResume()
         renderer?.setFogEnabled(Prefs.isFogEnabled(this))
         renderer?.setMapMode(Prefs.mapMode(this))
+        renderer?.setPlaceOverlayMode(Prefs.placeOverlayMode(this))
+        if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
         renderer?.refreshCosmetics()
         ProgressionManager.recordBatteryFromSystem(this)
         // Road updates can finish while this activity is stopped and its receiver is
@@ -288,6 +300,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (!isDestroyed) {
                         refreshControls()
+                        renderer?.refreshPlaceOverlays()
                         Toast.makeText(
                             this,
                             if (added == 1) "New place discovered" else "$added new places discovered",
@@ -311,6 +324,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         ForegroundSession.app.onStop(isChangingConfigurations || recreatingForAppearance)
         refreshRoadsAfterStop = true
+        renderer?.cancelPlaceOverlayLoads()
         runCatching { unregisterReceiver(locationReceiver) }
         mapView.onStop()
         super.onStop()
@@ -536,6 +550,52 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showOverlayPicker() {
+        val choices = arrayOf("Countries — blue", "States and regions — purple", "Towns — green")
+        val modes = arrayOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)
+        val current = renderer?.placeOverlayMode() ?: Prefs.placeOverlayMode(this)
+        val checked = BooleanArray(modes.size) { modes[it] == current }
+        lateinit var dialog: AlertDialog
+        dialog = AlertDialog.Builder(this)
+            .setTitle("Map overlay — choose one")
+            .setMultiChoiceItems(choices, checked) { _, which, isChecked ->
+                val next = if (isChecked) modes[which] else PlaceOverlayMode.NONE
+                for (index in modes.indices) {
+                    val selected = isChecked && index == which
+                    checked[index] = selected
+                    if (dialog.listView.isItemChecked(index) != selected) {
+                        dialog.listView.setItemChecked(index, selected)
+                    }
+                }
+                renderer?.setPlaceOverlayMode(next) ?: Prefs.setPlaceOverlayMode(this, next)
+            }
+            .setPositiveButton("Done", null)
+            .create()
+        dialog.show()
+    }
+
+    private fun showOverlayInfo(info: PlaceOverlayInfo) {
+        val type = when (info.kind) {
+            com.roadfog.app.data.PlaceKind.COUNTRY -> "Country"
+            com.roadfog.app.data.PlaceKind.STATE -> "State or region"
+            com.roadfog.app.data.PlaceKind.TOWN -> "Town"
+        }
+        val population = info.population?.let {
+            String.format(Locale.getDefault(), "%,d", it)
+        } ?: "Not available"
+        val squareMiles = info.areaSquareKilometers * 0.386102
+        val area = if (squareMiles >= 1.0) {
+            String.format(Locale.getDefault(), "%,.1f sq mi (%,.1f km²)", squareMiles, info.areaSquareKilometers)
+        } else {
+            String.format(Locale.getDefault(), "%,.2f sq mi (%,.2f km²)", squareMiles, info.areaSquareKilometers)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(info.name)
+            .setMessage("$type\nPopulation: $population\nArea: $area")
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
     private fun loadRoadDetails(latitude: Double, longitude: Double, radiusMeters: Double) {
         val generation = ++roadDetailsGeneration
         summaryExecutor.execute {
@@ -613,7 +673,14 @@ class MainActivity : Activity() {
     private fun dpToPx(dp: Float): Int =
         (dp * resources.displayMetrics.density + 0.5f).toInt()
 
-    private fun applySafeAreaInsets(settingsButton: ImageButton, centerButton: ImageButton, controlPanel: View, stats: View, points: View) {
+    private fun applySafeAreaInsets(
+        settingsButton: ImageButton,
+        centerButton: ImageButton,
+        overlayButton: ImageButton,
+        controlPanel: View,
+        stats: View,
+        points: View
+    ) {
         val root = findViewById<View>(R.id.root)
         val settingsParams = settingsButton.layoutParams as FrameLayout.LayoutParams
         val settingsTop = settingsParams.topMargin
@@ -621,6 +688,9 @@ class MainActivity : Activity() {
         val centerParams = centerButton.layoutParams as FrameLayout.LayoutParams
         val centerTop = centerParams.topMargin
         val centerEnd = centerParams.marginEnd
+        val overlayParams = overlayButton.layoutParams as FrameLayout.LayoutParams
+        val overlayTop = overlayParams.topMargin
+        val overlayEnd = overlayParams.marginEnd
         val statsParams = stats.layoutParams as FrameLayout.LayoutParams
         val statsTop = statsParams.topMargin
         val statsStart = statsParams.marginStart
@@ -675,6 +745,13 @@ class MainActivity : Activity() {
                     params.topMargin = centerTop + safe.top
                     params.marginEnd = centerEnd + safe.right
                     centerButton.layoutParams = params
+                }
+            }
+            (overlayButton.layoutParams as FrameLayout.LayoutParams).also { params ->
+                if (params.topMargin != overlayTop + safe.top || params.marginEnd != overlayEnd + safe.right) {
+                    params.topMargin = overlayTop + safe.top
+                    params.marginEnd = overlayEnd + safe.right
+                    overlayButton.layoutParams = params
                 }
             }
             (controlPanel.layoutParams as FrameLayout.LayoutParams).also { params ->

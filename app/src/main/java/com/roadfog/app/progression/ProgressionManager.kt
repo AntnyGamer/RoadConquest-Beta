@@ -7,10 +7,12 @@ import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.data.DataSummary
 import com.roadfog.app.data.ProgressionRepository
 import com.roadfog.app.data.ProgressionSnapshot
+import com.roadfog.app.map.PlaceOverlayCache
 
 object ProgressionManager {
     fun sync(context: Context, summary: DataSummary): ProgressionSnapshot {
         val repository = ProgressionRepository(context)
+        repository.repairLegacyStarterPlaceRewards()
         var snapshot = repository.snapshot()
         if (summary.roadsUnlockedCount > snapshot.rewardedRoads) {
             repository.syncRoadRewards(summary.roadsUnlockedCount)
@@ -59,7 +61,9 @@ object ProgressionManager {
 
     fun resetLocalProgression(context: Context) {
         ProgressionRepository(context).clearProgression()
+        PlaceOverlayCache.clear(context)
         com.roadfog.app.util.Prefs.resetCosmetics(context)
+        com.roadfog.app.util.Prefs.setPlaceOverlayMode(context, com.roadfog.app.map.PlaceOverlayMode.NONE)
         LauncherIcon.apply(context, false)
     }
 

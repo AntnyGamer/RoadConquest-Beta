@@ -1,4 +1,4 @@
-# RoadConquest 1.0 Beta 4
+# RoadConquest 1.0 Beta 5
 
 RoadConquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ location settings and allow background battery use. Settings includes shortcuts 
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
 This release keeps the permanent signing identity and application ID `com.roadfog.app`.
-Its internal Android version code is 30 so it can update the latest signed development build
+Its internal Android version code is 31 so it can update the latest signed development build
 without uninstalling it. The current database schema, saved history, settings and accounts are
 preserved. Older unsupported database schemas require a fresh installation; export history before
 uninstalling, because exports currently have no in-app import.
@@ -32,6 +32,7 @@ uninstalling, because exports currently have no in-app import.
 - Open Garage & Shop to buy and equip car shapes, car colors, road colors, or the Golden
   RoadConquest UI and launcher icon. Purchases are one-time and equipped cosmetics can be changed later.
 - Choose Streets, Minimal, Night or Satellite maps, and a Light, Dark or phone-controlled appearance.
+- Use the map overlay button to highlight explored countries in blue, states/regions in purple, or towns in green. Only one overlay type is active at a time; tap a highlighted area for population and area when available.
 - Tap an unlocked road for its name, saved length, first-unlocked time, last-driven time and times driven.
 - Track road, mileage, place, low-battery and rewarded-ad achievements with progress bars and point rewards.
   Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
@@ -68,11 +69,12 @@ the signup disclosure. Users can hide their profile or stop sharing live evidenc
 Deleting an account revokes its sessions and removes its cloud competitive data; the default
 deletion option also clears history on this phone. Other devices and exported files are separate.
 
-The update recalculates existing road identities offline and requeues saved GPS history once
-with the corrected matcher. Existing map geometry and mileage remain available during repair, while
-time ranges that have been successfully rematched replace obsolete road evidence instead of leaving
-stale blue geometry behind. Moving GPS gaps longer than 30 seconds start a new matching interval;
-nearby stationary pauses can still reconnect without inventing a route across a location outage.
+The update requeues saved GPS history once with matcher revision 3 and rebuilds matched road
+geometry from those raw points. Mileage and the GPS history remain intact during the rebuild; old
+road geometry is cleared first so overlapping matcher windows cannot delete or preserve the wrong
+pieces. A local-data reset also clears any stale repair state before new driving begins. Moving GPS
+gaps longer than 30 seconds start a new matching interval; nearby stationary pauses can still
+reconnect without inventing a route across a location outage.
 
 The fog keeps a cached world layer ready during fast gestures and refreshes detailed reveals
 while the camera moves. A detailed reveal stays visible during a gesture while its georeferenced
@@ -117,7 +119,7 @@ Keep the signing backup outside the repository and release assets. Each release 
 Override the account endpoint with the Gradle property
 `ROADCONQUEST_ACCOUNT_API_URL=https://accounts.example.com`. Local matching defaults to the public
 OSRM demo; a compatible controlled matcher can be selected with
-`ROADCONQUEST_OSRM_API_URL=https://roads.example.com`.
+`ROADCONQUEST_OSRM_API_URL=https://roads.example.com`. Administrative overlay boundaries are requested only after the user enables an overlay; results are cached and requests are throttled. The APK reads the active provider from `OVERLAY_PROVIDER.txt` on this repository’s `main` branch so the service can be switched or disabled without an app update. Custom builds can point at another remote config with `ROADCONQUEST_PLACE_OVERLAY_CONFIG_URL=https://example.com/overlay-provider.txt`.
 See [server setup](server/README.md) and the [physical-device checklist](ANDROID_TEST_CHECKLIST.md).
 
 ## Privacy and map credits

@@ -8,6 +8,9 @@ val accountApiUrl = providers.gradleProperty("ROADCONQUEST_ACCOUNT_API_URL").get
 val osrmApiUrl = providers.gradleProperty("ROADCONQUEST_OSRM_API_URL").getOrElse(
     "https://router.project-osrm.org"
 )
+val placeOverlayConfigUrl = providers.gradleProperty("ROADCONQUEST_PLACE_OVERLAY_CONFIG_URL").getOrElse(
+    "https://raw.githubusercontent.com/AntnyGamer/RoadConquest-Beta/main/OVERLAY_PROVIDER.txt"
+)
 
 android {
     namespace = "com.roadfog.app"
@@ -17,14 +20,16 @@ android {
         applicationId = "com.roadfog.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 30
-        versionName = "1.0-beta.4"
+        versionCode = 31
+        versionName = "1.0-beta.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["timeout_msec"] = "120000"
         val escapedAccountApiUrl = accountApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
         val escapedOsrmApiUrl = osrmApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
+        val escapedPlaceOverlayConfigUrl = placeOverlayConfigUrl.replace("\\", "\\\\").replace("\"", "\\\"")
         buildConfigField("String", "ACCOUNT_API_URL", "\"$escapedAccountApiUrl\"")
         buildConfigField("String", "OSRM_API_URL", "\"$escapedOsrmApiUrl\"")
+        buildConfigField("String", "PLACE_OVERLAY_CONFIG_URL", "\"$escapedPlaceOverlayConfigUrl\"")
     }
 
     buildFeatures {

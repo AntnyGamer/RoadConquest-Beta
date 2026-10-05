@@ -12,6 +12,8 @@ import android.util.Log
 import android.view.View
 import com.roadfog.app.progression.Cosmetics
 import com.roadfog.app.data.TrackingRepository
+import com.roadfog.app.data.ProgressionRepository
+import com.roadfog.app.data.PlaceKind
 import com.roadfog.app.util.Prefs
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -20,11 +22,16 @@ import org.maplibre.android.geometry.LatLngQuad
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.layers.TransitionOptions
+import org.maplibre.android.style.layers.PropertyFactory.fillAntialias
+import org.maplibre.android.style.layers.PropertyFactory.fillColor
+import org.maplibre.android.style.layers.PropertyFactory.fillOpacity
+import org.maplibre.android.style.layers.PropertyFactory.fillOutlineColor
 import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
@@ -43,6 +50,8 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.Executors
 import kotlin.math.*
 
@@ -55,6 +64,7 @@ class MapRenderer(
 ) {
     private val executor = Executors.newSingleThreadExecutor()
     private val fogExecutor = Executors.newSingleThreadExecutor()
+    private val overlayExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var centeredOnce = initiallyCentered
     val hasCentered: Boolean get() = centeredOnce
@@ -75,6 +85,9 @@ class MapRenderer(
     private var appliedCarColor = ""
     private var appliedRoadColor = ""
     private var fogEnabled = Prefs.isFogEnabled(context)
+    private var overlayMode = Prefs.placeOverlayMode(context)
+    private val overlayClient = PlaceOverlayClient()
+    @Volatile private var overlayGeneration = 0
     @Volatile private var destroyed = false
     private val liveLocation = LiveLocation()
     private val fogTextureTransform = FogTextureTransform()
@@ -159,6 +172,80 @@ class MapRenderer(
         if (enabled) scheduleFogRender()
     }
 
+    fun placeOverlayMode(): PlaceOverlayMode = overlayMode
+
+    fun setPlaceOverlayMode(mode: PlaceOverlayMode) {
+        if (destroyed || mode == overlayMode) return
+        overlayMode = mode
+        Prefs.setPlaceOverlayMode(context, mode)
+        refreshPlaceOverlays()
+    }
+
+    fun refreshPlaceOverlays() {
+        if (destroyed) return
+        val generation = ++overlayGeneration
+        clearPlaceOverlaySources()
+        val kind = overlayMode.kind ?: return
+        val cacheGeneration = PlaceOverlayCache.generation()
+        overlayExecutor.execute {
+            val places = runCatching { ProgressionRepository(context).visitedPlaces(kind) }
+                .getOrElse {
+                    Log.e("RoadConquest", "Could not load discovered places for overlay", it)
+                    return@execute
+                }
+            if (destroyed || generation != overlayGeneration ||
+                cacheGeneration != PlaceOverlayCache.generation()) return@execute
+            val loaded = ArrayList<PlaceOverlayData>(places.size)
+            val missing = ArrayList<com.roadfog.app.data.PlaceDiscovery>()
+            for (place in places) {
+                val cached = PlaceOverlayCache.read(context, place)
+                if (!cached.cached) missing += place
+                cached.data?.let(loaded::add)
+            }
+            postPlaceOverlay(generation, kind, loaded)
+            var fetchedSincePost = 0
+            for ((index, place) in missing.withIndex()) {
+                if (destroyed || generation != overlayGeneration ||
+                    cacheGeneration != PlaceOverlayCache.generation()) return@execute
+                val result = runCatching { overlayClient.fetch(place) }
+                if (result.isFailure) {
+                    Log.w("RoadConquest", "Could not load place boundary", result.exceptionOrNull())
+                    continue
+                }
+                if (cacheGeneration != PlaceOverlayCache.generation()) return@execute
+                val data = result.getOrNull()
+                PlaceOverlayCache.write(context, place, data)
+                if (data != null) {
+                    loaded += data
+                    fetchedSincePost++
+                    if (fetchedSincePost >= OVERLAY_UPDATE_BATCH ||
+                        index == missing.lastIndex) {
+                        postPlaceOverlay(generation, kind, loaded)
+                        fetchedSincePost = 0
+                    }
+                }
+            }
+        }
+    }
+
+    fun cancelPlaceOverlayLoads() {
+        overlayGeneration++
+    }
+
+    fun overlayInfoAt(screenPoint: PointF): PlaceOverlayInfo? {
+        val mode = overlayMode
+        val kind = mode.kind ?: return null
+        val layerId = overlayLayerId(mode)
+        val feature = map.queryRenderedFeatures(screenPoint, layerId).firstOrNull() ?: return null
+        val name = feature.getStringProperty("overlay_name") ?: return null
+        val featureKind = runCatching {
+            PlaceKind.valueOf(feature.getStringProperty("overlay_kind") ?: kind.name)
+        }.getOrDefault(kind)
+        val population = feature.getNumberProperty("population")?.toLong()
+        val area = feature.getNumberProperty("area_sq_km")?.toDouble() ?: return null
+        return PlaceOverlayInfo(name, featureKind, population, area)
+    }
+
     fun refreshCosmetics() {
         if (destroyed) return
         val style = map.style ?: return
@@ -183,6 +270,7 @@ class MapRenderer(
         val styleJson = context.assets.open(mapMode.styleAsset).bufferedReader().use { it.readText() }
         map.setStyle(Style.Builder().fromJson(styleJson)) { style ->
             if (destroyed || generation != styleGeneration) return@setStyle
+            installPlaceOverlayLayers(style)
             installFogLayer(style)
             installRecordedRouteLayer(style)
             installRoadLayer(style)
@@ -391,6 +479,71 @@ class MapRenderer(
                 }
             }
         }
+    }
+
+    private fun installPlaceOverlayLayers(style: Style) {
+        for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
+            style.addSource(GeoJsonSource(overlaySourceId(mode), EMPTY_FEATURES))
+            val color = when (mode) {
+                PlaceOverlayMode.COUNTRY -> Color.parseColor("#2F80ED")
+                PlaceOverlayMode.STATE -> Color.parseColor("#8E44AD")
+                PlaceOverlayMode.TOWN -> Color.parseColor("#27AE60")
+                PlaceOverlayMode.NONE -> Color.TRANSPARENT
+            }
+            style.addLayer(
+                FillLayer(overlayLayerId(mode), overlaySourceId(mode)).withProperties(
+                    fillColor(color),
+                    fillOpacity(0.30f),
+                    fillOutlineColor(color),
+                    fillAntialias(true)
+                )
+            )
+        }
+        refreshPlaceOverlays()
+    }
+
+    private fun clearPlaceOverlaySources() {
+        for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
+            (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
+        }
+    }
+
+    private fun postPlaceOverlay(
+        generation: Int,
+        kind: com.roadfog.app.data.PlaceKind,
+        data: List<PlaceOverlayData>
+    ) {
+        val snapshot = data.toList()
+        mainHandler.post {
+            if (destroyed || generation != overlayGeneration || overlayMode.kind != kind) return@post
+            val mode = when (kind) {
+                com.roadfog.app.data.PlaceKind.COUNTRY -> PlaceOverlayMode.COUNTRY
+                com.roadfog.app.data.PlaceKind.STATE -> PlaceOverlayMode.STATE
+                com.roadfog.app.data.PlaceKind.TOWN -> PlaceOverlayMode.TOWN
+            }
+            (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)
+                ?.setGeoJson(overlayFeatureCollection(snapshot))
+        }
+    }
+
+    private fun overlayFeatureCollection(data: List<PlaceOverlayData>): String {
+        val features = JSONArray()
+        data.forEach { features.put(it.featureJson()) }
+        return JSONObject().put("type", "FeatureCollection").put("features", features).toString()
+    }
+
+    private fun overlaySourceId(mode: PlaceOverlayMode): String = when (mode) {
+        PlaceOverlayMode.COUNTRY -> COUNTRY_OVERLAY_SOURCE_ID
+        PlaceOverlayMode.STATE -> STATE_OVERLAY_SOURCE_ID
+        PlaceOverlayMode.TOWN -> TOWN_OVERLAY_SOURCE_ID
+        PlaceOverlayMode.NONE -> error("None has no overlay source")
+    }
+
+    private fun overlayLayerId(mode: PlaceOverlayMode): String = when (mode) {
+        PlaceOverlayMode.COUNTRY -> COUNTRY_OVERLAY_LAYER_ID
+        PlaceOverlayMode.STATE -> STATE_OVERLAY_LAYER_ID
+        PlaceOverlayMode.TOWN -> TOWN_OVERLAY_LAYER_ID
+        PlaceOverlayMode.NONE -> error("None has no overlay layer")
     }
 
     private fun installRoadLayer(style: Style) {
@@ -802,11 +955,19 @@ class MapRenderer(
         reusableFogBitmap = null
         carIconBitmap?.recycle()
         carIconBitmap = null
+        overlayGeneration++
         executor.shutdownNow()
         fogExecutor.shutdownNow()
+        overlayExecutor.shutdownNow()
     }
 
     companion object {
+        private const val COUNTRY_OVERLAY_SOURCE_ID = "roadconquest-country-overlays"
+        private const val STATE_OVERLAY_SOURCE_ID = "roadconquest-state-overlays"
+        private const val TOWN_OVERLAY_SOURCE_ID = "roadconquest-town-overlays"
+        private const val COUNTRY_OVERLAY_LAYER_ID = "roadconquest-country-overlays-fill"
+        private const val STATE_OVERLAY_LAYER_ID = "roadconquest-state-overlays-fill"
+        private const val TOWN_OVERLAY_LAYER_ID = "roadconquest-town-overlays-fill"
         private const val ROAD_SOURCE_ID = "roadconquest-traveled-roads"
         private const val PENDING_ROUTE_SOURCE_ID = "roadconquest-recorded-route"
         private const val PENDING_ROUTE_LAYER_ID = "roadconquest-recorded-route-line"
@@ -828,5 +989,6 @@ class MapRenderer(
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
         private const val FOG_RENDER_INTERVAL_MS = 80L
+        private const val OVERLAY_UPDATE_BATCH = 4
     }
 }

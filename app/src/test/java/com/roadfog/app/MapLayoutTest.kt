@@ -36,6 +36,7 @@ class MapLayoutTest {
         val stats = CountingTextView(activity).apply { text = "0.0 mi traveled\n0 roads unlocked"; maxWidth = 210 }
         val settings = ImageButton(activity)
         val center = ImageButton(activity)
+        val overlay = ImageButton(activity)
         val points = CountingTextView(activity)
         val panel = View(activity)
         fun params(top: Int, gravity: Int) = FrameLayout.LayoutParams(52, 52, gravity).apply {
@@ -44,12 +45,20 @@ class MapLayoutTest {
         root.addView(stats, params(16, Gravity.TOP or Gravity.START))
         root.addView(settings, params(16, Gravity.TOP or Gravity.END))
         root.addView(center, params(80, Gravity.TOP or Gravity.END))
+        root.addView(overlay, params(144, Gravity.TOP or Gravity.END))
         root.addView(points, params(88, Gravity.TOP or Gravity.START))
         root.addView(panel, params(16, Gravity.BOTTOM))
         activity.setContentView(root)
-        MainActivity::class.java.getDeclaredMethod("applySafeAreaInsets", ImageButton::class.java,
-            ImageButton::class.java, View::class.java, View::class.java, View::class.java).apply { isAccessible = true }
-            .invoke(activity, settings, center, panel, stats, points)
+        MainActivity::class.java.getDeclaredMethod(
+            "applySafeAreaInsets",
+            ImageButton::class.java,
+            ImageButton::class.java,
+            ImageButton::class.java,
+            View::class.java,
+            View::class.java,
+            View::class.java
+        ).apply { isAccessible = true }
+            .invoke(activity, settings, center, overlay, panel, stats, points)
         val insets = WindowInsetsCompat.Builder().setInsets(WindowInsetsCompat.Type.systemBars(), Insets.of(7, 30, 11, 18)).build()
         ViewCompat.dispatchApplyWindowInsets(root, insets)
         repeat(3) {
@@ -68,6 +77,8 @@ class MapLayoutTest {
         assertEquals(46, (settings.layoutParams as FrameLayout.LayoutParams).topMargin)
         assertEquals(110, (center.layoutParams as FrameLayout.LayoutParams).topMargin)
         assertEquals(27, (center.layoutParams as FrameLayout.LayoutParams).marginEnd)
+        assertEquals(174, (overlay.layoutParams as FrameLayout.LayoutParams).topMargin)
+        assertEquals(27, (overlay.layoutParams as FrameLayout.LayoutParams).marginEnd)
         assertEquals(118, (points.layoutParams as FrameLayout.LayoutParams).topMargin)
         assertEquals(23, (points.layoutParams as FrameLayout.LayoutParams).marginStart)
         assertEquals(34, (panel.layoutParams as FrameLayout.LayoutParams).bottomMargin)
