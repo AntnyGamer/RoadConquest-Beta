@@ -11,21 +11,25 @@ import com.roadfog.app.data.ProgressionSnapshot
 object ProgressionManager {
     fun sync(context: Context, summary: DataSummary): ProgressionSnapshot {
         val repository = ProgressionRepository(context)
-        repository.syncRoadRewards(summary.roadsUnlockedCount)
         var snapshot = repository.snapshot()
+        if (summary.roadsUnlockedCount > snapshot.rewardedRoads) {
+            repository.syncRoadRewards(summary.roadsUnlockedCount)
+            snapshot = repository.snapshot()
+        }
         val achievements = Achievements.progress(context, summary, metrics(snapshot))
+        var changed = false
         for (achievement in achievements) {
-            if (achievement.unlocked) {
-                repository.awardAchievement(achievement.id, achievement.rewardPoints)
+            if (achievement.unlocked && achievement.id !in snapshot.rewardedAchievements) {
+                changed = repository.awardAchievement(achievement.id, achievement.rewardPoints) || changed
             }
         }
-        snapshot = repository.snapshot()
-        return snapshot
+        return if (changed) repository.snapshot() else snapshot
     }
 
     fun recordBatteryFromSystem(context: Context): Boolean {
         val percent = context.getSystemService(BatteryManager::class.java)
             ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: return false
+        if (percent !in 0..5) return false
         return recordBatteryPercent(context, percent)
     }
 
