@@ -97,6 +97,40 @@ class ProgressionRepositoryTest {
         }
     }
 
+    @Test fun freshBaselineWaitsForOldestRecordedLocation() {
+        val progression = ProgressionRepository(context)
+        val db = TrackingRepository(context).readableDatabase()
+        fun candidate(x: Long, seen: Long, retryAt: Long) {
+            db.execSQL(
+                """INSERT INTO place_candidates(
+                    cell_x,cell_y,latitude,longitude,first_seen_at,attempts,next_attempt_ms
+                ) VALUES(?,?,?,?,?,0,?)""",
+                arrayOf(x, x, 39.7 + x / 10_000.0, -75.1, seen, retryAt)
+            )
+        }
+        candidate(10, 1_000L, 5_000L)
+        candidate(20, 2_000L, 0L)
+
+        // A later eligible location cannot become the zero-point baseline while the actual
+        // starting location is waiting for its retry.
+        assertTrue(progression.pendingPlaceCandidates(nowMillis = 3_000L).isEmpty())
+
+        val oldest = progression.pendingPlaceCandidates(nowMillis = 6_000L).single()
+        assertEquals(10L, oldest.cellX)
+        progression.resolveCandidate(
+            oldest,
+            listOf(
+                PlaceDiscovery(
+                    PlaceKind.COUNTRY, "us", "United States",
+                    visitedAt = oldest.visitedAt, latitude = oldest.latitude, longitude = oldest.longitude
+                )
+            )
+        )
+
+        // Once the baseline exists, later candidates are free to resolve normally.
+        assertEquals(20L, progression.pendingPlaceCandidates(nowMillis = 6_000L).single().cellX)
+    }
+
     @Test fun batteryAchievementsAwardAtFiveAndOnePercentOnlyOnce() {
         assertTrue(ProgressionManager.recordBatteryPercent(context, 5))
         assertEquals(300L, ProgressionRepository(context).snapshot().balance)
