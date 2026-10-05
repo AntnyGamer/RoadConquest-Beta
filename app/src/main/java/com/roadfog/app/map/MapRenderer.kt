@@ -13,6 +13,7 @@ import android.view.View
 import com.roadfog.app.progression.Cosmetics
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.data.ProgressionRepository
+import com.roadfog.app.data.PlaceKind
 import com.roadfog.app.util.Prefs
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
