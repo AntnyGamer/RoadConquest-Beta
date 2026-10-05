@@ -1,0 +1,7 @@
+<resources>
+    <color name="road_blue">#60A5FA</color>
+    <color name="panel_bg">#F21B2533</color>
+    <color name="screen_bg">#101722</color>
+    <color name="text_primary">#F1F5F9</color>
+    <color name="text_secondary">#CBD5E1</color>
+</resources>

@@ -1,0 +1,246 @@
+name: Android checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  account-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: roadconquest_test
+          POSTGRES_USER: roadconquest
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U roadconquest -d roadconquest_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://roadconquest:test-only-password@127.0.0.1:5432/roadconquest_test
+      PASSWORD_PEPPER: ci-test-pepper-not-for-production
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Install account server dependencies
+        working-directory: server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test account security and database constraints
+        working-directory: server
+        run: npm test
+      - name: Test OSM catalog importer
+        run: python3 -m unittest discover -s server/test -p '*_test.py'
+      - name: Save tested account function
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: account-function
+          path: server/dist/index.mjs
+          retention-days: 14
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Restore Gradle build state
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Install Android SDK packages
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"'
+      - name: Test, lint and build
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease --no-daemon --console=plain
+      - name: Save verification reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-verification
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 14
+      - name: Save verified APKs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-apks
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 14
+  map-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [31, 35, '37.0']
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Restore Gradle build state
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Install compile SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"'
+      - name: Update command-line tools for Android 37.0
+        if: matrix.api-level == '37.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          set +o pipefail
+          yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --install "cmdline-tools;latest" > /dev/null
+          install_status=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$install_status" -eq 0
+          if [ -d "$sdk/cmdline-tools/latest-2" ]; then
+            rm -rf "$sdk/cmdline-tools/latest"
+            mv "$sdk/cmdline-tools/latest-2" "$sdk/cmdline-tools/latest"
+          fi
+          "$sdk/cmdline-tools/latest/bin/avdmanager" list device > /dev/null
+      # Compile before booting the emulator. Cold dependency downloads and compilation
+      # must not consume the device-test timeout or compete with Android's startup work.
+      - name: Build device-test APKs
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+      - name: Reclaim unused SDK platforms for emulator storage
+        if: matrix.api-level == 31 || matrix.api-level == '37.0'
+        shell: bash
+        run: |
+          # API 31's bundled userdata image needs about 7 GiB even with a smaller disk-size.
+          # Retain the compile SDK and this emulator's platform; the other preinstalled
+          # platforms are unused by this app and can be removed from this temporary runner.
+          for sdk_platform in "$ANDROID_HOME"/platforms/*; do
+            case "${sdk_platform##*/}" in
+              android-37|android-37.0|android-${{ matrix.api-level }}) continue ;;
+            esac
+            sudo rm -rf -- "$sdk_platform"
+          done
+          df -h "$ANDROID_HOME"
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify the native map on Android ${{ matrix.api-level }}
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disk-size: ${{ matrix.api-level == '37.0' && '4G' || '' }}
+          emulator-boot-timeout: 300
+          script: |
+            adb shell settings put secure location_mode 3
+            timeout --kill-after=30s 300 ./gradlew :app:connectedDebugAndroidTest --console=plain --info
+      - name: Save device-test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: map-integration-verification-api-${{ matrix.api-level }}
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+            app/build/outputs/connected_android_test_additional_output/
+          retention-days: 14
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [account-server, verify, map-integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish this version only after every required check passes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNING_KEYSTORE: ${{ secrets.ROADCONQUEST_RELEASE_KEYSTORE_BASE64 }}
+          SIGNING_ALIAS: ${{ secrets.ROADCONQUEST_RELEASE_KEY_ALIAS }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.ROADCONQUEST_RELEASE_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.ROADCONQUEST_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-beta(\.[0-9]+)?)?$ ]]
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            existing_target=$(gh release view "$tag" --json targetCommitish --jq '.targetCommitish')
+            if [ "$existing_target" = "$GITHUB_SHA" ]; then exit 0; fi
+            echo "::error::Release $tag already points to $existing_target, not tested commit $GITHUB_SHA. Bump versionName/versionCode."
+            exit 1
+          fi
+          for secret in SIGNING_KEYSTORE SIGNING_ALIAS SIGNING_STORE_PASSWORD SIGNING_KEY_PASSWORD; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::The permanent release signing secrets must be configured before publishing."
+              exit 1
+            fi
+          done
+          umask 077
+          out="$RUNNER_TEMP/roadconquest-release"
+          mkdir -p "$out"
+          build_dir="$RUNNER_TEMP/roadconquest-build"
+          gh run download "$GITHUB_RUN_ID" -n android-apks -D "$build_dir"
+          mapfile -t unsigned_apks < <(find "$build_dir" -type f -name 'app-release-unsigned.apk' -print)
+          if [ "${#unsigned_apks[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one verified release APK artifact, found ${#unsigned_apks[@]}."
+            find "$build_dir" -maxdepth 4 -type f -print
+            exit 1
+          fi
+          cp "${unsigned_apks[0]}" "$out/RoadConquest-$version-unsigned.apk"
+          git archive --format=zip --prefix="RoadConquest/" HEAD > "$out/RoadConquest-AndroidStudio-$version.zip"
+          cp RELEASE_NOTES.md "$out/Release-notes.md"
+          # Publish only an installable APK with the permanent signing identity.
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/roadconquest-release.keystore"
+          trap 'rm -f "$RUNNER_TEMP/roadconquest-release.keystore"' EXIT
+          signer="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$out/RoadConquest-$version-unsigned.apk"
+          "$signer" sign --ks "$RUNNER_TEMP/roadconquest-release.keystore" --ks-key-alias "$SIGNING_ALIAS" \
+            --ks-pass env:SIGNING_STORE_PASSWORD --key-pass env:SIGNING_KEY_PASSWORD \
+            --out "$out/RoadConquest-$version.apk" "$out/RoadConquest-$version-unsigned.apk"
+          new_cert=$("$signer" verify --print-certs "$out/RoadConquest-$version.apk" | sed -n 's/Signer #1 certificate SHA-256 digest: //p')
+          test "$new_cert" = "cd3c4b180b4740a0bff77e37de109be6cab264cd1bd66e0ced05441252ad9ae1"
+          rm "$out/RoadConquest-$version-unsigned.apk"
+          (cd "$out" && sha256sum *.apk *.zip > "RoadConquest-$version-SHA256SUMS.txt")
+          release_flags=()
+          if [[ "$version" == *-beta* ]]; then release_flags+=(--prerelease); fi
+          gh release create "$tag" --target "$GITHUB_SHA" --title "RoadConquest ${version/-beta/ Beta}" "${release_flags[@]}" \
+            --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.zip "$out"/*SHA256SUMS.txt

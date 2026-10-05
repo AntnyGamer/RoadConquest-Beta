@@ -1,0 +1,8 @@
+<resources>
+    <color name="road_blue">#2563EB</color>
+    <color name="panel_bg">#F2FFFFFF</color>
+    <color name="screen_bg">#F4F7FB</color>
+    <color name="fog">#121820</color>
+    <color name="text_primary">#111827</color>
+    <color name="text_secondary">#4B5563</color>
+</resources>

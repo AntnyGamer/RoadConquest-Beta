@@ -1,0 +1,15 @@
+RoadConquest
+Copyright (C) 2026 AntnyGamer
+
+RoadConquest's original application source is licensed under the GNU Affero
+General Public License, version 3 only (SPDX: AGPL-3.0-only). See LICENSE.
+Corresponding source: https://github.com/AntnyGamer/RoadConquest
+
+Third-party software, map styles, map data and other assets retain their
+respective copyright notices and licenses. This notice does not relicense them.
+Bundled map-style and imagery notices are in:
+  app/src/main/assets/map-credits.txt
+  app/src/main/assets/satellite-credits.txt
+
+The Gradle wrapper and Gradle-generated launcher scripts retain their upstream
+Apache-2.0 notices. Dependency declarations remain in app/build.gradle.kts.

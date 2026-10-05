@@ -1,0 +1,403 @@
+package com.roadfog.app
+
+import android.Manifest
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.Context
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.os.Bundle
+import android.view.View
+import android.widget.Button
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.roadfog.app.account.AccountClient
+import com.roadfog.app.account.AccountStore
+import com.roadfog.app.data.TrackingRepository
+import com.roadfog.app.export.DataExporter
+import com.roadfog.app.util.Prefs
+import com.roadfog.app.util.Appearance
+import com.roadfog.app.util.UiTheme
+import com.roadfog.app.util.SystemSettingsNavigator
+import com.roadfog.app.util.StatsText
+import com.roadfog.app.util.ForegroundSession
+import com.roadfog.app.map.MapMode
+import java.time.Instant
+import java.util.concurrent.Executors
+import android.util.Log
+
+class SettingsActivity : Activity() {
+    private var enteredForeground = false
+    private var recreatingForAppearance = false
+    override fun onStart() {
+        super.onStart()
+        enteredForeground = ForegroundSession.app.onStart()
+    }
+
+    override fun onStop() {
+        ForegroundSession.app.onStop(isChangingConfigurations || recreatingForAppearance)
+        super.onStop()
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(Appearance.wrap(newBase))
+    }
+
+    private lateinit var repository: TrackingRepository
+    private lateinit var manualOnlySwitch: Switch
+    private lateinit var summaryText: TextView
+    private lateinit var accountSummaryText: TextView
+    private lateinit var leaderboardPrivacySwitch: Switch
+    private var renderingAccountPrivacy = false
+    private val summaryExecutor = Executors.newSingleThreadExecutor()
+    private val accountExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var summaryGeneration = 0
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.Theme_RoadConquest)
+        super.onCreate(savedInstanceState)
+        WindowCompat.enableEdgeToEdge(window)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !Appearance.isDark(this@SettingsActivity)
+            isAppearanceLightNavigationBars = !Appearance.isDark(this@SettingsActivity)
+        }
+        setContentView(R.layout.activity_settings)
+        applySafeAreaInsets()
+        setupAppearance()
+
+        repository = TrackingRepository(this)
+        manualOnlySwitch = findViewById(R.id.manualOnlySwitch)
+        summaryText = findViewById(R.id.dataSummaryText)
+        accountSummaryText = findViewById(R.id.accountSummaryText)
+        leaderboardPrivacySwitch = findViewById(R.id.leaderboardPrivacySwitch)
+
+        manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+        manualOnlySwitch.setOnCheckedChangeListener { _, checked ->
+            Prefs.setManualOnly(this, checked)
+            if (checked) {
+                if (TrackingService.isRunning) stopService(Intent(this, TrackingService::class.java))
+            } else {
+                startAutomaticTrackingIfPossible()
+            }
+            refreshSummary()
+        }
+
+        findViewById<Button>(R.id.locationSettingsButton).setOnClickListener {
+            SystemSettingsNavigator.open(this, SystemSettingsNavigator.Destination.LOCATION_PERMISSION)
+        }
+        findViewById<Button>(R.id.deviceLocationButton).setOnClickListener {
+            SystemSettingsNavigator.open(this, SystemSettingsNavigator.Destination.DEVICE_LOCATION)
+        }
+        findViewById<Button>(R.id.notificationSettingsButton).setOnClickListener {
+            SystemSettingsNavigator.open(this, SystemSettingsNavigator.Destination.NOTIFICATIONS)
+        }
+
+        findViewById<Button>(R.id.batterySettingsButton).setOnClickListener {
+            openBatteryOptimizationSettings()
+        }
+
+        findViewById<Button>(R.id.accountButton).setOnClickListener {
+            startActivity(Intent(this, AccountActivity::class.java))
+        }
+        findViewById<Button>(R.id.achievementsButton).setOnClickListener {
+            startActivity(Intent(this, AchievementsActivity::class.java))
+        }
+        leaderboardPrivacySwitch.setOnCheckedChangeListener { _, visible ->
+            if (!renderingAccountPrivacy) updateLeaderboardPrivacy(visible)
+        }
+
+        findViewById<Button>(R.id.githubButton).setOnClickListener {
+            val url = getString(R.string.github_repository_url)
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+            if (SystemSettingsNavigator.launchFirst(listOf(intent), ::startActivity) == null) {
+                Toast.makeText(this, getString(R.string.github_unavailable, url), Toast.LENGTH_LONG).show()
+            }
+        }
+
+        findViewById<Button>(R.id.terrainCreditsButton).setOnClickListener {
+            val credits = listOf("licenses/RoadConquest-AGPL-3.0.txt", "map-credits.txt", "satellite-credits.txt").joinToString("\n\n") { asset ->
+                assets.open(asset).bufferedReader().use { it.readText() }
+            }
+            AlertDialog.Builder(this).setTitle("Licenses and map credits").setMessage(credits)
+                .setPositiveButton("Close", null).show()
+        }
+
+        findViewById<Button>(R.id.exportButton).setOnClickListener {
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/zip"
+                putExtra(Intent.EXTRA_TITLE, "RoadConquest-data-${Instant.now().toString().take(10)}.zip")
+            }
+            try {
+                startActivityForResult(intent, REQUEST_EXPORT)
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this, "Android's file picker is unavailable on this device.", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        refreshSummary()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (enteredForeground && Prefs.isTrackingPaused(this)) {
+            Prefs.setTrackingPaused(this, false)
+            startAutomaticTrackingIfPossible()
+        }
+        enteredForeground = false
+        // Account settings can switch to manual tracking after deleting device history.
+        if (::manualOnlySwitch.isInitialized) manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+        if (::repository.isInitialized) refreshSummary()
+        if (::accountSummaryText.isInitialized) refreshAccountControls()
+    }
+
+    @Deprecated("Used for a simple Storage Access Framework export on minSdk 31")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_EXPORT || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        Thread {
+            val result = runCatching {
+                contentResolver.openOutputStream(uri, "w")?.use { output ->
+                    DataExporter.writeZip(this, repository, output)
+                } ?: error("Could not open export destination")
+            }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                result.fold(
+                    onSuccess = {
+                        Toast.makeText(this, "RoadConquest data exported", Toast.LENGTH_SHORT).show()
+                        refreshSummary()
+                    },
+                    onFailure = { error ->
+                        Toast.makeText(this, "Export failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    }
+                )
+            }
+        }.start()
+    }
+
+    private fun applySafeAreaInsets() {
+        val root = findViewById<View>(R.id.settingsRoot)
+        val left = root.paddingLeft
+        val top = root.paddingTop
+        val right = root.paddingRight
+        val bottom = root.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val safe = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(left + safe.left, top + safe.top, right + safe.right, bottom + safe.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        SystemSettingsNavigator.open(this, SystemSettingsNavigator.Destination.BATTERY)
+    }
+
+    private fun setupAppearance() {
+        findViewById<Switch>(R.id.fogSwitch).apply {
+            isChecked = Prefs.isFogEnabled(this@SettingsActivity)
+            setOnCheckedChangeListener { _, enabled -> Prefs.setFogEnabled(this@SettingsActivity, enabled) }
+        }
+        val mapButton = findViewById<Button>(R.id.mapStyleButton)
+        mapButton.text = getString(R.string.map_style_label, Prefs.mapMode(this).label)
+        mapButton.setOnClickListener {
+            val modes = MapMode.entries
+            AlertDialog.Builder(this).setTitle("Map style")
+                .setSingleChoiceItems(modes.map { it.label }.toTypedArray(), modes.indexOf(Prefs.mapMode(this))) { dialog, index ->
+                    Prefs.setMapMode(this, modes[index])
+                    mapButton.text = getString(R.string.map_style_label, modes[index].label)
+                    dialog.dismiss()
+                }.setNegativeButton("Cancel", null).show()
+        }
+        val themeButton = findViewById<Button>(R.id.uiThemeButton)
+        themeButton.text = getString(R.string.ui_theme_label, Prefs.uiTheme(this).label)
+        themeButton.setOnClickListener {
+            val themes = UiTheme.entries
+            AlertDialog.Builder(this).setTitle("Appearance")
+                .setSingleChoiceItems(themes.map { it.label }.toTypedArray(), themes.indexOf(Prefs.uiTheme(this))) { dialog, index ->
+                    val changed = Prefs.uiTheme(this) != themes[index]
+                    Prefs.setUiTheme(this, themes[index])
+                    dialog.dismiss()
+                    if (changed) {
+                        recreatingForAppearance = true
+                        recreate()
+                    }
+                }.setNegativeButton("Cancel", null).show()
+        }
+    }
+
+    private fun refreshAccountControls() {
+        val session = AccountStore.load(this)
+        val verifySwitch = findViewById<Switch>(R.id.verifyDrivesSwitch)
+        val verificationStatus = findViewById<TextView>(R.id.verificationStatusText)
+        val leaderboardsButton = findViewById<Button>(R.id.leaderboardsButton)
+        verifySwitch.setOnCheckedChangeListener(null)
+        verifySwitch.isChecked = Prefs.isDriveVerificationEnabled(this)
+        verifySwitch.isEnabled = session != null && AccountClient.isConfigured()
+        verifySwitch.setOnCheckedChangeListener { _, enabled ->
+            Prefs.setDriveVerificationEnabled(this, enabled)
+        }
+        leaderboardsButton.visibility = View.VISIBLE
+        leaderboardsButton.setOnClickListener { startActivity(Intent(this, LeaderboardActivity::class.java)) }
+        verificationStatus.text = if (AccountClient.isConfigured()) {
+            "Checking verified scoring…"
+        } else {
+            "Verified scoring is unavailable."
+        }
+        if (AccountClient.isConfigured()) {
+            accountExecutor.execute {
+                val status = runCatching { AccountClient.competition() }
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    verificationStatus.text = status.fold(
+                        onSuccess = {
+                            if (it.optBoolean("available")) "Verified scoring is available."
+                            else "Verified scoring is unavailable."
+                        },
+                        onFailure = { "Could not check verified scoring." }
+                    )
+                }
+            }
+        }
+        renderingAccountPrivacy = true
+        accountSummaryText.text = when {
+            session == null && !AccountClient.isConfigured() -> "Accounts are unavailable in this build."
+            session == null -> "Not signed in."
+            else -> "Signed in as " + session.username
+        }
+        leaderboardPrivacySwitch.isChecked = session?.leaderboardVisible == true
+        leaderboardPrivacySwitch.isEnabled = session != null && AccountClient.isConfigured()
+        renderingAccountPrivacy = false
+
+        if (session == null || !AccountClient.isConfigured()) return
+        accountExecutor.execute {
+            val result = runCatching { AccountClient.me(session.token) }
+            runOnUiThread {
+                if (isDestroyed || AccountStore.load(this)?.token != session.token) return@runOnUiThread
+                result.fold(
+                    onSuccess = { account ->
+                        val updated = session.copy(
+                            username = account.username,
+                            leaderboardVisible = account.leaderboardVisible
+                        )
+                        AccountStore.save(this, updated)
+                        renderingAccountPrivacy = true
+                        accountSummaryText.text = "Signed in as " + updated.username
+                        leaderboardPrivacySwitch.isChecked = updated.leaderboardVisible
+                        leaderboardPrivacySwitch.isEnabled = true
+                        renderingAccountPrivacy = false
+                    },
+                    onFailure = { error ->
+                        if (error is AccountClient.ApiException && error.status == 401) {
+                            AccountStore.clear(this)
+                            verifySwitch.isChecked = false
+                            verifySwitch.isEnabled = false
+                            renderingAccountPrivacy = true
+                            accountSummaryText.text = "Session expired. Open Account / sign in."
+                            leaderboardPrivacySwitch.isChecked = false
+                            leaderboardPrivacySwitch.isEnabled = false
+                            renderingAccountPrivacy = false
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    private fun updateLeaderboardPrivacy(visible: Boolean) {
+        val session = AccountStore.load(this) ?: return
+        leaderboardPrivacySwitch.isEnabled = false
+        accountExecutor.execute {
+            val result = runCatching { AccountClient.setLeaderboardVisible(session.token, visible) }
+            runOnUiThread {
+                if (isDestroyed || AccountStore.load(this)?.token != session.token) return@runOnUiThread
+                result.fold(
+                    onSuccess = { saved ->
+                        AccountStore.save(this, session.copy(leaderboardVisible = saved))
+                        renderingAccountPrivacy = true
+                        leaderboardPrivacySwitch.isChecked = saved
+                        renderingAccountPrivacy = false
+                        leaderboardPrivacySwitch.isEnabled = true
+                        Toast.makeText(this, "Leaderboard privacy saved.", Toast.LENGTH_SHORT).show()
+                    },
+                    onFailure = { error ->
+                        renderingAccountPrivacy = true
+                        leaderboardPrivacySwitch.isChecked = session.leaderboardVisible
+                        renderingAccountPrivacy = false
+                        leaderboardPrivacySwitch.isEnabled = true
+                        Toast.makeText(
+                            this,
+                            error.message ?: "Could not save leaderboard privacy.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun startAutomaticTrackingIfPossible() {
+        if (Prefs.isTrackingPaused(this) || TrackingService.isRunning ||
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
+            !getSystemService(LocationManager::class.java).isLocationEnabled
+        ) return
+
+        runCatching {
+            ContextCompat.startForegroundService(this, Intent(this, TrackingService::class.java))
+        }.onFailure {
+            Toast.makeText(this, "Open RoadConquest and verify location permissions to start tracking.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun refreshSummary() {
+        val generation = ++summaryGeneration
+        val mode = if (Prefs.isManualOnly(this)) "Manual" else "Always"
+        val precise = if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) "Granted" else "Missing"
+        val background = if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) "Granted" else "Missing"
+        summaryExecutor.execute {
+            if (generation != summaryGeneration) return@execute
+            val result = runCatching { repository.getSummary() }
+            runOnUiThread {
+                if (isDestroyed || generation != summaryGeneration) return@runOnUiThread
+                result.fold(
+                    onSuccess = { summary ->
+                        summaryText.text = buildString {
+                            append(StatsText.format(this@SettingsActivity, summary))
+                            append("\n")
+                            append("Tracking mode: $mode\n")
+                            append("Precise location: $precise\n")
+                            append("Allow all the time: $background")
+                        }
+                    },
+                    onFailure = { error ->
+                        Log.e("RoadConquest", "Could not load settings summary", error)
+                        summaryText.text = getString(R.string.saved_data_unavailable)
+                    }
+                )
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        summaryGeneration++
+        summaryExecutor.shutdownNow()
+        accountExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
+    companion object {
+        private const val REQUEST_EXPORT = 200
+    }
+}

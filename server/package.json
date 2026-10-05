@@ -1,0 +1,21 @@
+{
+  "name": "roadconquest-account-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test --test-concurrency=1 && node --check src/server.mjs",
+    "build:function": "node tools/build-function.mjs",
+    "pretest": "npm run build:function"
+  },
+  "dependencies": {
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

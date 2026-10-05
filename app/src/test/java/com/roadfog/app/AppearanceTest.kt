@@ -1,0 +1,113 @@
+package com.roadfog.app
+
+import android.content.res.Configuration
+import android.graphics.Color
+import android.view.ContextThemeWrapper
+import android.widget.Button
+import android.widget.Switch
+import com.roadfog.app.map.MapMode
+import com.roadfog.app.util.Appearance
+import com.roadfog.app.util.Prefs
+import com.roadfog.app.util.UiTheme
+import com.roadfog.app.util.StatsText
+import com.roadfog.app.data.DataSummary
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import org.robolectric.annotation.SQLiteMode
+import org.robolectric.shadows.ShadowAlertDialog
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [31, 37], manifest = Config.NONE)
+@GraphicsMode(GraphicsMode.Mode.LEGACY)
+@SQLiteMode(SQLiteMode.Mode.LEGACY)
+class AppearanceTest {
+    @Before fun setup() {
+        val app = RuntimeEnvironment.getApplication()
+        app.getSharedPreferences("roadfog_preferences", 0).edit().clear().commit()
+    }
+
+    @Test fun lightAndDarkResolveMatchingColorsAndSystemFollowsThePhone() {
+        val app = RuntimeEnvironment.getApplication()
+        for (theme in listOf(UiTheme.LIGHT, UiTheme.DARK)) {
+            Prefs.setUiTheme(app, theme)
+            val context = ContextThemeWrapper(Appearance.wrap(app), R.style.Theme_RoadConquest)
+            assertEquals(theme == UiTheme.DARK, Appearance.isDark(context))
+            val text = context.getColor(R.color.text_primary)
+            val background = context.getColor(R.color.screen_bg)
+            assertEquals(theme == UiTheme.DARK, Color.red(text) > Color.red(background))
+            assertEquals("1.0 mi traveled\n1 road unlocked", StatsText.format(context, DataSummary(0, 0, null, null, 1609.344, 1)))
+            assertEquals("0.0 mi traveled\n2 roads unlocked", StatsText.format(context, DataSummary(0, 0, null, null, 0.0, 2)))
+        }
+        Prefs.setUiTheme(app, UiTheme.SYSTEM)
+        assertSame(app, Appearance.wrap(app))
+    }
+
+    @Config(sdk = [31, 33, 37], manifest = Config.NONE)
+    @Test fun settingsSelectAndPersistTerrainThenLaunchAppNotificationSettings() {
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
+        try {
+            val activity = controller.get()
+            val mapButton = activity.findViewById<Button>(R.id.mapStyleButton)
+            mapButton.performClick()
+            val dialog = ShadowAlertDialog.getLatestAlertDialog()
+            dialog.listView.performItemClick(dialog.listView.getChildAt(1), 1, 1)
+            assertEquals(MapMode.TERRAIN, Prefs.mapMode(activity))
+            assertTrue(mapButton.text.toString().contains("Satellite"))
+            activity.findViewById<Button>(R.id.notificationSettingsButton).performClick()
+            val intent = shadowOf(activity).nextStartedActivity
+            assertEquals(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS, intent.action)
+            assertEquals(activity.packageName, intent.getStringExtra(android.provider.Settings.EXTRA_APP_PACKAGE))
+            assertTrue(activity.assets.open("satellite-credits.txt").bufferedReader().use { it.readText() }.contains("Esri"))
+            activity.findViewById<Button>(R.id.githubButton).performClick()
+            val github = shadowOf(activity).nextStartedActivity
+            assertEquals(android.content.Intent.ACTION_VIEW, github.action)
+            assertEquals("https://github.com/AntnyGamer/RoadConquest", github.data.toString())
+            assertTrue(github.hasCategory(android.content.Intent.CATEGORY_BROWSABLE))
+            assertTrue(activity.assets.open("licenses/RoadConquest-AGPL-3.0.txt").bufferedReader().use { it.readText() }
+                .contains("GNU AFFERO GENERAL PUBLIC LICENSE"))
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun unknownPreferencesFallBackAndAppKeepsItsUpgradeIdentity() {
+        val app = RuntimeEnvironment.getApplication()
+        app.getSharedPreferences("roadfog_preferences", 0).edit().putString("ui_theme", "bad").putString("map_mode", "bad").commit()
+        assertEquals(UiTheme.SYSTEM, Prefs.uiTheme(app))
+        assertEquals(MapMode.STREETS, Prefs.mapMode(app))
+        assertEquals("RoadConquest", app.getString(R.string.app_name))
+        assertEquals("com.roadfog.app", app.packageName)
+        assertFalse(app.getString(R.string.stats_initial).contains("GPS"))
+    }
+
+    @Test fun fogSwitchPersistsWithoutChangingTrackingModeOrStoppingTracking() {
+        val app = RuntimeEnvironment.getApplication()
+        assertTrue(Prefs.isFogEnabled(app))
+        Prefs.setManualOnly(app, false)
+        TrackingService::class.java.getDeclaredField("isRunning").apply { isAccessible = true }.setBoolean(null, true)
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
+        try {
+            val activity = controller.get()
+            val toggle = activity.findViewById<Switch>(R.id.fogSwitch)
+            assertTrue(toggle.isChecked)
+            toggle.performClick()
+            assertFalse(Prefs.isFogEnabled(activity))
+            assertFalse(Prefs.isManualOnly(activity))
+            assertTrue(TrackingService.isRunning)
+            assertNull(shadowOf(app).nextStoppedService)
+            toggle.performClick()
+            assertTrue(Prefs.isFogEnabled(activity))
+            assertTrue(TrackingService.isRunning)
+            assertNull(shadowOf(app).nextStoppedService)
+        } finally {
+            controller.pause().stop().destroy()
+            TrackingService::class.java.getDeclaredField("isRunning").apply { isAccessible = true }.setBoolean(null, false)
+        }
+    }
+}

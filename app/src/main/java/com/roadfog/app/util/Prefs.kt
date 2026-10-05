@@ -1,0 +1,78 @@
+package com.roadfog.app.util
+
+import android.content.Context
+import com.roadfog.app.map.MapMode
+
+object Prefs {
+    private const val FILE = "roadfog_preferences"
+    private const val KEY_MANUAL_ONLY = "manual_only"
+    private const val KEY_EVER_STARTED = "ever_started"
+    private const val KEY_BACKGROUND_PROMPT_SHOWN = "background_prompt_shown"
+    private const val KEY_FOG_ENABLED = "fog_enabled"
+    private const val KEY_TRACKING_PAUSED = "tracking_paused_until_open"
+    private const val KEY_ACCOUNT_PROMPT_SHOWN = "account_prompt_shown"
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    fun uiTheme(context: Context): UiTheme =
+        UiTheme.entries.firstOrNull { it.name == prefs(context).getString("ui_theme", null) } ?: UiTheme.SYSTEM
+
+    fun setUiTheme(context: Context, theme: UiTheme) {
+        prefs(context).edit().putString("ui_theme", theme.name).apply()
+    }
+
+    fun mapMode(context: Context): MapMode =
+        MapMode.entries.firstOrNull { it.name == prefs(context).getString("map_mode", null) } ?: MapMode.STREETS
+
+    fun setMapMode(context: Context, mode: MapMode) {
+        prefs(context).edit().putString("map_mode", mode.name).apply()
+    }
+
+    fun isFogEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_FOG_ENABLED, true)
+
+    fun setFogEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FOG_ENABLED, enabled).apply()
+    }
+
+    fun isManualOnly(context: Context): Boolean = prefs(context).getBoolean(KEY_MANUAL_ONLY, false)
+
+    fun setManualOnly(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_MANUAL_ONLY, value).apply()
+    }
+
+    fun isTrackingPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_TRACKING_PAUSED, false)
+
+    fun setTrackingPaused(context: Context, paused: Boolean) {
+        // Persist before stopping the service so a process restart cannot undo the stop.
+        prefs(context).edit().putBoolean(KEY_TRACKING_PAUSED, paused).commit()
+    }
+
+    fun markEverStarted(context: Context) {
+        prefs(context).edit().putBoolean(KEY_EVER_STARTED, true).apply()
+    }
+
+    fun hasEverStarted(context: Context): Boolean = prefs(context).getBoolean(KEY_EVER_STARTED, false)
+
+    fun isDriveVerificationEnabled(context: Context): Boolean = prefs(context).getBoolean("verify_drives", false)
+
+    fun setDriveVerificationEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean("verify_drives", enabled)
+            .putLong("verification_consent_version", driveVerificationConsentVersion(context) + 1L).apply()
+    }
+
+    fun driveVerificationConsentVersion(context: Context): Long = prefs(context).getLong("verification_consent_version", 0L)
+
+    fun isBackgroundPromptShown(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BACKGROUND_PROMPT_SHOWN, false)
+
+    fun setBackgroundPromptShown(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BACKGROUND_PROMPT_SHOWN, value).apply()
+    }
+
+    fun isAccountPromptShown(context: Context): Boolean = prefs(context).getBoolean(KEY_ACCOUNT_PROMPT_SHOWN, false)
+
+    fun setAccountPromptShown(context: Context, shown: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ACCOUNT_PROMPT_SHOWN, shown).apply()
+    }
+}
