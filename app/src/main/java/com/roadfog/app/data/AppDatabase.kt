@@ -9,7 +9,6 @@ class AppDatabase private constructor(context: Context) :
 
     internal val historyLock = Any()
     internal var historyGeneration = 0L
-    internal var roadGroupsReady = false
 
     init {
         setWriteAheadLoggingEnabled(true)
