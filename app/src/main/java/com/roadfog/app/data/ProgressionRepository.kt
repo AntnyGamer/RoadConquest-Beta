@@ -243,7 +243,7 @@ class ProgressionRepository(context: Context) {
     fun recordBatteryPercent(percent: Int): Boolean = synchronized(dbHelper.historyLock) {
         if (percent !in 0..100) return@synchronized false
         val db = dbHelper.writableDatabase
-        val previous = counter(db, COUNTER_LOWEST_BATTERY).let { if (it == 0L) 101L else it }
+        val previous = counterOrNull(db, COUNTER_LOWEST_BATTERY) ?: 101L
         if (percent >= previous) return@synchronized false
         putCounter(db, COUNTER_LOWEST_BATTERY, percent.toLong())
         true
@@ -323,9 +323,8 @@ class ProgressionRepository(context: Context) {
             states = counts[PlaceKind.STATE] ?: 0L,
             countries = counts[PlaceKind.COUNTRY] ?: 0L,
             adsWatched = counter(db, COUNTER_ADS_WATCHED),
-            lowestBatteryPercent = counter(db, COUNTER_LOWEST_BATTERY).let {
-                if (it == 0L) 101 else it.toInt().coerceIn(0, 101)
-            },
+            lowestBatteryPercent = (counterOrNull(db, COUNTER_LOWEST_BATTERY) ?: 101L)
+                .toInt().coerceIn(0, 101),
             purchasedItems = purchases
         )
     }
@@ -367,11 +366,13 @@ class ProgressionRepository(context: Context) {
             SQLiteDatabase.CONFLICT_IGNORE
         ) != -1L
 
-    private fun counter(db: SQLiteDatabase, key: String): Long =
+    private fun counter(db: SQLiteDatabase, key: String): Long = counterOrNull(db, key) ?: 0L
+
+    private fun counterOrNull(db: SQLiteDatabase, key: String): Long? =
         db.rawQuery(
             "SELECT value FROM progression_counters WHERE counter_key = ?",
             arrayOf(key)
-        ).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        ).use { if (it.moveToFirst()) it.getLong(0) else null }
 
     private fun putCounter(db: SQLiteDatabase, key: String, value: Long) {
         db.insertWithOnConflict(
