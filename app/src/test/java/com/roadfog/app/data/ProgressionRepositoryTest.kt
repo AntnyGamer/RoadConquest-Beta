@@ -17,9 +17,10 @@ class ProgressionRepositoryTest {
     private val context: android.content.Context get() = RuntimeEnvironment.getApplication()
 
     @Before fun reset() {
-        val field = AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
-        (field.get(null) as? AppDatabase)?.close()
-        field.set(null, null)
+        AppDatabase::class.java.getDeclaredField("instance").apply {
+            isAccessible = true
+            set(null, null)
+        }
         ProgressionRepository(context).clearProgression()
         Achievements.reset(context)
     }
