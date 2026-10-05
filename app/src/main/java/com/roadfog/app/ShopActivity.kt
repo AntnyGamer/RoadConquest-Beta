@@ -133,7 +133,6 @@ class ShopActivity : Activity() {
             setPadding(0, dp(4), 0, dp(8))
         })
         val action = Button(this).apply {
-            isAllCaps = false
             text = when {
                 equipped -> "Equipped"
                 owned -> "Equip"
