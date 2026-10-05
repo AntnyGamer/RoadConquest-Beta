@@ -125,7 +125,6 @@ object PlaceOverlayCache {
 class PlaceOverlayClient(
     private val configUrl: String = BuildConfig.PLACE_OVERLAY_CONFIG_URL
 ) {
-    private var lastRequestElapsed = Long.MIN_VALUE
     private var resolvedEndpoint: String? = null
 
     fun fetch(place: PlaceDiscovery): PlaceOverlayData? {
@@ -226,6 +225,7 @@ class PlaceOverlayClient(
 
     companion object {
         private val rateLock = Any()
+        private var lastRequestElapsed = Long.MIN_VALUE
         private const val DEFAULT_ENDPOINT = "https://nominatim.openstreetmap.org"
         private const val EARTH_RADIUS_M = 6_371_008.8
 
