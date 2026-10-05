@@ -12,6 +12,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.account.AccountClient
 import com.roadfog.app.account.AccountStore
 import com.roadfog.app.util.Appearance
+import com.roadfog.app.util.ForegroundSession
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -41,6 +42,11 @@ class LeaderboardActivity : Activity() {
         findViewById<Button>(R.id.milesRankingButton).setOnClickListener { metric = "miles"; refresh() }
         findViewById<Button>(R.id.roadsRankingButton).setOnClickListener { metric = "roads"; refresh() }
         findViewById<Button>(R.id.refreshRankingButton).setOnClickListener { refresh() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ForegroundSession.app.onStart()
     }
 
     override fun onResume() { super.onResume(); refresh() }
@@ -79,6 +85,11 @@ class LeaderboardActivity : Activity() {
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        ForegroundSession.app.onStop(isChangingConfigurations)
+        super.onStop()
     }
 
     override fun onDestroy() { generation++; executor.shutdownNow(); super.onDestroy() }
