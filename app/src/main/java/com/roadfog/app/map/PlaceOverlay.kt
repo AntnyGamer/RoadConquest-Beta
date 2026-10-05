@@ -257,7 +257,7 @@ class PlaceOverlayClient(
         }
 
         private fun query(place: PlaceDiscovery): String = when (place.kind) {
-            PlaceKind.COUNTRY -> place.displayName
+            PlaceKind.COUNTRY -> listOf(place.displayName)
             PlaceKind.STATE -> listOf(place.displayName, place.countryName)
             PlaceKind.TOWN -> listOf(place.displayName, place.parentName, place.countryName)
         }.filter { it.isNotBlank() }.joinToString(", ")
