@@ -228,6 +228,40 @@ class TrackingRepositoryTest {
         assertEquals(newer, repository.loadMatchingWindow(nowMillis = 11_000_000).points.map { it.id })
     }
 
+    @Test fun repairedGeometryKeepsOneStableIdAcrossMultipleOldVisits() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE).edit()
+            .remove("road_matching_revision").commit()
+        val ids = listOf(
+            point(1_000_000L, lon = -74.0),
+            point(1_003_000L, lon = -73.9999),
+            point(1_100_000L, lon = -74.0),
+            point(1_103_000L, lon = -73.9999)
+        )
+        repository.markMatched(ids)
+        val old = "[[-74,40],[-73.99995,40.0001],[-73.9999,40]]"
+        val corrected = "[[-74,40],[-73.9999,40]]"
+        repository.upsertRoads(listOf(
+            MatchedRoad("Main", old, 1_000_000L, 1_003_000L, 1.0),
+            MatchedRoad("Main", old, 1_100_000L, 1_103_000L, 1.0)
+        ))
+        assertTrue(repository.prepareRoadHistoryRepair())
+
+        repository.completeMatch(
+            listOf(MatchedRoad("Main", corrected, 1_000_000L, 1_003_000L, 1.0)),
+            ids.take(2)
+        )
+        repository.completeMatch(
+            listOf(MatchedRoad("Main", corrected, 1_100_000L, 1_103_000L, 1.0)),
+            ids.takeLast(2)
+        )
+
+        val roads = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)
+        assertEquals(1, roads.size)
+        assertEquals(corrected, roads.single().geometryJson)
+        assertEquals(2, roads.single().timesDriven)
+    }
+
     @Test fun reverseDriveUpdatesTheSameSegmentAndKeepsFirstUnlockTime() {
         repository.upsertRoads(listOf(MatchedRoad("Main St", "[[-74,40],[-74.001,40]]", 100, 200, 1.0)))
         repository.upsertRoads(listOf(MatchedRoad("Main St", "[[-74.001,40],[-74,40]]", 300, 400, 1.0)))
