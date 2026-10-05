@@ -4,256 +4,369 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="?attr/rcScreenBg">
+    android:background="?attr/rcScreenBg"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:paddingStart="16dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="28dp">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Settings"
             android:textColor="?attr/rcTextPrimary"
-            android:textSize="28sp"
+            android:textSize="32sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="Map and appearance"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/mapStyleButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Map: Streets" />
-
-        <Button
-            android:id="@+id/uiThemeButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Appearance: Use phone setting" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Choose a map style. Tracking reveals visited places, and driving saves your selected road color."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
-
-        <Switch
-            android:id="@+id/fogSwitch"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="Show fog"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Hiding fog does not affect tracking or saved progress."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
-
-        <Switch
-            android:id="@+id/manualOnlySwitch"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="Track only when I press Enable"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="When off, RoadConquest can track automatically in the background. After a force-stop, reopen the app once."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="Background tracking reliability"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="For reliable background tracking, allow precise location all the time and unrestricted background battery use."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/locationSettingsButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Location permission" />
-
-        <Button
-            android:id="@+id/deviceLocationButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Device location settings" />
-
-        <Button
-            android:id="@+id/notificationSettingsButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="RoadConquest notifications" />
-
-        <Button
-            android:id="@+id/batterySettingsButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Battery/background restrictions" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="Account and leaderboard privacy"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/accountSummaryText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Not signed in"
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/accountButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Account / sign in" />
-
-        <Switch
-            android:id="@+id/leaderboardPrivacySwitch"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:enabled="false"
-            android:text="Show me on global leaderboards"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="16sp" />
-
-        <Switch
-            android:id="@+id/verifyDrivesSwitch"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:enabled="false"
-            android:text="Send live driving evidence for verified scores"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/verificationStatusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Checking verified scoring…"
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/leaderboardsButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Global leaderboards" />
-
-        <Button
-            android:id="@+id/achievementsButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Achievements" />
-
-        <Button
-            android:id="@+id/shopButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Garage &amp; points shop" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="New accounts are visible on leaderboards and verified-drive sharing is on by default. Verified scoring sends precise live GPS batches and app integrity evidence; saved history is not uploaded. Both settings can be turned off."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/exportButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="Export my data (.zip)" />
-
-        <TextView
-            android:id="@+id/dataSummaryText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="4dp"
+            android:text="Map, tracking, account, progression and privacy."
             android:textColor="?attr/rcTextSecondary"
             android:textSize="14sp" />
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/mapSettingsCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="Privacy"
-            android:textColor="?attr/rcTextPrimary"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:layout_marginTop="18dp"
+            android:background="@drawable/settings_card_background"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="16dp">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Drive history and explored places stay on this device. Road matching sends GPS batches to OSRM. Accounts use the account service. Verified scoring, when enabled, sends precise live GPS and app-integrity evidence; saved history and complete routes are not uploaded."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Map &amp; appearance"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="19sp"
+                android:textStyle="bold" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:paddingBottom="20dp"
-            android:text="Map: OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors. Road matching: OSRM."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="12sp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Change how RoadConquest looks without affecting saved progress."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="13sp" />
 
-        <Button
-            android:id="@+id/terrainCreditsButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Licenses and map credits" />
+            <Button
+                android:id="@+id/mapStyleButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Map: Streets" />
 
-        <Button
-            android:id="@+id/githubButton"
+            <Button
+                android:id="@+id/uiThemeButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Appearance: Use phone setting" />
+
+            <Switch
+                android:id="@+id/fogSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/settings_action_background"
+                android:minHeight="52dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:text="Show fog"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:text="Hiding fog changes only the map view; tracking and saved progress continue normally."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/trackingSettingsCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/github_button" />
+            android:layout_marginTop="14dp"
+            android:background="@drawable/settings_card_background"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Tracking"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Control automatic tracking and Android permissions."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="13sp" />
+
+            <Switch
+                android:id="@+id/manualOnlySwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/settings_action_background"
+                android:minHeight="56dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:text="Track only when I press Enable"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:text="When automatic tracking is on, precise location and unrestricted background use give the most reliable results."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/locationSettingsButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Location permission" />
+
+            <Button
+                android:id="@+id/deviceLocationButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Device location settings" />
+
+            <Button
+                android:id="@+id/notificationSettingsButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="RoadConquest notifications" />
+
+            <Button
+                android:id="@+id/batterySettingsButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Battery / background restrictions" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/accountSettingsCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/settings_card_background"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Account &amp; competition"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/accountSummaryText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="Not signed in"
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/accountButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Account / sign in" />
+
+            <Switch
+                android:id="@+id/leaderboardPrivacySwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/settings_action_background"
+                android:enabled="false"
+                android:minHeight="56dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:text="Show me on global leaderboards"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="15sp" />
+
+            <Switch
+                android:id="@+id/verifyDrivesSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/settings_action_background"
+                android:enabled="false"
+                android:minHeight="64dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:text="Send live driving evidence for verified scores"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/verificationStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:text="Checking verified scoring…"
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/leaderboardsButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Global leaderboards" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/progressSettingsCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/settings_card_background"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Progress &amp; data"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Achievements, cosmetics, points and your local driving export."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/achievementsButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Achievements" />
+
+            <Button
+                android:id="@+id/shopButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Garage &amp; points shop" />
+
+            <Button
+                android:id="@+id/exportButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Export my data (.zip)" />
+
+            <TextView
+                android:id="@+id/dataSummaryText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/settings_action_background"
+                android:padding="14dp"
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/privacySettingsCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/settings_card_background"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Privacy &amp; about"
+                android:textColor="?attr/rcTextPrimary"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="Drive history and explored places stay on this device. Road matching sends GPS batches to OSRM. Verified scoring sends live GPS and app-integrity evidence only when enabled."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Map: OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors. Road matching: OSRM."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/terrainCreditsButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Licenses and map credits" />
+
+            <Button
+                android:id="@+id/githubButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/github_button" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>
