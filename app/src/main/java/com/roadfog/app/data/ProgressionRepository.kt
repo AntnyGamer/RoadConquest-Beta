@@ -191,12 +191,12 @@ class ProgressionRepository(context: Context) {
                 var added = 0
                 for (discovery in discoveries) {
                     val baselineKey = baselineKey(discovery)
-                    if (rewardExists(db, baselineKey)) continue
+                    if (counterOrNull(db, baselineKey) != null) continue
                     if (!hasKnownPlaceKind(db, discovery.kind)) {
                         // A fresh install/reset starts inside one town, state/region and country.
                         // Treat those first resolved places as the starting baseline rather than
                         // awarding 2,100 points and three discoveries for simply opening the app.
-                        awardOnce(db, baselineKey, 0L)
+                        putCounter(db, baselineKey, 1L)
                         continue
                     }
                     val inserted = db.insertWithOnConflict(
@@ -380,16 +380,10 @@ class ProgressionRepository(context: Context) {
         ).use { it.moveToFirst() }
         if (hasVisited) return true
         return db.rawQuery(
-            "SELECT 1 FROM progression_rewards WHERE reward_key LIKE ? LIMIT 1",
+            "SELECT 1 FROM progression_counters WHERE counter_key LIKE ? LIMIT 1",
             arrayOf("baseline:${kindName.lowercase()}:%")
         ).use { it.moveToFirst() }
     }
-
-    private fun rewardExists(db: SQLiteDatabase, key: String): Boolean =
-        db.rawQuery(
-            "SELECT 1 FROM progression_rewards WHERE reward_key = ? LIMIT 1",
-            arrayOf(key)
-        ).use { it.moveToFirst() }
 
     private fun currentBalance(db: SQLiteDatabase): Long {
         val earned = db.rawQuery("SELECT COALESCE(SUM(points), 0) FROM progression_rewards", null)
