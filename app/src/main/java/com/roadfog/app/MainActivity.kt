@@ -148,7 +148,7 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        setTheme(R.style.Theme_RoadConquest)
+        setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
         appliedTheme = Prefs.uiTheme(this)
         mapWasCentered = savedInstanceState?.getBoolean(STATE_MAP_CENTERED) ?: false
