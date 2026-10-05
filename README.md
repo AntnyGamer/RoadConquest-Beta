@@ -1,4 +1,4 @@
-# RoadConquest 1.0 Beta 1
+# RoadConquest 1.0 Beta 2
 
 RoadConquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ location settings and allow background battery use. Settings includes shortcuts 
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
 This release keeps the permanent signing identity and application ID `com.roadfog.app`.
-Its internal Android version code is 27 so it can update the latest signed development build
+Its internal Android version code is 28 so it can update the latest signed development build
 without uninstalling it. The current database schema, saved history, settings and accounts are
 preserved. Older unsupported database schemas require a fresh installation; export history before
 uninstalling, because exports currently have no in-app import.
@@ -63,11 +63,14 @@ Deleting an account revokes its sessions and removes its cloud competitive data;
 deletion option also clears history on this phone. Other devices and exported files are separate.
 
 The update recalculates existing road identities offline and requeues saved GPS history once
-with the corrected matcher. Existing map geometry and mileage remain available during repair.
-Pending driving intervals use their actual recorded fixes and stop at trip breaks or missing samples.
+with the corrected matcher. Existing map geometry and mileage remain available during repair, while
+time ranges that have been successfully rematched replace obsolete road evidence instead of leaving
+stale blue geometry behind. Moving GPS gaps longer than 30 seconds start a new matching interval;
+nearby stationary pauses can still reconnect without inventing a route across a location outage.
 
 The fog keeps a cached world layer ready during fast gestures and refreshes detailed reveals
-while the camera moves. The widest zoom accounts for the screen diagonal and camera latitude
+while the camera moves. A detailed reveal stays visible during a gesture while its georeferenced
+bitmap still covers the viewport, avoiding the old flash back to fully covered fog. The widest zoom accounts for the screen diagonal and camera latitude
 so rotation keeps the map inside its world edges.
 
 ## Build and verify
@@ -87,7 +90,8 @@ from Git.
 
 GitHub Actions runs account/database tests, Android unit tests, debug and release lint, and native
 map integration tests on Android 12, 15 and 17. The release job publishes the verified APK only after
-all required jobs pass. It verifies the permanent signing-certificate digest and includes the source
+all required jobs pass. It also attaches the exact account-function bundle produced by the tested
+backend job, so the deployable server artifact for that release is preserved alongside the APK. It verifies the permanent signing-certificate digest and includes the source
 ZIP and checksums. Configure these repository secrets from the private signing backup:
 
 - `ROADCONQUEST_RELEASE_KEYSTORE_BASE64`
