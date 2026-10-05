@@ -33,6 +33,7 @@ data class PendingPlaceCandidate(
     val cellY: Long,
     val latitude: Double,
     val longitude: Double,
+    val visitedAt: Long,
     val attempts: Int
 )
 
@@ -143,6 +144,7 @@ class ProgressionRepository(context: Context) {
                 put("cell_y", y)
                 put("latitude", latitude)
                 put("longitude", cellLongitude)
+                put("first_seen_at", location.time.takeIf { it > 0L } ?: System.currentTimeMillis())
                 put("attempts", 0)
                 put("next_attempt_ms", 0)
             },
@@ -158,7 +160,7 @@ class ProgressionRepository(context: Context) {
         val result = ArrayList<PendingPlaceCandidate>(limit)
         dbHelper.readableDatabase.query(
             "place_candidates",
-            arrayOf("cell_x", "cell_y", "latitude", "longitude", "attempts"),
+            arrayOf("cell_x", "cell_y", "latitude", "longitude", "first_seen_at", "attempts"),
             "next_attempt_ms <= ?",
             arrayOf(nowMillis.toString()),
             null,
@@ -172,7 +174,8 @@ class ProgressionRepository(context: Context) {
                     cursor.getLong(1),
                     cursor.getDouble(2),
                     cursor.getDouble(3),
-                    cursor.getInt(4)
+                    cursor.getLong(4),
+                    cursor.getInt(5)
                 )
             }
         }
