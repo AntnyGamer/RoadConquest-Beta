@@ -1,11 +1,17 @@
 <resources>
     <style name="Theme.RoadConquest" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:buttonStyle">@style/RoadConquest.Button</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">@color/screen_bg</item>
         <item name="android:colorAccent">@color/road_blue</item>
+        <item name="rcScreenBg">@color/screen_bg</item>
+        <item name="rcPanelBg">@color/panel_bg</item>
+        <item name="rcTextPrimary">@color/text_primary</item>
+        <item name="rcTextSecondary">@color/text_secondary</item>
+        <item name="rcAccent">@color/road_blue</item>
     </style>
 </resources>
