@@ -24,9 +24,10 @@ object DataExporter {
                     val roadCount = writeRoads(snapshot, zip)
                     val roadVisitCount = writeRoadVisits(snapshot, zip)
                     val exploredCount = writeExploredPlaces(snapshot, zip)
+                    val progression = writeProgression(snapshot, zip)
                     writeMetadata(context, summary.copy(trackPointCount = points.trackPointCount,
                         roadSegmentCount = roadCount, firstTrackAt = points.firstTrackAt, lastTrackAt = points.lastTrackAt),
-                        exploredCount, roadVisitCount, zip)
+                        exploredCount, roadVisitCount, progression, zip)
                 }
             }
         } finally {
@@ -39,13 +40,27 @@ object DataExporter {
         summary: DataSummary,
         exploredCount: Long,
         roadVisitCount: Long,
+        progression: ProgressionExportSummary,
         zip: ZipOutputStream
     ) {
         val metadata = JSONObject()
             .put("app", "RoadConquest")
-            .put("schema_version", 6)
+            .put("schema_version", 7)
             .put("explored_place_count", exploredCount)
             .put("road_visit_count", roadVisitCount)
+            .put("points_balance", progression.balance)
+            .put("lifetime_points_earned", progression.earned)
+            .put("points_spent", progression.spent)
+            .put("towns_visited", progression.towns)
+            .put("states_regions_visited", progression.states)
+            .put("countries_visited", progression.countries)
+            .put("ads_watched", progression.adsWatched)
+            .put("lowest_battery_percent", progression.lowestBatteryPercent ?: JSONObject.NULL)
+            .put("pending_place_candidates", progression.pendingCandidates)
+            .put("car_style", Prefs.carStyle(context))
+            .put("car_color", Prefs.carColor(context))
+            .put("road_color", Prefs.roadColor(context))
+            .put("gold_ui_enabled", Prefs.isGoldUiEnabled(context))
             .put("exported_at", Instant.now().toString())
             .put("manual_only", Prefs.isManualOnly(context))
             .put("map_mode", Prefs.mapMode(context).name)
@@ -154,6 +169,161 @@ object DataExporter {
         }
         zip.closeEntry()
         return count
+    }
+
+    private data class ProgressionExportSummary(
+        val earned: Long,
+        val spent: Long,
+        val balance: Long,
+        val towns: Long,
+        val states: Long,
+        val countries: Long,
+        val adsWatched: Long,
+        val lowestBatteryPercent: Int?,
+        val pendingCandidates: Long
+    )
+
+    private fun writeProgression(database: SQLiteDatabase, zip: ZipOutputStream): ProgressionExportSummary {
+        var towns = 0L
+        var states = 0L
+        var countries = 0L
+        zip.putNextEntry(ZipEntry("visited_places.csv"))
+        zip.writer(Charsets.UTF_8).let { writer ->
+            writer.write("kind,place_key,display_name,parent_name,country_name,first_visited_utc,latitude,longitude\n")
+            database.query(
+                "visited_places",
+                arrayOf("kind", "place_key", "display_name", "parent_name", "country_name",
+                    "first_visited_at", "latitude", "longitude"),
+                null, null, null, null, "first_visited_at ASC, kind, place_key"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    when (cursor.getString(0)) {
+                        "TOWN" -> towns++
+                        "STATE" -> states++
+                        "COUNTRY" -> countries++
+                    }
+                    val fields = listOf(
+                        cursor.getString(0), cursor.getString(1), cursor.getString(2),
+                        cursor.getString(3), cursor.getString(4),
+                        Instant.ofEpochMilli(cursor.getLong(5)).toString(),
+                        cursor.getDouble(6).toString(), cursor.getDouble(7).toString()
+                    )
+                    writer.write(fields.joinToString(",") { CsvUtil.escape(it) })
+                    writer.write("\n")
+                }
+            }
+            writer.flush()
+        }
+        zip.closeEntry()
+
+        var pending = 0L
+        zip.putNextEntry(ZipEntry("place_candidates.csv"))
+        zip.writer(Charsets.UTF_8).let { writer ->
+            writer.write("cell_x,cell_y,latitude,longitude,first_seen_utc,attempts,next_attempt_utc\n")
+            database.query(
+                "place_candidates",
+                arrayOf("cell_x", "cell_y", "latitude", "longitude", "first_seen_at", "attempts", "next_attempt_ms"),
+                null, null, null, null, "first_seen_at ASC"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    pending++
+                    val retry = cursor.getLong(6)
+                    val fields = listOf(
+                        cursor.getLong(0).toString(), cursor.getLong(1).toString(),
+                        cursor.getDouble(2).toString(), cursor.getDouble(3).toString(),
+                        Instant.ofEpochMilli(cursor.getLong(4)).toString(),
+                        cursor.getInt(5).toString(),
+                        if (retry > 0L) Instant.ofEpochMilli(retry).toString() else ""
+                    )
+                    writer.write(fields.joinToString(",") { CsvUtil.escape(it) })
+                    writer.write("\n")
+                }
+            }
+            writer.flush()
+        }
+        zip.closeEntry()
+
+        var earned = 0L
+        zip.putNextEntry(ZipEntry("progression_rewards.csv"))
+        zip.writer(Charsets.UTF_8).let { writer ->
+            writer.write("reward_key,points,awarded_at_utc\n")
+            database.query(
+                "progression_rewards",
+                arrayOf("reward_key", "points", "awarded_at"),
+                null, null, null, null, "awarded_at ASC, reward_key"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    earned += cursor.getLong(1)
+                    writer.write(
+                        listOf(
+                            cursor.getString(0),
+                            cursor.getLong(1).toString(),
+                            Instant.ofEpochMilli(cursor.getLong(2)).toString()
+                        ).joinToString(",") { CsvUtil.escape(it) } + "\n"
+                    )
+                }
+            }
+            writer.flush()
+        }
+        zip.closeEntry()
+
+        var spent = 0L
+        zip.putNextEntry(ZipEntry("progression_purchases.csv"))
+        zip.writer(Charsets.UTF_8).let { writer ->
+            writer.write("item_id,points_spent,purchased_at_utc\n")
+            database.query(
+                "progression_purchases",
+                arrayOf("item_id", "points_spent", "purchased_at"),
+                null, null, null, null, "purchased_at ASC, item_id"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    spent += cursor.getLong(1)
+                    writer.write(
+                        listOf(
+                            cursor.getString(0),
+                            cursor.getLong(1).toString(),
+                            Instant.ofEpochMilli(cursor.getLong(2)).toString()
+                        ).joinToString(",") { CsvUtil.escape(it) } + "\n"
+                    )
+                }
+            }
+            writer.flush()
+        }
+        zip.closeEntry()
+
+        var ads = 0L
+        var lowestBattery: Int? = null
+        zip.putNextEntry(ZipEntry("progression_counters.csv"))
+        zip.writer(Charsets.UTF_8).let { writer ->
+            writer.write("counter_key,value\n")
+            database.query(
+                "progression_counters",
+                arrayOf("counter_key", "value"),
+                null, null, null, null, "counter_key"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val key = cursor.getString(0)
+                    val value = cursor.getLong(1)
+                    if (key == "ads_watched") ads = value
+                    if (key == "lowest_battery_percent") lowestBattery = value.toInt()
+                    writer.write(CsvUtil.escape(key) + "," + value + "\n")
+                }
+            }
+            writer.flush()
+        }
+        zip.closeEntry()
+
+        return ProgressionExportSummary(
+            earned = earned,
+            spent = spent,
+            balance = (earned - spent).coerceAtLeast(0L),
+            towns = towns,
+            states = states,
+            countries = countries,
+            adsWatched = ads,
+            lowestBatteryPercent = lowestBattery,
+            pendingCandidates = pending
+        )
     }
 
     private fun writeRoads(database: SQLiteDatabase, zip: ZipOutputStream): Long {
