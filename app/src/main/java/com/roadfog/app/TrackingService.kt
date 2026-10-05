@@ -331,7 +331,8 @@ class TrackingService : Service(), LocationListener {
         ageMs: Long,
         distance: Float
     ): Boolean {
-        if (!location.hasAccuracy() || !location.accuracy.isFinite() || location.accuracy !in 0f..MAX_ACCURACY_M ||
+        if (location.isMock || previous?.isMock == true ||
+            !location.hasAccuracy() || !location.accuracy.isFinite() || location.accuracy !in 0f..MAX_ACCURACY_M ||
             previous == null || !previous.hasAccuracy() || !previous.accuracy.isFinite() || previous.accuracy !in 0f..MAX_ACCURACY_M ||
             ageMs <= 0L || ageMs > MAX_MOTION_SAMPLE_AGE_MS || !distance.isFinite()
         ) return false
