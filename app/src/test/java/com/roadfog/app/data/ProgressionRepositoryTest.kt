@@ -58,6 +58,42 @@ class ProgressionRepositoryTest {
         assertEquals(80L, progression.snapshot().pointsSpent)
     }
 
+    @Test fun firstResolvedPlacesAfterResetBecomeUnrewardedBaseline() {
+        val progression = ProgressionRepository(context)
+        val candidate = PendingPlaceCandidate(10, 20, 39.7, -75.1, 1_000L, 0)
+        val baseline = listOf(
+            PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States", visitedAt = 1_000L, latitude = 39.7, longitude = -75.1),
+            PlaceDiscovery(PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States", 1_000L, 39.7, -75.1),
+            PlaceDiscovery(PlaceKind.TOWN, "us|new jersey|glassboro", "Glassboro", "New Jersey", "United States", 1_000L, 39.7, -75.1)
+        )
+
+        assertEquals(0, progression.resolveCandidate(candidate, baseline))
+        progression.snapshot().let {
+            assertEquals(0L, it.balance)
+            assertEquals(0L, it.towns)
+            assertEquals(0L, it.states)
+            assertEquals(0L, it.countries)
+        }
+
+        val nextTown = baseline.take(2) + PlaceDiscovery(
+            PlaceKind.TOWN, "us|new jersey|pitman", "Pitman", "New Jersey", "United States",
+            2_000L, 39.73, -75.13
+        )
+        assertEquals(
+            1,
+            progression.resolveCandidate(
+                candidate.copy(cellX = 11, visitedAt = 2_000L, latitude = 39.73, longitude = -75.13),
+                nextTown
+            )
+        )
+        progression.snapshot().let {
+            assertEquals(100L, it.balance)
+            assertEquals(1L, it.towns)
+            assertEquals(0L, it.states)
+            assertEquals(0L, it.countries)
+        }
+    }
+
     @Test fun batteryAchievementsAwardAtFiveAndOnePercentOnlyOnce() {
         assertTrue(ProgressionManager.recordBatteryPercent(context, 5))
         assertEquals(300L, ProgressionRepository(context).snapshot().balance)
