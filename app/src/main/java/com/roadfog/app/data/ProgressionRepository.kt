@@ -352,6 +352,36 @@ class ProgressionRepository(context: Context) {
         )
     }
 
+    fun visitedPlaces(kind: PlaceKind): List<PlaceDiscovery> {
+        val result = ArrayList<PlaceDiscovery>()
+        dbHelper.readableDatabase.query(
+            "visited_places",
+            arrayOf(
+                "kind", "place_key", "display_name", "parent_name", "country_name",
+                "first_visited_at", "latitude", "longitude"
+            ),
+            "kind = ?",
+            arrayOf(kind.name),
+            null,
+            null,
+            "first_visited_at ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result += PlaceDiscovery(
+                    kind = kind,
+                    key = cursor.getString(1),
+                    displayName = cursor.getString(2),
+                    parentName = cursor.getString(3),
+                    countryName = cursor.getString(4),
+                    visitedAt = cursor.getLong(5),
+                    latitude = cursor.getDouble(6),
+                    longitude = cursor.getDouble(7)
+                )
+            }
+        }
+        return result
+    }
+
     fun clearProgression() = synchronized(dbHelper.historyLock) {
         val db = dbHelper.writableDatabase
         db.beginTransaction()
