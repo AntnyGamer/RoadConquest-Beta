@@ -366,7 +366,15 @@ class ProgressionRepository(context: Context) {
                 "SELECT 1 FROM progression_purchases LIMIT 1",
                 null
             ).use { it.moveToFirst() }
-            if (!hasPurchases) {
+            val hasPlaceAchievementRewards = db.rawQuery(
+                """SELECT 1 FROM progression_rewards
+                   WHERE reward_key LIKE 'achievement:towns_%'
+                      OR reward_key LIKE 'achievement:states_%'
+                      OR reward_key LIKE 'achievement:countries_%'
+                   LIMIT 1""",
+                null
+            ).use { it.moveToFirst() }
+            if (!hasPurchases && !hasPlaceAchievementRewards) {
                 val earliest = db.rawQuery(
                     "SELECT MIN(first_visited_at) FROM visited_places",
                     null
