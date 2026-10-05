@@ -203,9 +203,12 @@ class MapRenderer(
             postPlaceOverlay(generation, kind, loaded)
             for (place in missing) {
                 if (destroyed || generation != overlayGeneration) return@execute
-                val data = runCatching { overlayClient.fetch(place) }
-                    .onFailure { Log.w("RoadConquest", "Could not load place boundary", it) }
-                    .getOrNull()
+                val result = runCatching { overlayClient.fetch(place) }
+                result.exceptionOrNull()?.let {
+                    Log.w("RoadConquest", "Could not load place boundary", it)
+                    return@for
+                }
+                val data = result.getOrNull()
                 PlaceOverlayCache.write(context, place, data)
                 if (data != null) {
                     loaded += data
