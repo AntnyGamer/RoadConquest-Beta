@@ -296,16 +296,22 @@ class MainActivity : Activity() {
         discoveryExecutor.execute {
             val added = runCatching { ProgressionManager.resolvePendingPlaces(this, 6) }.getOrDefault(0)
             placeResolutionInFlight.set(false)
-            if (added > 0 && !isDestroyed) {
+            if (!isDestroyed) {
                 runOnUiThread {
                     if (!isDestroyed) {
-                        refreshControls()
-                        renderer?.refreshPlaceOverlays()
-                        Toast.makeText(
-                            this,
-                            if (added == 1) "New place discovered" else "$added new places discovered",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        // Baseline places are zero-point progress, but resolving them can still
+                        // make a selected place overlay renderable.
+                        if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) {
+                            renderer?.refreshPlaceOverlays()
+                        }
+                        if (added > 0) {
+                            refreshControls()
+                            Toast.makeText(
+                                this,
+                                if (added == 1) "New place discovered" else "$added new places discovered",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
             }
