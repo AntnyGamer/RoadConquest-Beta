@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="@color/screen_bg">
+    android:background="?attr/rcScreenBg">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -16,7 +16,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Achievements"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/rcTextPrimary"
             android:textSize="28sp"
             android:textStyle="bold" />
 
@@ -25,7 +25,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Milestones use your local driving history."
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/rcTextSecondary"
             android:textSize="13sp" />
 
         <TextView
@@ -35,7 +35,7 @@
             android:layout_marginTop="24dp"
             android:paddingBottom="20dp"
             android:text="Loading achievements…"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/rcTextPrimary"
             android:textSize="16sp" />
 
         <LinearLayout
