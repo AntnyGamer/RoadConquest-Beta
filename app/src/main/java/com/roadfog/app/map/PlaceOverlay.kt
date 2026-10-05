@@ -9,6 +9,7 @@ import com.roadfog.app.data.PlaceKind
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -54,6 +55,7 @@ data class PlaceOverlayCacheResult(val cached: Boolean, val data: PlaceOverlayDa
 
 object PlaceOverlayCache {
     private const val DIRECTORY = "place-overlays"
+    private const val NEGATIVE_CACHE_MS = 24L * 60L * 60L * 1000L
 
     fun read(context: Context, place: PlaceDiscovery): PlaceOverlayCacheResult {
         val file = file(context, place)
@@ -61,7 +63,13 @@ object PlaceOverlayCache {
         return runCatching {
             val json = JSONObject(file.readText())
             if (!json.optBoolean("found", false)) {
-                PlaceOverlayCacheResult(true, null)
+                val fetchedAt = json.optLong("fetched_at", 0L)
+                if (fetchedAt <= 0L || System.currentTimeMillis() - fetchedAt > NEGATIVE_CACHE_MS) {
+                    file.delete()
+                    PlaceOverlayCacheResult(false, null)
+                } else {
+                    PlaceOverlayCacheResult(true, null)
+                }
             } else {
                 PlaceOverlayCacheResult(
                     true,
@@ -84,7 +92,9 @@ object PlaceOverlayCache {
     fun write(context: Context, place: PlaceDiscovery, data: PlaceOverlayData?) {
         val directory = File(context.applicationContext.filesDir, DIRECTORY)
         if (!directory.exists() && !directory.mkdirs()) return
-        val json = JSONObject().put("found", data != null)
+        val json = JSONObject()
+            .put("found", data != null)
+            .put("fetched_at", System.currentTimeMillis())
         if (data != null) {
             json.put("name", data.name)
                 .put("kind", data.kind.name)
@@ -114,7 +124,7 @@ class PlaceOverlayClient(
 
     fun fetch(place: PlaceDiscovery): PlaceOverlayData? {
         val base = endpoint.trim().trimEnd('/')
-        if (!base.startsWith("https://")) return null
+        if (!base.startsWith("https://")) throw IOException("Place overlay service must use HTTPS")
         throttle()
         val threshold = when (place.kind) {
             PlaceKind.COUNTRY -> "0.02"
@@ -143,8 +153,9 @@ class PlaceOverlayClient(
             setRequestProperty("Accept", "application/json")
         }
         return try {
-            if (connection.responseCode !in 200..299) null
-            else parseResponse(place, readLimited(connection))
+            val status = connection.responseCode
+            if (status !in 200..299) throw IOException("Place overlay service returned HTTP $status")
+            parseResponse(place, readLimited(connection))
         } finally {
             connection.disconnect()
         }
