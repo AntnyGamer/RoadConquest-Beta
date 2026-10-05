@@ -85,8 +85,7 @@ class TrackingService : Service(), LocationListener {
         locationManager = getSystemService(LocationManager::class.java)
         createNotificationChannel()
         if (Prefs.isTrackingPaused(this) ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
-            !locationManager.isLocationEnabled
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) {
             stopSelf()
             return
