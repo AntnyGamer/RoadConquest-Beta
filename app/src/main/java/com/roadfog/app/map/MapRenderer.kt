@@ -71,6 +71,9 @@ class MapRenderer(
     private var fogAgain = false
     private var reusableFogBitmap: Bitmap? = null
     private var carIconBitmap: Bitmap? = null
+    private var appliedCarStyle = ""
+    private var appliedCarColor = ""
+    private var appliedRoadColor = ""
     private var fogEnabled = Prefs.isFogEnabled(context)
     @Volatile private var destroyed = false
     private val liveLocation = LiveLocation()
@@ -159,10 +162,20 @@ class MapRenderer(
     fun refreshCosmetics() {
         if (destroyed) return
         val style = map.style ?: return
-        val roadColor = Cosmetics.roadColor(context).argb
-        (style.getLayer(ROAD_LAYER_ID) as? LineLayer)?.setProperties(lineColor(roadColor))
-        (style.getLayer(PENDING_ROUTE_LAYER_ID) as? LineLayer)?.setProperties(lineColor(roadColor))
-        updateCarImage(style)
+        val road = Prefs.roadColor(context)
+        if (road != appliedRoadColor) {
+            val color = Cosmetics.roadColor(context).argb
+            (style.getLayer(ROAD_LAYER_ID) as? LineLayer)?.setProperties(lineColor(color))
+            (style.getLayer(PENDING_ROUTE_LAYER_ID) as? LineLayer)?.setProperties(lineColor(color))
+            appliedRoadColor = road
+        }
+        val carStyle = Prefs.carStyle(context)
+        val carColor = Prefs.carColor(context)
+        if (carStyle != appliedCarStyle || carColor != appliedCarColor) {
+            updateCarImage(style)
+            appliedCarStyle = carStyle
+            appliedCarColor = carColor
+        }
     }
 
     private fun loadStyle(onReady: () -> Unit) {
@@ -382,6 +395,7 @@ class MapRenderer(
 
     private fun installRoadLayer(style: Style) {
         style.addSource(GeoJsonSource(ROAD_SOURCE_ID, displayedRoadFeatures))
+        appliedRoadColor = Prefs.roadColor(context)
         val layer = LineLayer(ROAD_LAYER_ID, ROAD_SOURCE_ID).withProperties(
             lineColor(Cosmetics.roadColor(context).argb),
             lineOpacity(242f / 255f),
@@ -458,6 +472,8 @@ class MapRenderer(
 
     private fun installCarLayer(style: Style) {
         updateCarImage(style)
+        appliedCarStyle = Prefs.carStyle(context)
+        appliedCarColor = Prefs.carColor(context)
         style.addSource(GeoJsonSource(CAR_SOURCE_ID, emptyRoadFeatures()))
         style.addLayer(
             SymbolLayer(CAR_LAYER_ID, CAR_SOURCE_ID).withProperties(
