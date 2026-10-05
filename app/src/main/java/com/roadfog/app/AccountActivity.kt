@@ -24,6 +24,7 @@ import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.util.Appearance
+import com.roadfog.app.util.ForegroundSession
 import com.roadfog.app.util.Prefs
 import java.util.concurrent.Executors
 
@@ -445,9 +446,15 @@ class AccountActivity : Activity() {
         signupButton.isEnabled = enabled
     }
 
+    override fun onStart() {
+        super.onStart()
+        ForegroundSession.app.onStart()
+    }
+
     override fun onStop() {
         passwordInput.text.clear()
         confirmPasswordInput.text.clear()
+        ForegroundSession.app.onStop(isChangingConfigurations)
         super.onStop()
     }
 
