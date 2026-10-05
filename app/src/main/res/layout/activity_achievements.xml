@@ -24,9 +24,20 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Milestones use your local driving history."
+            android:text="Earn bonus points from driving, places, battery challenges, and future rewarded ads."
             android:textColor="?attr/rcTextSecondary"
             android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/achievementPointsText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/panel_background"
+            android:text="★ 0 points"
+            android:textColor="?attr/rcTextPrimary"
+            android:textSize="17sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/achievementsText"
