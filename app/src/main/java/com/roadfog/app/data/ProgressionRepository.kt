@@ -191,29 +191,21 @@ class ProgressionRepository(context: Context) {
                 var added = 0
                 for (discovery in discoveries) {
                     val baselineKey = baselineKey(discovery)
-                    if (counterOrNull(db, baselineKey) != null) continue
+                    if (counterOrNull(db, baselineKey) != null) {
+                        // Beta 5 stored starter places only as counters. Recover/store their full
+                        // metadata so overlays can highlight them without turning them into progress.
+                        insertVisitedPlace(db, discovery)
+                        continue
+                    }
                     if (!hasKnownPlaceKind(db, discovery.kind)) {
                         // A fresh install/reset starts inside one town, state/region and country.
-                        // Treat those first resolved places as the starting baseline rather than
-                        // awarding 2,100 points and three discoveries for simply opening the app.
+                        // Keep those places available to overlays, but award no points and do not
+                        // count them toward discovery achievements.
+                        insertVisitedPlace(db, discovery)
                         putCounter(db, baselineKey, 1L)
                         continue
                     }
-                    val inserted = db.insertWithOnConflict(
-                        "visited_places",
-                        null,
-                        ContentValues().apply {
-                            put("kind", discovery.kind.name)
-                            put("place_key", discovery.key)
-                            put("display_name", discovery.displayName)
-                            put("parent_name", discovery.parentName)
-                            put("country_name", discovery.countryName)
-                            put("first_visited_at", discovery.visitedAt)
-                            put("latitude", discovery.latitude)
-                            put("longitude", discovery.longitude)
-                        },
-                        SQLiteDatabase.CONFLICT_IGNORE
-                    ) != -1L
+                    val inserted = insertVisitedPlace(db, discovery)
                     if (inserted) {
                         awardOnce(
                             db,
@@ -326,7 +318,16 @@ class ProgressionRepository(context: Context) {
         val spent = db.rawQuery("SELECT COALESCE(SUM(points_spent), 0) FROM progression_purchases", null)
             .use { check(it.moveToFirst()); it.getLong(0) }
         val counts = mutableMapOf<PlaceKind, Long>()
-        db.rawQuery("SELECT kind, COUNT(*) FROM visited_places GROUP BY kind", null).use { cursor ->
+        // Baseline places stay in visited_places for overlays, but only rewarded discoveries
+        // count toward progress totals and achievements.
+        db.rawQuery(
+            """SELECT v.kind, COUNT(*)
+               FROM visited_places v
+               JOIN progression_rewards r
+                 ON r.reward_key = 'place:' || lower(v.kind) || ':' || v.place_key
+               GROUP BY v.kind""",
+            null
+        ).use { cursor ->
             while (cursor.moveToNext()) {
                 PlaceKind.entries.firstOrNull { it.name == cursor.getString(0) }?.let {
                     counts[it] = cursor.getLong(1)
@@ -425,11 +426,8 @@ class ProgressionRepository(context: Context) {
                     }
                     if (exactRewards) {
                         first.forEach { discovery ->
-                            db.delete(
-                                "visited_places",
-                                "kind = ? AND place_key = ?",
-                                arrayOf(discovery.kind.name, discovery.key)
-                            )
+                            // Keep the place row for overlays; removing its reward converts it
+                            // into a zero-progress starter baseline.
                             db.delete(
                                 "progression_rewards",
                                 "reward_key = ?",
@@ -495,6 +493,23 @@ class ProgressionRepository(context: Context) {
             db.endTransaction()
         }
     }
+
+    private fun insertVisitedPlace(db: SQLiteDatabase, discovery: PlaceDiscovery): Boolean =
+        db.insertWithOnConflict(
+            "visited_places",
+            null,
+            ContentValues().apply {
+                put("kind", discovery.kind.name)
+                put("place_key", discovery.key)
+                put("display_name", discovery.displayName)
+                put("parent_name", discovery.parentName)
+                put("country_name", discovery.countryName)
+                put("first_visited_at", discovery.visitedAt)
+                put("latitude", discovery.latitude)
+                put("longitude", discovery.longitude)
+            },
+            SQLiteDatabase.CONFLICT_IGNORE
+        ) != -1L
 
     private fun baselineKey(discovery: PlaceDiscovery): String =
         "baseline:${discovery.kind.name.lowercase()}:${discovery.key}"
