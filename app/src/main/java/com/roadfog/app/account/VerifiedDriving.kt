@@ -21,6 +21,7 @@ class VerifiedDriving(context: Context) {
     private val context = context.applicationContext
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private val busy = AtomicBoolean(false)
+    @Volatile private var drainTask: java.util.concurrent.ScheduledFuture<*>? = null
     private val queueLock = Any()
     private val pendingLocations = ArrayDeque<Location>()
     private val points = mutableListOf<JSONObject>()
@@ -49,10 +50,11 @@ class VerifiedDriving(context: Context) {
         if (!accepting || !busy.compareAndSet(false, true)) return
         val delay = (retryAfter - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
         val submitted = runCatching {
-            executor.schedule({
+            drainTask = executor.schedule({
                 try {
                     drainQueuedLocations()
                 } finally {
+                    drainTask = null
                     busy.set(false)
                     if (accepting && synchronized(queueLock) { pendingLocations.isNotEmpty() }) {
                         scheduleDrain()
@@ -186,6 +188,9 @@ class VerifiedDriving(context: Context) {
         accepting = false
         // A pending cooldown must not delay the normal stop-time final submission.
         retryAfter = 0L
+        drainTask?.cancel(false)
+        drainTask = null
+        busy.set(false)
         executor.execute {
             try {
                 // Anything copied before close() remains live evidence, so drain it before the
