@@ -6,6 +6,7 @@
 - When an overlay is enabled after a reset, seed place resolution from the best fresh cached location so the current baseline can appear without requiring a rewarded discovery first.
 - Make overlay loading fall back to the default Nominatim boundary service when the remote provider-config file is temporarily unavailable, and bypass stale Beta 5 negative overlay cache entries.
 - Keep unmatched raw GPS only as a faint, narrow provisional trace while OSRM is resolving it. Confirmed traveled roads remain thicker and nearly opaque and use road-snapped geometry, so pending data does not look like a finalized off-road route while the map still stays visually continuous.
+- Fix a matcher dead-zone where an otherwise acceptable 45–79% confidence OSRM match with an internally ambiguous junction could be retried forever even after fixes on both sides constrained the route. Contextual interior points now use the same 45% acceptance threshold as the saved road geometry, while ambiguous trace endpoints still stay pending for more evidence.
 - Preserve the Beta 5 matcher repair, Settings organization, progression system, cosmetics, account, leaderboard, and fog behavior.
 
 Android version code is 32. Android 12 or newer is required.
