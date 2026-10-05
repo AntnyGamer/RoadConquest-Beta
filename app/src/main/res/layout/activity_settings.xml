@@ -44,7 +44,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Choose a map style. Tracking reveals visited places, and driving saves blue road lines."
+            android:text="Choose a map style. Tracking reveals visited places, and driving saves your selected road color."
             android:textColor="?attr/rcTextSecondary"
             android:textSize="13sp" />
 
@@ -187,6 +187,12 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Achievements" />
+
+        <Button
+            android:id="@+id/shopButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Garage &amp; points shop" />
 
         <TextView
             android:layout_width="match_parent"
