@@ -97,38 +97,67 @@ class ProgressionRepositoryTest {
         }
     }
 
-    @Test fun freshBaselineWaitsForOldestRecordedLocation() {
+    @Test fun freshBaselineUsesExactFirstLiveFixAndBlocksOrdinaryCandidatesUntilThen() {
         val progression = ProgressionRepository(context)
-        val db = TrackingRepository(context).readableDatabase()
-        fun candidate(x: Long, seen: Long, retryAt: Long) {
-            db.execSQL(
-                """INSERT INTO place_candidates(
-                    cell_x,cell_y,latitude,longitude,first_seen_at,attempts,next_attempt_ms
-                ) VALUES(?,?,?,?,?,0,?)""",
-                arrayOf(x, x, 39.7 + x / 10_000.0, -75.1, seen, retryAt)
-            )
-        }
-        candidate(10, 1_000L, 5_000L)
-        candidate(20, 2_000L, 0L)
 
-        // A later eligible location cannot become the zero-point baseline while the actual
-        // starting location is waiting for its retry.
+        // Ordinary sparse discoveries may already exist, but they cannot decide a fresh baseline.
+        val later = android.location.Location("gps").apply {
+            latitude = 40.1234
+            longitude = -75.1234
+            time = 2_000L
+            accuracy = 5f
+        }
+        assertTrue(progression.recordPlaceCandidate(later))
         assertTrue(progression.pendingPlaceCandidates(nowMillis = 3_000L).isEmpty())
 
-        val oldest = progression.pendingPlaceCandidates(nowMillis = 6_000L).single()
-        assertEquals(10L, oldest.cellX)
-        progression.resolveCandidate(
-            oldest,
-            listOf(
-                PlaceDiscovery(
-                    PlaceKind.COUNTRY, "us", "United States",
-                    visitedAt = oldest.visitedAt, latitude = oldest.latitude, longitude = oldest.longitude
+        // The first good live fix is stored exactly rather than snapped to the 2 km candidate grid.
+        val startFix = android.location.Location("gps").apply {
+            latitude = 39.987654
+            longitude = -74.876543
+            time = 3_000L
+            accuracy = 5f
+        }
+        assertTrue(progression.recordBaselineCandidate(startFix))
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
+        assertEquals(startFix.latitude, baseline.latitude, 0.0)
+        assertEquals(startFix.longitude, baseline.longitude, 0.0)
+        assertEquals(startFix.time, baseline.visitedAt)
+
+        assertEquals(
+            0,
+            progression.resolveCandidate(
+                baseline,
+                listOf(
+                    PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States",
+                        visitedAt = baseline.visitedAt, latitude = baseline.latitude, longitude = baseline.longitude),
+                    PlaceDiscovery(PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States",
+                        baseline.visitedAt, baseline.latitude, baseline.longitude),
+                    PlaceDiscovery(PlaceKind.TOWN, "us|new jersey|start", "Start", "New Jersey", "United States",
+                        baseline.visitedAt, baseline.latitude, baseline.longitude)
                 )
             )
         )
+        progression.snapshot().let {
+            assertEquals(0L, it.balance)
+            assertEquals(0L, it.towns)
+            assertEquals(0L, it.states)
+            assertEquals(0L, it.countries)
+        }
 
-        // Once the baseline exists, later candidates are free to resolve normally.
-        assertEquals(20L, progression.pendingPlaceCandidates(nowMillis = 6_000L).single().cellX)
+        // Once the exact baseline exists, an ordinary later place can earn discovery credit.
+        val next = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
+        assertEquals(
+            1,
+            progression.resolveCandidate(
+                next,
+                listOf(
+                    PlaceDiscovery(PlaceKind.TOWN, "us|new jersey|later", "Later", "New Jersey", "United States",
+                        next.visitedAt, next.latitude, next.longitude)
+                )
+            )
+        )
+        assertEquals(100L, progression.snapshot().balance)
+        assertEquals(1L, progression.snapshot().towns)
     }
 
     @Test fun batteryAchievementsAwardAtFiveAndOnePercentOnlyOnce() {
