@@ -143,6 +143,46 @@ class MapRenderingDeviceTest {
                         }
                     }
                 }
+                for (latitude in listOf(0.0, 40.0, -40.0)) for (bearing in listOf(0.0, 30.0, 60.0, 120.0)) {
+                    move(LatLng(latitude, 0.0), 0.0, bearing)
+                    awaitPixels("Rotated overview has no uncovered corners at latitude $latitude, bearing $bearing") { bitmap ->
+                        listOf(0.01, 0.5, 0.99).all { row -> listOf(0.01, 0.5, 0.99).all { column ->
+                            Color.red(bitmap.getPixel((bitmap.width * column).toInt(), (bitmap.height * row).toInt())) < 220
+                        } }
+                    }
+                }
+                move(LatLng(40.0, -74.0), 15.0)
+                awaitPixels("Detailed fog is ready before the rapid zoom") { bitmap ->
+                    Color.red(bitmap.getPixel(bitmap.width / 10, bitmap.height / 10)) < 220
+                }
+                val zoomFinished = CountDownLatch(1)
+                val zoomListener = MapLibreMap.OnCameraIdleListener { zoomFinished.countDown() }
+                scenario.onActivity {
+                    map.addOnCameraIdleListener(zoomListener)
+                    map.animateCamera(CameraUpdateFactory.newCameraPosition(
+                        org.maplibre.android.camera.CameraPosition.Builder()
+                            .target(LatLng(40.0, -74.0)).zoom(0.0).bearing(60.0).tilt(0.0).build()), 900)
+                }
+                var sampledFrames = 0
+                var uncoveredFrames = 0
+                val zoomDeadline = SystemClock.elapsedRealtime() + 10_000L
+                while (zoomFinished.count > 0L && SystemClock.elapsedRealtime() < zoomDeadline) {
+                    scenario.onActivity {
+                        (view.renderView as TextureView).bitmap?.let { bitmap ->
+                            sampledFrames++
+                            if (listOf(0.03, 0.97).any { row -> listOf(0.03, 0.97).any { column ->
+                                Color.red(bitmap.getPixel((bitmap.width * column).toInt(), (bitmap.height * row).toInt())) >= 220
+                            } }) uncoveredFrames++
+                            bitmap.recycle()
+                        }
+                    }
+                    SystemClock.sleep(16)
+                }
+                scenario.onActivity { map.removeOnCameraIdleListener(zoomListener) }
+                assertTrue("The rapid zoom finishes", zoomFinished.count == 0L)
+                assertTrue("The test inspects moving-camera frames", sampledFrames > 2)
+                assertEquals("Fog never exposes rectangles during the rapid rotated zoom", 0, uncoveredFrames)
+
                 for (longitude in listOf(179.99, -179.99)) {
                     move(LatLng(0.0, longitude), 10.0, 55.0)
                     awaitPixels("Local fog spans the date line at longitude $longitude") { bitmap ->

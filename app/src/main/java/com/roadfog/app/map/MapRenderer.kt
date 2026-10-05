@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.View
 import androidx.core.content.ContextCompat
 import com.roadfog.app.R
 import com.roadfog.app.data.TrackingRepository
@@ -94,15 +95,27 @@ class MapRenderer(
     private val liveScreenCache = DoubleArray(2)
     private val fogMatrix = Matrix()
     private val fogMatrixValues = FloatArray(9)
+    private var detailedFogCoordinates: DoubleArray? = null
+    private val fogCoverageScreen = DoubleArray(8)
+    private var showingDetailedFog = false
+    private var lastFogRenderAt = 0L
+    private var minimumZoom = Double.NaN
+    private val renderFog = Runnable { scheduleFogRender() }
+    private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        updateCameraLimits()
+        updateFogCoverage()
+        scheduleFogRender()
+    }
 
     private val expireLocation = Runnable {
         if (!destroyed && liveLocation.current(SystemClock.elapsedRealtime()) == null) clearCurrentLocation()
     }
     private val cameraMoveListener = MapLibreMap.OnCameraMoveListener {
-        // The fog, road and car layers are geographic MapLibre layers. No Android View is
-        // reprojected/redrawn while the gesture is moving.
         cameraMoving = true
         viewportRevision++
+        updateCameraLimits()
+        updateFogCoverage()
+        if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM) scheduleFogRender()
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
         cameraMoving = false
@@ -114,6 +127,8 @@ class MapRenderer(
         map.setMaxZoomPreference(FogBitmapRenderer.MAX_ZOOM)
         map.setMaxPitchPreference(0.0)
         map.uiSettings.setTiltGesturesEnabled(false)
+        mapView.addOnLayoutChangeListener(layoutListener)
+        updateCameraLimits()
         map.addOnCameraMoveListener(cameraMoveListener)
         map.addOnCameraIdleListener(cameraIdleListener)
         loadStyle(onReady)
@@ -128,7 +143,7 @@ class MapRenderer(
     fun setFogEnabled(enabled: Boolean) {
         if (destroyed) return
         fogEnabled = enabled
-        (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)?.setProperties(rasterOpacity(if (enabled) 1f else 0f))
+        updateFogCoverage(force = true)
         if (enabled) scheduleFogRender()
     }
 
@@ -138,6 +153,7 @@ class MapRenderer(
         map.setStyle(Style.Builder().fromJson(styleJson)) { style ->
             if (destroyed || generation != styleGeneration) return@setStyle
             installFogLayer(style)
+            installRecordedRouteLayer(style)
             installRoadLayer(style)
             installCarLayer(style)
             updateCarLayer()
@@ -229,6 +245,8 @@ class MapRenderer(
         refreshViewport(loadRoads = false)
     }
 
+    fun refreshTracking() = refreshViewport(loadRoads = false)
+
     private fun refreshViewport(loadRoads: Boolean) {
         if (destroyed) return
         if (cameraMoving || queryRunning) {
@@ -237,6 +255,7 @@ class MapRenderer(
             return
         }
         if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
+            (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(emptyRoadFeatures())
             loadedPlaceBounds = null
             setDisplayedPlaces(doubleArrayOf())
             if (loadRoads) {
@@ -308,7 +327,10 @@ class MapRenderer(
                     roads?.let(::roadFeatures),
                     places,
                     footprint.takeIf { roadQuery?.complete == true },
-                    footprint.takeIf { queryPlaces }
+                    footprint.takeIf { queryPlaces },
+                    roadFeatures(OverlayRoads.prepare(repository.getPendingRouteInBounds(
+                        queryNorth, queryEast, querySouth, queryWest
+                    )))
                 )
             }
             result.exceptionOrNull()?.let { Log.e("RoadConquest", "Could not refresh saved map data", it) }
@@ -317,6 +339,7 @@ class MapRenderer(
                 queryRunning = false
                 if (revision == viewportRevision) {
                     result.getOrNull()?.let {
+                        (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(it.pendingRoute)
                         if (it.places != null) {
                             loadedPlaceBounds = it.placeBounds
                             setDisplayedPlaces(it.places)
@@ -353,13 +376,56 @@ class MapRenderer(
     }
 
     private fun installFogLayer(style: Style) {
+        detailedFogCoordinates = null
+        showingDetailedFog = false
+        // Keep a ready native world layer behind the detailed viewport. A fast pinch can
+        // outrun even a padded bitmap; it must never reveal an unrendered rectangle.
+        style.addSource(ImageSource(WORLD_FOG_SOURCE_ID, worldFogQuad(), overviewFog))
+        style.addLayer(RasterLayer(WORLD_FOG_LAYER_ID, WORLD_FOG_SOURCE_ID).withProperties(
+            rasterOpacity(if (fogEnabled) 1f else 0f), rasterFadeDuration(0f)
+        ))
         val transparent = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         style.addSource(ImageSource(FOG_SOURCE_ID, currentFogQuad(), transparent))
         style.addLayer(
             RasterLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
-                rasterOpacity(if (fogEnabled) 1f else 0f),
+                rasterOpacity(0f),
                 rasterFadeDuration(0f)
             )
+        )
+        transparent.recycle()
+    }
+
+    private fun installRecordedRouteLayer(style: Style) {
+        style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, emptyRoadFeatures()))
+        val layer = LineLayer(PENDING_ROUTE_LAYER_ID, PENDING_ROUTE_SOURCE_ID).withProperties(
+            lineColor(Color.rgb(37, 99, 235)), lineWidth(4f), lineOpacity(0.65f),
+            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
+        )
+        layer.setMinZoom(FogBitmapRenderer.MIN_ROAD_ZOOM.toFloat())
+        style.addLayer(layer)
+    }
+
+    private fun updateCameraLimits() {
+        val target = map.cameraPosition.target ?: return
+        val next = FogCoverage.minimumZoom(mapView.width, mapView.height, mapView.pixelRatio, target.latitude)
+        if (!minimumZoom.isFinite() || abs(next - minimumZoom) > 0.001) {
+            minimumZoom = next
+            map.setMinZoomPreference(next)
+        }
+    }
+
+    private fun updateFogCoverage(force: Boolean = false) {
+        val coordinates = detailedFogCoordinates
+        val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
+            coordinates != null && run {
+                map.projection.toScreenLocations(coordinates, fogCoverageScreen)
+                FogCoverage.coversViewport(fogCoverageScreen, mapView.width, mapView.height)
+            }
+        if (!force && detailed == showingDetailedFog) return
+        showingDetailedFog = detailed
+        (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)?.setProperties(rasterOpacity(if (detailed) 1f else 0f))
+        (map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer)?.setProperties(
+            rasterOpacity(if (fogEnabled && !detailed) 1f else 0f)
         )
     }
 
@@ -447,17 +513,26 @@ class MapRenderer(
 
     private fun scheduleFogRender() {
         if (destroyed || !fogEnabled) return
-        if (cameraMoving || fogRunning) {
+        if (fogRunning) {
             fogAgain = true
             return
         }
+        if (cameraMoving && map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) return
+        mainHandler.removeCallbacks(renderFog)
+        val delay = FOG_RENDER_INTERVAL_MS - (SystemClock.elapsedRealtime() - lastFogRenderAt)
+        if (cameraMoving && delay > 0L) {
+            mainHandler.postDelayed(renderFog, delay)
+            return
+        }
         val capture = captureFog() ?: return
+        lastFogRenderAt = SystemClock.elapsedRealtime()
         fogAgain = false
         fogRunning = true
         val reusable = reusableFogBitmap
         reusableFogBitmap = null
         fogExecutor.execute {
             val bitmap = runCatching { FogBitmapRenderer.render(capture.request, reusable) }
+            bitmap.exceptionOrNull()?.let { Log.e("RoadConquest", "Could not render map fog", it) }
             mainHandler.post {
                 val rendered = bitmap.getOrNull()
                 if (destroyed) {
@@ -466,17 +541,27 @@ class MapRenderer(
                 }
                 fogRunning = false
                 if (rendered != null) {
-                    if (!cameraMoving && capture.styleGeneration == styleGeneration) {
-                        val source = map.style?.getSource(FOG_SOURCE_ID) as? ImageSource
+                    if (capture.styleGeneration == styleGeneration) {
+                        val id = if (capture.world) WORLD_FOG_SOURCE_ID else FOG_SOURCE_ID
+                        val source = map.style?.getSource(id) as? ImageSource
                         source?.setCoordinates(capture.quad)
                         // MapLibre 13.6.1 copies Android bitmap pixels synchronously in nativeSetImage.
                         source?.setImage(rendered)
+                        if (!capture.world && source != null) {
+                            detailedFogCoordinates = doubleArrayOf(
+                                capture.quad.topLeft.latitude, capture.quad.topLeft.longitude,
+                                capture.quad.topRight.latitude, capture.quad.topRight.longitude,
+                                capture.quad.bottomRight.latitude, capture.quad.bottomRight.longitude,
+                                capture.quad.bottomLeft.latitude, capture.quad.bottomLeft.longitude
+                            )
+                        }
+                        updateFogCoverage(force = true)
                     }
                     reusableFogBitmap = rendered
                 }
                 if (fogAgain) {
                     fogAgain = false
-                    if (!cameraMoving) scheduleFogRender()
+                    scheduleFogRender()
                 }
             }
         }
@@ -521,7 +606,8 @@ class MapRenderer(
         val mercatorMetersPerPixel = metersPerPixel / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
         // Screen corners can span several wrapped worlds at overview zooms. An ImageSource
         // cannot represent those as one narrow wrapped quad; use one complete Mercator world.
-        if ((expandedWidth + expandedHeight) * mercatorMetersPerPixel >= 2 * PI * 6378137.0) {
+        if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM ||
+            (expandedWidth + expandedHeight) * mercatorMetersPerPixel >= 2 * PI * 6378137.0) {
             val world = 2 * PI * 6378137.0
             val size = maxBitmapDimension
             val inverse = Matrix()
@@ -537,8 +623,8 @@ class MapRenderer(
                 ((0.5 - mercatorY / world) * size).toFloat() - texelScale * phase[1])
             return FogCapture(styleGeneration, worldFogQuad(), FogBitmapRenderer.Request(
                 size, size, 0f, 0f, 1f, OverlayRoads.EMPTY, doubleArrayOf(), 0.0,
-                world / size, null, null, fogMatrixValues.also { fogMatrix.getValues(it) }
-            ))
+                world / size, null, null, fogMatrixValues.also { fogMatrix.getValues(it) }.copyOf()
+            ), world = true)
         }
         val quad = fogQuad(left, top, right, bottom)
         fogMatrix.postTranslate(-left, -top)
@@ -555,14 +641,14 @@ class MapRenderer(
                 top,
                 scale,
                 roads,
-                roadScreen,
+                roadScreen.copyOf(),
                 center.latitude,
                 metersPerPixel,
                 fix?.latitude,
-                liveScreen,
-                fogMatrixValues,
+                liveScreen?.copyOf(),
+                fogMatrixValues.copyOf(),
                 places,
-                placeScreen
+                placeScreen.copyOf()
             )
         )
     }
@@ -620,7 +706,8 @@ class MapRenderer(
         val features: FeatureCollection?,
         val places: DoubleArray?,
         val roadBounds: RoadQueryBounds?,
-        val placeBounds: RoadQueryBounds?
+        val placeBounds: RoadQueryBounds?,
+        val pendingRoute: FeatureCollection
     )
 
     private data class RoadQueryBounds(
@@ -644,7 +731,8 @@ class MapRenderer(
     private data class FogCapture(
         val styleGeneration: Int,
         val quad: LatLngQuad,
-        val request: FogBitmapRenderer.Request
+        val request: FogBitmapRenderer.Request,
+        val world: Boolean = false
     )
 
     fun destroy() {
@@ -652,6 +740,7 @@ class MapRenderer(
         resumeGeneration++
         map.removeOnCameraMoveListener(cameraMoveListener)
         map.removeOnCameraIdleListener(cameraIdleListener)
+        mapView.removeOnLayoutChangeListener(layoutListener)
         mainHandler.removeCallbacksAndMessages(null)
         resumeFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
         resumeFrameListener = null
@@ -663,14 +752,25 @@ class MapRenderer(
 
     companion object {
         private const val ROAD_SOURCE_ID = "roadconquest-traveled-roads"
+        private const val PENDING_ROUTE_SOURCE_ID = "roadconquest-recorded-route"
+        private const val PENDING_ROUTE_LAYER_ID = "roadconquest-recorded-route-line"
         private const val ROAD_LAYER_ID = "roadconquest-traveled-roads-line"
         private const val FOG_SOURCE_ID = "roadconquest-fog"
         private const val FOG_LAYER_ID = "roadconquest-fog-raster"
+        private const val WORLD_FOG_SOURCE_ID = "roadconquest-world-fog"
+        private const val WORLD_FOG_LAYER_ID = "roadconquest-world-fog-raster"
+        private val overviewFog by lazy {
+            FogBitmapRenderer.render(FogBitmapRenderer.Request(
+                FogTexture.SIZE, FogTexture.SIZE, 0f, 0f, 1f, OverlayRoads.EMPTY,
+                doubleArrayOf(), 0.0, 1.0, null, null
+            ))
+        }
         private const val CAR_SOURCE_ID = "roadconquest-car"
         private const val CAR_LAYER_ID = "roadconquest-car-symbol"
         private const val CAR_IMAGE_ID = "roadconquest-car-image"
         private val EMPTY_FEATURES = FeatureCollection.fromFeatures(emptyList<Feature>())
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
+        private const val FOG_RENDER_INTERVAL_MS = 80L
     }
 }

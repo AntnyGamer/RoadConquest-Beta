@@ -111,15 +111,17 @@ class OsrmMatcher(
             // All input fixes are requested as waypoints. Reject shifted, duplicated or missing
             // leg indices rather than assigning another fix's geometry and completion state.
             if (legs.length() != trace.size - 1 || trace.indices.any { trace[it].waypoint != it }) return null
-            // alternatives_count is an ambiguity boundary, including in the middle of a
-            // matching. Never persist either adjacent leg across a questionable junction.
-            // Instead, commit only maximal contiguous runs whose tracepoints are all unambiguous.
+            // Alternative candidates at an incremental trace endpoint still need more evidence.
+            // Inside a confident trace, fixes on both sides already disambiguate the route;
+            // discarding those legs creates holes at ordinary turns and junctions.
+            fun reliable(index: Int): Boolean = trace[index].alternatives == 0 ||
+                (index > 0 && index < trace.lastIndex && confidences[m] >= 0.80)
             var first = 0
             while (first < trace.size) {
-                while (first < trace.size && trace[first].alternatives != 0) first++
+                while (first < trace.size && !reliable(first)) first++
                 if (first >= trace.size) break
                 var last = first
-                while (last + 1 < trace.size && trace[last + 1].alternatives == 0) last++
+                while (last + 1 < trace.size && reliable(last + 1)) last++
                 if (last > first) {
                     val matchingRoads = mutableListOf<MatchedRoad>()
                     for (l in first until last) {
@@ -173,7 +175,7 @@ class OsrmMatcher(
             val geometryMeters = lineLengthMeters(connected)
             if (geometryMeters >= MIN_GEOMETRY_LENGTH_M) {
                 parsed += StepGeometry(
-                    step.optString("name").ifBlank { "Unnamed road" },
+                    step.optString("name").ifBlank { step.optString("ref").ifBlank { "Unnamed road" } },
                     connected,
                     geometryMeters
                 )
@@ -193,6 +195,17 @@ class OsrmMatcher(
         val total = parsed.sumOf { it.meters }
         val from = points[start.input].timestampMillis
         val duration = (points[end.input].timestampMillis - from).coerceAtLeast(0L)
+        val rawStart = JSONArray().put(points[start.input].longitude).put(points[start.input].latitude)
+        val rawEnd = JSONArray().put(points[end.input].longitude).put(points[end.input].latitude)
+        val uncertainty = points[start.input].accuracyMeters + points[end.input].accuracyMeters
+        require(coordinateDistanceMeters(rawStart, start.location) <= points[start.input].accuracyMeters * 2 + 10 &&
+            coordinateDistanceMeters(rawEnd, end.location) <= points[end.input].accuracyMeters * 2 + 10) {
+            "Matched road is too far from the recorded drive"
+        }
+        require(total <= coordinateDistanceMeters(rawStart, rawEnd) * 3 + uncertainty * 2 + 30 &&
+            (duration == 0L || total <= duration / 1000.0 * 100 + uncertainty)) {
+            "Matched route contains an unsupported detour"
+        }
         var before = 0.0
         return buildList(parsed.size) {
             for (step in parsed) {

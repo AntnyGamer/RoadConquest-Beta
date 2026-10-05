@@ -80,6 +80,44 @@ class TrackingRepositoryTest {
         assertEquals(ids.take(2).toSet(), oldest.markableIds)
     }
 
+    @Test fun pendingGpsIntervalsRemainContinuousUntilMatchingCompletes() {
+        val ids = (0..4).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.markMatched(listOf(ids.first(), ids.last()))
+        val pending = repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0)
+        assertEquals(1, pending.size)
+        assertEquals(5, org.json.JSONArray(pending.single().geometryJson).length())
+        repository.markMatched(ids)
+        assertTrue(repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0).isEmpty())
+    }
+
+    @Test fun recordedRouteNeverConnectsSeparateTripsOrMissingRawSamples() {
+        point(1_000_000L)
+        point(1_003_000L, lon = -73.9999)
+        val removed = point(1_006_000L, lon = -73.9998)
+        point(1_009_000L, lon = -73.9997)
+        point(2_000_000L, lon = -73.9996)
+        repository.readableDatabase().delete("track_points", "id = ?", arrayOf(removed.toString()))
+        val pending = repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0)
+        assertEquals(1, pending.size)
+        assertEquals(2, org.json.JSONArray(pending.single().geometryJson).length())
+    }
+
+    @Test fun savedRouteRepairRetainsMileageAndMapWhileRequeuingGpsEvidenceOnlyOnce() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE).edit()
+            .remove("road_matching_revision").commit()
+        val ids = (0..2).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.markMatched(ids)
+        repository.upsertRoads(listOf(MatchedRoad("Main", "[[-74,40],[-73.9998,40]]", 1, 2, 1.0)))
+        val before = repository.getSummary()
+        assertTrue(repository.prepareRoadHistoryRepair())
+        assertEquals(before, repository.getSummary())
+        assertEquals(ids.toSet(), repository.loadMatchingWindow().markableIds)
+        repository.markMatched(ids)
+        assertFalse(repository.prepareRoadHistoryRepair())
+        assertTrue(repository.loadMatchingWindow().points.isEmpty())
+    }
+
     @Test fun separatedUnmatchedIslandsRetryWithResolvedNeighbors() {
         val ids = (0..5).map { point(1_000_000L + it * 3_000L) }
         repository.markMatched(listOf(ids[1], ids[3], ids[5]))

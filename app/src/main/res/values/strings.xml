@@ -18,6 +18,6 @@
     <string name="map_style_label">Map: %1$s</string>
     <string name="ui_theme_label">Appearance: %1$s</string>
     <string name="github_button">RoadConquest on GitHub</string>
-    <string name="github_repository_url" translatable="false">https://github.com/AntnyGamer/RoadConquest</string>
+    <string name="github_repository_url" translatable="false">https://github.com/AntnyGamer/RoadConquest-Beta</string>
     <string name="github_unavailable">No app could open GitHub. Open this address in a browser: %1$s</string>
 </resources>

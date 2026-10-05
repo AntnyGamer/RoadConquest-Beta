@@ -8,12 +8,13 @@ import kotlin.math.*
  * Groups locally saved matched fragments into user-facing road identities.
  *
  * Public OSRM does not expose authoritative OSM way IDs, so local counts remain estimates.
- * Within that constraint, fragments with the same normalized name count as one road only when
- * their saved geometry actually touches/overlaps within the same one-meter seam tolerance used
- * by the renderer. Disconnected roads that merely share a name remain separate.
+ * Count nearby fragments of the same street together despite GPS/matcher seams. Connected
+ * unnamed access lanes form one local road network rather than one road per sampling fragment.
+ * This groups identities only: it never invents geometry across an unrecorded gap.
  */
 internal object RoadGrouping {
-    const val JOIN_TOLERANCE_M = 1.0
+    const val JOIN_TOLERANCE_M = 75.0
+    private const val UNNAMED_JOIN_TOLERANCE_M = 25.0
     private const val EARTH_RADIUS_M = 6_371_008.8
     private const val METERS_PER_DEGREE = 111_320.0
 
@@ -32,6 +33,7 @@ internal object RoadGrouping {
     }
 
     fun normalizeName(name: String): String = name.trim().lowercase(Locale.US)
+        .replace(Regex("\\s+"), " ").let { if (it == "unnamed road") "" else it }
 
     fun isUnnamed(nameKey: String): Boolean =
         nameKey.isEmpty() || nameKey == "unnamed road"
@@ -39,11 +41,7 @@ internal object RoadGrouping {
     fun assignGroups(roads: List<Road>): Map<String, String> {
         if (roads.isEmpty()) return emptyMap()
         val result = HashMap<String, String>(roads.size)
-        val named = roads.filterNot { isUnnamed(it.nameKey) }.groupBy { it.nameKey }
-
-        for (road in roads) {
-            if (isUnnamed(road.nameKey)) result[road.segmentId] = road.segmentId
-        }
+        val named = roads.groupBy { it.nameKey }
 
         for (sameName in named.values) {
             val count = sameName.size
@@ -94,15 +92,16 @@ internal object RoadGrouping {
     }
 
     fun connected(first: Road, second: Road): Boolean {
-        if (first.nameKey != second.nameKey || isUnnamed(first.nameKey)) return false
+        if (first.nameKey != second.nameKey) return false
         if (!boundsCanTouch(first, second)) return false
         val a = first.coordinates ?: return false
         val b = second.coordinates ?: return false
         if (a.size < 4 || b.size < 4) return false
-        return endpointToPolylineMeters(a[0], a[1], b) <= JOIN_TOLERANCE_M ||
-            endpointToPolylineMeters(a[a.size - 2], a[a.size - 1], b) <= JOIN_TOLERANCE_M ||
-            endpointToPolylineMeters(b[0], b[1], a) <= JOIN_TOLERANCE_M ||
-            endpointToPolylineMeters(b[b.size - 2], b[b.size - 1], a) <= JOIN_TOLERANCE_M
+        val tolerance = if (isUnnamed(first.nameKey)) UNNAMED_JOIN_TOLERANCE_M else JOIN_TOLERANCE_M
+        return endpointToPolylineMeters(a[0], a[1], b) <= tolerance ||
+            endpointToPolylineMeters(a[a.size - 2], a[a.size - 1], b) <= tolerance ||
+            endpointToPolylineMeters(b[0], b[1], a) <= tolerance ||
+            endpointToPolylineMeters(b[b.size - 2], b[b.size - 1], a) <= tolerance
     }
 
     private fun boundsCanTouch(first: Road, second: Road): Boolean {

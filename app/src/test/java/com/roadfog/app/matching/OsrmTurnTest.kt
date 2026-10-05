@@ -131,20 +131,28 @@ class OsrmTurnTest {
         assertNull(OsrmMatcher().parse(valid.toString(), points(a, b)))
     }
 
-    @Test fun internalAmbiguousTracepointSplitsTheMatchInsteadOfSavingAGuessedTurn() {
+    @Test fun confidentRouteKeepsAnInternalAlternativeWhenBothSidesProvideContext() {
         val result = requireNotNull(OsrmMatcher().parse(response(listOf(
             trace(0, 0, a), trace(0, 1, b), trace(0, 2, c, 2),
             trace(0, 3, d), trace(0, 4, e)
         ), matching(
             leg("Approach", a, b),
-            leg("Guessed entry", b, c),
-            leg("Guessed exit", c, d),
+            leg("Entry", b, c),
+            leg("Turn", c, junction, d),
             leg("Exit", d, e)
         )), points(a, b, c, d, e)))
 
-        assertEquals(listOf("Approach", "Exit"), result.roads.map { it.name })
-        assertEquals(setOf(1L, 2L, 5L), result.matchedPointConfidences.keys)
-        assertFalse(result.roads.any { it.name.startsWith("Guessed") })
+        assertEquals(listOf("Approach", "Entry", "Turn", "Exit"), result.roads.map { it.name })
+        assertEquals(setOf(1L, 2L, 3L, 4L, 5L), result.matchedPointConfidences.keys)
+        assertTrue(result.roads[2].coordinatesJson.contains(junction.toString()))
+    }
+
+    @Test fun unsupportedDetourCannotTurnARecordedStraightDriveIntoAnInventedRoad() {
+        val far = coord(-73.99, 40.01)
+        assertThrows(IllegalArgumentException::class.java) {
+            OsrmMatcher().parse(response(listOf(trace(0, 0, a), trace(0, 1, b)),
+                matching(leg("Detour", a, far, b))), points(a, b))
+        }
     }
 
     @Test fun shortIntersectionEdgesRemainInTheDrawnRoute() {

@@ -57,7 +57,10 @@ class MatchingRetryTest {
             val controller = Robolectric.buildService(TrackingService::class.java)
             val service = controller.get()
             val repo = repository()
-            val ids = (0..2).map { point(repo) }
+            val ids = (0..2).map { index -> repo.insertLocation(Location("gps").apply {
+                latitude = 40.0; longitude = -74.0 - index * 0.0005
+                accuracy = 5f; time = 1_000_000L + index * 3_000L
+            }) }
             field(service, "repository").set(service, repo)
             field(service, "matcher").set(service, com.roadfog.app.matching.OsrmMatcher(server.url("/").toString().trimEnd('/')))
             field(service, "ready").setBoolean(service, true)

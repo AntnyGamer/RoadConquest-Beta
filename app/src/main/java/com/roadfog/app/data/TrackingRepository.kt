@@ -12,6 +12,7 @@ import java.util.Locale
 import kotlin.math.*
 
 class TrackingRepository(context: Context) {
+    private val appContext = context.applicationContext
     private val dbHelper = AppDatabase.get(context)
     private val historyGeneration = synchronized(dbHelper.historyLock) { dbHelper.historyGeneration }
 
@@ -403,10 +404,6 @@ class TrackingRepository(context: Context) {
             maxLongitude = bounds.maxLon,
             groupId = existingGroupId
         )
-        if (RoadGrouping.isUnnamed(current.nameKey)) {
-            return existingGroupId?.takeIf { it.isNotBlank() } ?: segmentId
-        }
-
         val latitudePad = RoadGrouping.JOIN_TOLERANCE_M / METERS_PER_DEGREE
         val centerLatitude = (bounds.minLat + bounds.maxLat) / 2.0
         val longitudePad = RoadGrouping.JOIN_TOLERANCE_M /
@@ -533,6 +530,50 @@ class TrackingRepository(context: Context) {
 
     data class RoadQueryResult(val roads: List<RoadRecord>, val complete: Boolean)
 
+    /** Recorded driving evidence remains visible until road matching confirms each interval. */
+    @Synchronized
+    fun getPendingRouteInBounds(north: Double, east: Double, south: Double, west: Double): List<RoadRecord> {
+        val longitude = if (east >= west) "longitude BETWEEN ? AND ?" else "(longitude >= ? OR longitude <= ?)"
+        val output = ArrayList<RoadRecord>()
+        var previous: TrackPoint? = null
+        var coordinates = JSONArray()
+        fun finish() {
+            if (coordinates.length() >= 2) {
+                val bounds = requireNotNull(coordinateBounds(coordinates))
+                output += RoadRecord("pending-${output.size}", "", coordinates.toString(), 0L, 0L,
+                    bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon)
+            }
+            coordinates = JSONArray()
+        }
+        fun add(point: TrackPoint) { coordinates.put(JSONArray().put(point.longitude).put(point.latitude)) }
+        dbHelper.readableDatabase.query("track_points", TRACK_COLUMNS,
+            "latitude BETWEEN ? AND ? AND $longitude",
+            arrayOf(south.toString(), north.toString(), west.toString(), east.toString()),
+            null, null, "id ASC").use { cursor ->
+            while (cursor.moveToNext()) {
+                val point = cursor.toTrackPoint()
+                val before = previous
+                var continuous = false
+                if (before != null && before.id + 1 == point.id && (!before.matched || !point.matched) &&
+                    before.accuracyMeters in 0f..50f && point.accuracyMeters in 0f..50f) {
+                    val gap = point.timestampMillis - before.timestampMillis
+                    val distance = MATCH_DISTANCE_RESULT.get()
+                    Location.distanceBetween(before.latitude, before.longitude, point.latitude, point.longitude, distance)
+                    continuous = gap in 1..MAX_STOP_GAP_MS && distance[0].isFinite() &&
+                        distance[0] <= gap / 1000.0 * 100.0 &&
+                        (gap <= MATCH_CLUSTER_GAP_MS || distance[0] <= MAX_STOP_GAP_DISTANCE_M)
+                }
+                if (continuous) {
+                    if (coordinates.length() == 0) add(requireNotNull(before))
+                    add(point)
+                } else finish()
+                previous = point
+            }
+        }
+        finish()
+        return output
+    }
+
     fun getRoadsInBounds(
         north: Double,
         east: Double,
@@ -580,7 +621,48 @@ class TrackingRepository(context: Context) {
 
     @Synchronized
     fun getSummary(): DataSummary {
+        rebuildRoadGroupsIfNeeded()
         return summaryOf(dbHelper.readableDatabase)
+    }
+
+    /** Refresh derived identities offline; old fragment IDs must not inflate the new count. */
+    @Synchronized
+    private fun rebuildRoadGroupsIfNeeded() {
+        synchronized(dbHelper.historyLock) {
+            if (dbHelper.roadGroupsReady) return
+            val db = dbHelper.writableDatabase
+            val roads = ArrayList<RoadGrouping.Road>()
+            db.query("roads", arrayOf("segment_id", "name", "geometry_json", "min_lat", "max_lat",
+                "min_lon", "max_lon"), null, null, null, null, null).use { cursor ->
+                while (cursor.moveToNext()) roads += RoadGrouping.Road(cursor.getString(0), cursor.getString(1),
+                    cursor.getString(2), cursor.getDouble(3), cursor.getDouble(4), cursor.getDouble(5), cursor.getDouble(6))
+            }
+            db.beginTransaction()
+            try {
+                for ((segment, group) in RoadGrouping.assignGroups(roads)) {
+                    db.update("roads", ContentValues().apply { put("road_group_id", group) },
+                        "segment_id = ?", arrayOf(segment))
+                }
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+            dbHelper.roadGroupsReady = true
+        }
+    }
+
+    /** Re-evaluate saved evidence once with the corrected matcher, retaining the visible map. */
+    @Synchronized
+    fun prepareRoadHistoryRepair(): Boolean {
+        synchronized(dbHelper.historyLock) {
+            if (historyGeneration != dbHelper.historyGeneration) return false
+            val preferences = appContext.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
+            if (preferences.getInt("road_matching_revision", 0) >= 1) return false
+            val db = dbHelper.writableDatabase
+            dbHelper.roadGroupsReady = false
+            rebuildRoadGroupsIfNeeded()
+            db.execSQL("UPDATE track_points SET matched = 0, next_match_attempt_ms = 0")
+            preferences.edit().putInt("road_matching_revision", 1).commit()
+            return true
+        }
     }
 
     /** Copy history at one database revision, then release locks before slow ZIP I/O. */

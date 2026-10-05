@@ -1,24 +1,16 @@
-# RoadConquest 1.0 Beta
+# RoadConquest 1.0 Beta 1
 
-The initial release of RoadConquest: an Android driving exploration app that reveals a
-cloud-covered map as you travel.
+- Preserve continuous recorded driving while matching is pending, including offline driving.
+- Retain confident, context-supported route geometry through ordinary junctions instead of discarding every alternative-candidate fix.
+- Reject snaps far from GPS evidence and unsupported route detours.
+- Count nearby street fragments and connected unnamed access lanes as road identities, rather than one road per fragment.
+- Recalculate saved road identities and reprocess recorded GPS history while retaining mileage and existing map geometry.
+- Keep cached world fog ready while rapid zooming or panning outruns the detailed fog bitmap.
+- Refresh detailed fog during gestures with throttled background rendering and immutable projection snapshots.
+- Account for screen size, rotation and camera latitude when limiting the widest zoom, preventing exposed world edges.
+- Add regression checks for fast zooming, rotated coverage and invalid fog footprints.
+- Add weekly dependency update pull requests for Android, the account server and GitHub Actions.
+- Add consistent editor formatting and correct links to the new beta repository.
 
-- Geographically anchored blue road lines, road matching with retry support and saved exploration.
-- Cloud fog that stays attached to the map while panning, rotating and zooming, with cached
-  viewport data and reduced rendering allocations.
-- Streets, Minimal, Night and Satellite maps, plus Light, Dark and phone-controlled appearance.
-- Local mileage and geometry-grouped road totals, tappable road details and recorded drive visits.
-- Six achievements with individual progress bars.
-- Automatic and manual tracking, background location controls and a Stop tracking notification.
-- Driving-data export, optional accounts, username changes, privacy controls and account/device
-  data deletion.
-
-Android 12 or newer is required. The APK uses the permanent RoadConquest signing identity and
-internal version code 26, allowing installation over the latest signed development build while
-retaining its current-schema data. The user-visible version is 1.0 Beta.
-
-Verified competitive scoring requires separate production Play Integrity and private road
-matching/catalog configuration. Account hosting alone does not activate it; local totals are never
-substituted for verified scores.
-
-Release assets include the signed APK, Android Studio source project and SHA-256 checksums.
+Android 12 or newer is required. This update retains the existing application ID, signing identity
+and saved data, with internal version code 27.

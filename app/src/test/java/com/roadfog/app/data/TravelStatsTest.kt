@@ -82,4 +82,26 @@ class TravelStatsTest {
         } finally { db.execSQL("DROP TRIGGER reject_second") }
     }
 
+    @Test fun dozensOfUnnamedSamplingFragmentsCountAsOneConnectedAccessRoad() {
+        repo.upsertRoads((0 until 64).map { index ->
+            val start = index * 0.0001
+            MatchedRoad("Unnamed road", "[[$start,0],[${start + 0.00008},0]]", index.toLong(), index + 1L, 1.0)
+        })
+        assertEquals(64L, repo.getSummary().roadSegmentCount)
+        assertEquals(1L, repo.getSummary().roadsUnlockedCount)
+        repo.upsertRoads(listOf(MatchedRoad("Unnamed road", "[[1,0],[1.001,0]]", 100, 200, 1.0)))
+        assertEquals("An unrelated access road stays separate", 2L, repo.getSummary().roadsUnlockedCount)
+    }
+
+    @Test fun nearbyMatcherSeamsDoNotMultiplyStreetCountOrFabricateMapGeometry() {
+        repo.upsertRoads(listOf(
+            MatchedRoad("Hartford Road", "[[-74.002,40],[-74.001,40]]", 1, 2, 1.0),
+            MatchedRoad("Hartford   Road", "[[-74.0008,40],[-74,40]]", 3, 4, 1.0)
+        ))
+        assertEquals(1L, repo.getSummary().roadsUnlockedCount)
+        assertEquals(2L, repo.getSummary().roadSegmentCount)
+        assertEquals(2, com.roadfog.app.map.OverlayRoads.prepare(
+            repo.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)).starts.size - 1)
+    }
+
 }

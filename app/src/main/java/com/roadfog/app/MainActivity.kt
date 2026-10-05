@@ -80,7 +80,10 @@ class MainActivity : Activity() {
     private var statsRefreshScheduled = false
     private val statsRefresh = Runnable {
         statsRefreshScheduled = false
-        if (resumed && !isDestroyed) refreshControls()
+        if (resumed && !isDestroyed) {
+            refreshControls()
+            renderer?.refreshTracking()
+        }
     }
 
     private var lastPreviewLocation: Location? = null

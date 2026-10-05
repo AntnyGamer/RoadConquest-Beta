@@ -105,7 +105,16 @@ class TrackingService : Service(), LocationListener {
         }
         if (!ready) return START_NOT_STICKY
         requestLocations()
-        maybeRunMatching(force = true)
+        matchingExecutor.execute {
+            try {
+                if (repository.prepareRoadHistoryRepair()) {
+                    sendBroadcast(Intent(ACTION_ROADS_UPDATED).setPackage(packageName))
+                }
+            } catch (error: Exception) {
+                Log.e("RoadConquest", "Could not prepare saved road repair", error)
+            }
+            if (ready) maybeRunMatching(force = true)
+        }
         return START_STICKY
     }
 
