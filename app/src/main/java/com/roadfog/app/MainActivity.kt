@@ -299,6 +299,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (!isDestroyed) {
                         refreshControls()
+                        renderer?.refreshPlaceOverlays()
                         Toast.makeText(
                             this,
                             if (added == 1) "New place discovered" else "$added new places discovered",
