@@ -450,8 +450,8 @@ class MainActivity : Activity() {
             }
             return
         }
-        if (!locationManager.isLocationEnabled) {
-            if (requestIfMissing) showLocationOffDialog()
+        if (!locationManager.isLocationEnabled && requestIfMissing) {
+            showLocationOffDialog()
             return
         }
         if (!TrackingService.isRunning) {
