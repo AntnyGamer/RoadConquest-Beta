@@ -1,11 +1,38 @@
 <resources>
+    <style name="RoadConquest.Button" parent="@android:style/Widget.Material.Button">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+
     <style name="Theme.RoadConquest" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:buttonStyle">@style/RoadConquest.Button</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">@color/screen_bg</item>
         <item name="android:colorAccent">@color/road_blue</item>
+        <item name="rcScreenBg">@color/screen_bg</item>
+        <item name="rcPanelBg">@color/panel_bg</item>
+        <item name="rcTextPrimary">@color/text_primary</item>
+        <item name="rcTextSecondary">@color/text_secondary</item>
+        <item name="rcAccent">@color/road_blue</item>
+    </style>
+
+    <style name="Theme.RoadConquest.Gold" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:buttonStyle">@style/RoadConquest.Button</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/gold_screen_bg</item>
+        <item name="android:colorAccent">@color/gold_accent</item>
+        <item name="rcScreenBg">@color/gold_screen_bg</item>
+        <item name="rcPanelBg">@color/gold_panel_bg</item>
+        <item name="rcTextPrimary">@color/gold_text_primary</item>
+        <item name="rcTextSecondary">@color/gold_text_secondary</item>
+        <item name="rcAccent">@color/gold_accent</item>
     </style>
 </resources>
