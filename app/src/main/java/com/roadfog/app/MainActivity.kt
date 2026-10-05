@@ -33,6 +33,7 @@ import com.roadfog.app.data.RoadRecord
 import com.roadfog.app.account.AccountOnboarding
 import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.map.MapRenderer
+import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.util.LocationProviders
 import com.roadfog.app.util.Prefs
 import com.roadfog.app.util.Appearance
@@ -48,9 +49,11 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private var appliedTheme = UiTheme.SYSTEM
+    private var appliedGoldUi = false
     private var safeLeft = 0
     private var safeRight = 0
     private var mapWasCentered = false
@@ -63,6 +66,7 @@ class MainActivity : Activity() {
     private lateinit var enableButton: Button
     private lateinit var statusText: TextView
     private lateinit var statsText: TextView
+    private lateinit var pointsText: TextView
     private lateinit var repository: TrackingRepository
     private lateinit var locationManager: LocationManager
     private var renderer: MapRenderer? = null
@@ -74,6 +78,8 @@ class MainActivity : Activity() {
     private var recreatingForAppearance = false
     private var accountPrompt: AlertDialog? = null
     private val summaryExecutor = Executors.newSingleThreadExecutor()
+    private val discoveryExecutor = Executors.newSingleThreadExecutor()
+    private val placeResolutionInFlight = AtomicBoolean(false)
     @Volatile private var summaryGeneration = 0
     @Volatile private var roadDetailsGeneration = 0
     private val statsHandler = Handler(Looper.getMainLooper())
@@ -151,6 +157,7 @@ class MainActivity : Activity() {
         setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
         appliedTheme = Prefs.uiTheme(this)
+        appliedGoldUi = Prefs.isGoldUiEnabled(this)
         mapWasCentered = savedInstanceState?.getBoolean(STATE_MAP_CENTERED) ?: false
         WindowCompat.enableEdgeToEdge(window)
         WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -168,6 +175,8 @@ class MainActivity : Activity() {
         enableButton = findViewById(R.id.enableButton)
         statusText = findViewById(R.id.statusText)
         statsText = findViewById(R.id.statsText)
+        pointsText = findViewById(R.id.pointsText)
+        pointsText.setOnClickListener { startActivity(Intent(this, ShopActivity::class.java)) }
         mapView.onCreate(savedInstanceState)
 
         val settingsButton = findViewById<ImageButton>(R.id.settingsButton)
@@ -184,7 +193,7 @@ class MainActivity : Activity() {
                 }
             }
         }
-        applySafeAreaInsets(settingsButton, centerButton, controlPanel, statsText)
+        applySafeAreaInsets(settingsButton, centerButton, controlPanel, statsText, pointsText)
         enableButton.setOnClickListener { handleEnableButton() }
 
         mapView.getMapAsync { map ->
@@ -230,7 +239,7 @@ class MainActivity : Activity() {
         // Closing the notification shade only resumes an already-started activity.
         val resumeStoppedTracking = enteredForeground && Prefs.isTrackingPaused(this)
         enteredForeground = false
-        if (appliedTheme != Prefs.uiTheme(this)) {
+        if (appliedTheme != Prefs.uiTheme(this) || appliedGoldUi != Prefs.isGoldUiEnabled(this)) {
             if (resumeStoppedTracking) {
                 Prefs.setTrackingPaused(this, false)
                 startTrackingIfPossible(requestIfMissing = false)
@@ -243,6 +252,8 @@ class MainActivity : Activity() {
         mapView.onResume()
         renderer?.setFogEnabled(Prefs.isFogEnabled(this))
         renderer?.setMapMode(Prefs.mapMode(this))
+        renderer?.refreshCosmetics()
+        ProgressionManager.recordBatteryFromSystem(this)
         // Road updates can finish while this activity is stopped and its receiver is
         // unregistered. A mere pause/resume keeps the receiver registered and can reuse cache.
         renderer?.resumeViewport(refreshRoadsAfterStop)
@@ -265,6 +276,27 @@ class MainActivity : Activity() {
         }
         showFreshCachedLocation()
         if (!TrackingService.isRunning) startPreviewLocation()
+        resolvePendingPlaces()
+    }
+
+    private fun resolvePendingPlaces() {
+        if (!placeResolutionInFlight.compareAndSet(false, true)) return
+        discoveryExecutor.execute {
+            val added = runCatching { ProgressionManager.resolvePendingPlaces(this, 6) }.getOrDefault(0)
+            placeResolutionInFlight.set(false)
+            if (added > 0 && !isDestroyed) {
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        refreshControls()
+                        Toast.makeText(
+                            this,
+                            if (added == 1) "New place discovered" else "$added new places discovered",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        }
     }
 
     override fun onPause() {
@@ -290,6 +322,7 @@ class MainActivity : Activity() {
         roadDetailsGeneration++
         statsHandler.removeCallbacksAndMessages(null)
         summaryExecutor.shutdownNow()
+        discoveryExecutor.shutdownNow()
         renderer?.destroy()
         mapView.onDestroy()
         super.onDestroy()
@@ -450,18 +483,34 @@ class MainActivity : Activity() {
         val generation = ++summaryGeneration
         summaryExecutor.execute {
             if (generation != summaryGeneration) return@execute
-            val summary = runCatching { repository.getSummary() }
+            val result = runCatching {
+                val summary = repository.getSummary()
+                val progression = ProgressionManager.sync(this, summary)
+                val unlocked = Achievements.newlyUnlocked(
+                    this,
+                    summary,
+                    ProgressionManager.metrics(progression)
+                )
+                Triple(summary, progression, unlocked)
+            }
             runOnUiThread {
                 if (isDestroyed || generation != summaryGeneration) return@runOnUiThread
-                summary.fold(
-                    onSuccess = { value ->
+                result.fold(
+                    onSuccess = { (value, progression, unlocked) ->
                         statsText.text = StatsText.format(this, value)
-                        val unlocked = Achievements.newlyUnlocked(this, value)
+                        pointsText.text = String.format(Locale.getDefault(), "★ %,d points", progression.balance)
                         if (unlocked.isNotEmpty()) {
+                            val reward = unlocked.sumOf { it.rewardPoints }
                             val message = if (unlocked.size == 1) {
-                                "Achievement unlocked: " + unlocked.first().title
+                                "Achievement unlocked: " + unlocked.first().title +
+                                    String.format(Locale.getDefault(), " (+%,d points)", reward)
                             } else {
-                                unlocked.size.toString() + " achievements unlocked"
+                                String.format(
+                                    Locale.getDefault(),
+                                    "%d achievements unlocked (+%,d points)",
+                                    unlocked.size,
+                                    reward
+                                )
                             }
                             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                         }
@@ -469,6 +518,7 @@ class MainActivity : Activity() {
                     onFailure = { error ->
                         Log.e("RoadConquest", "Could not load data summary", error)
                         statsText.text = getString(R.string.saved_data_unavailable)
+                        pointsText.text = "Points unavailable"
                     }
                 )
             }
@@ -563,7 +613,7 @@ class MainActivity : Activity() {
     private fun dpToPx(dp: Float): Int =
         (dp * resources.displayMetrics.density + 0.5f).toInt()
 
-    private fun applySafeAreaInsets(settingsButton: ImageButton, centerButton: ImageButton, controlPanel: View, stats: View) {
+    private fun applySafeAreaInsets(settingsButton: ImageButton, centerButton: ImageButton, controlPanel: View, stats: View, points: View) {
         val root = findViewById<View>(R.id.root)
         val settingsParams = settingsButton.layoutParams as FrameLayout.LayoutParams
         val settingsTop = settingsParams.topMargin
@@ -574,6 +624,9 @@ class MainActivity : Activity() {
         val statsParams = stats.layoutParams as FrameLayout.LayoutParams
         val statsTop = statsParams.topMargin
         val statsStart = statsParams.marginStart
+        val pointsParams = points.layoutParams as FrameLayout.LayoutParams
+        val pointsTop = pointsParams.topMargin
+        val pointsStart = pointsParams.marginStart
         val panelParams = controlPanel.layoutParams as FrameLayout.LayoutParams
         val panelStart = panelParams.marginStart
         val panelEnd = panelParams.marginEnd
@@ -598,6 +651,13 @@ class MainActivity : Activity() {
                     params.topMargin = statsTop + safe.top
                     params.marginStart = statsStart + safe.left
                     stats.layoutParams = params
+                }
+            }
+            (points.layoutParams as FrameLayout.LayoutParams).also { params ->
+                if (params.topMargin != pointsTop + safe.top || params.marginStart != pointsStart + safe.left) {
+                    params.topMargin = pointsTop + safe.top
+                    params.marginStart = pointsStart + safe.left
+                    points.layoutParams = params
                 }
             }
             // Setters can request layout even for identical values. Keep repeated inset/layout
