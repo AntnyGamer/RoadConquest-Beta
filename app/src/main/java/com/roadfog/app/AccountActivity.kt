@@ -21,6 +21,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.account.AccountClient
 import com.roadfog.app.account.AccountStore
 import com.roadfog.app.achievements.Achievements
+import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.util.Appearance
 import com.roadfog.app.util.Prefs
@@ -360,7 +361,7 @@ class AccountActivity : Activity() {
     private fun showDeleteDeviceDataDialog() {
         if (busy) return
         AlertDialog.Builder(this).setTitle("Delete device data?")
-            .setMessage("Delete all saved trips, mileage, roads and explored places on this phone and stop tracking. Your cloud account and leaderboard scores stay. Exported files must be deleted separately. This cannot be undone.")
+            .setMessage("Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone and stop tracking. Your cloud account and leaderboard scores stay. Exported files must be deleted separately. This cannot be undone.")
             .setNegativeButton("Cancel", null).setPositiveButton("Delete device data") { _, _ ->
                 stopForDataDeletion()
                 setBusy(true)
@@ -369,6 +370,7 @@ class AccountActivity : Activity() {
                     val result = runCatching {
                         TrackingRepository(applicationContext).clearHistory()
                         Achievements.reset(applicationContext)
+                        ProgressionManager.resetLocalProgression(applicationContext)
                         Prefs.setTrackingPaused(applicationContext, false)
                         notifyDataDeleted()
                     }
@@ -389,7 +391,11 @@ class AccountActivity : Activity() {
     }
 
     private fun notifyDataDeleted() {
-        for (action in listOf(TrackingService.ACTION_STATS_UPDATED, TrackingService.ACTION_ROADS_UPDATED)) {
+        for (action in listOf(
+            TrackingService.ACTION_STATS_UPDATED,
+            TrackingService.ACTION_ROADS_UPDATED,
+            TrackingService.ACTION_EXPLORATION_UPDATED
+        )) {
             applicationContext.sendBroadcast(Intent(action).setPackage(packageName))
         }
     }
