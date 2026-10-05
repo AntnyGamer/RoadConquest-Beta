@@ -67,14 +67,22 @@ object ProgressionManager {
     }
 
     fun resolvePendingPlaces(context: Context, limit: Int = 6): Int {
+        require(limit > 0)
         val repository = ProgressionRepository(context)
         var added = 0
-        for (candidate in repository.pendingPlaceCandidates(limit)) {
-            val discoveries = PlaceResolver.resolve(context, candidate)
-            if (discoveries == null) {
-                repository.deferCandidate(candidate)
-            } else {
-                added += repository.resolveCandidate(candidate, discoveries)
+        var processed = 0
+        while (processed < limit) {
+            val candidates = repository.pendingPlaceCandidates(limit - processed)
+            if (candidates.isEmpty()) break
+            for (candidate in candidates) {
+                val discoveries = PlaceResolver.resolve(context, candidate)
+                if (discoveries.isNullOrEmpty()) {
+                    repository.deferCandidate(candidate)
+                } else {
+                    added += repository.resolveCandidate(candidate, discoveries)
+                }
+                processed++
+                if (processed >= limit) break
             }
         }
         return added
