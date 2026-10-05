@@ -55,7 +55,7 @@ data class PlaceOverlayData(
 data class PlaceOverlayCacheResult(val cached: Boolean, val data: PlaceOverlayData?)
 
 object PlaceOverlayCache {
-    private const val DIRECTORY = "place-overlays"
+    private const val DIRECTORY = "place-overlays-v2"
     private const val NEGATIVE_CACHE_MS = 24L * 60L * 60L * 1000L
     private val generation = AtomicLong()
 
@@ -160,19 +160,25 @@ class PlaceOverlayClient(
         resolvedEndpoint?.let { return it }
         val url = configUrl.trim()
         if (!url.startsWith("https://")) throw IOException("Place overlay config must use HTTPS")
-        val connection = open(url, redirects = true, readTimeoutMs = 5_000)
         val value = try {
-            val status = connection.responseCode
-            if (status !in 200..299 || connection.url.protocol != "https") {
-                throw IOException("Place overlay config is unavailable")
+            val connection = open(url, redirects = true, readTimeoutMs = 5_000)
+            try {
+                val status = connection.responseCode
+                if (status !in 200..299 || connection.url.protocol != "https") {
+                    throw IOException("Place overlay config is unavailable")
+                }
+                connection.inputStream.bufferedReader().use { reader ->
+                    val line = reader.readLine()?.trim().orEmpty()
+                    if (line.length > 2_048) throw IOException("Place overlay config is invalid")
+                    line.trimEnd('/')
+                }
+            } finally {
+                connection.disconnect()
             }
-            connection.inputStream.bufferedReader().use { reader ->
-                val line = reader.readLine()?.trim().orEmpty()
-                if (line.length > 2_048) throw IOException("Place overlay config is invalid")
-                line.trimEnd('/')
-            }
-        } finally {
-            connection.disconnect()
+        } catch (_: IOException) {
+            // Do not make all overlays disappear just because the remote provider config is
+            // temporarily unreachable. The configured file can still override this when online.
+            DEFAULT_ENDPOINT
         }
         if (!value.startsWith("https://")) throw IOException("Place overlay service is disabled or invalid")
         resolvedEndpoint = value
@@ -220,6 +226,7 @@ class PlaceOverlayClient(
 
     companion object {
         private val rateLock = Any()
+        private const val DEFAULT_ENDPOINT = "https://nominatim.openstreetmap.org"
         private const val EARTH_RADIUS_M = 6_371_008.8
 
         internal fun parseResponse(place: PlaceDiscovery, body: String): PlaceOverlayData? {

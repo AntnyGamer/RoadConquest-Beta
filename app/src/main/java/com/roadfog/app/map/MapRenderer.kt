@@ -582,8 +582,12 @@ class MapRenderer(
 
     private fun installRecordedRouteLayer(style: Style) {
         style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, emptyRoadFeatures()))
+        // Pending evidence is raw GPS, not final road geometry. Keep a faint, narrow
+        // provisional trace so the map never appears to have a random hole while OSRM is
+        // resolving the interval. Confirmed traveled roads remain thicker and nearly opaque,
+        // and are drawn from road-snapped geometry only.
         val layer = LineLayer(PENDING_ROUTE_LAYER_ID, PENDING_ROUTE_SOURCE_ID).withProperties(
-            lineColor(Cosmetics.roadColor(context).argb), lineWidth(4f), lineOpacity(0.65f),
+            lineColor(Cosmetics.roadColor(context).argb), lineWidth(2f), lineOpacity(0.22f),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
         layer.setMinZoom(FogBitmapRenderer.MIN_ROAD_ZOOM.toFloat())

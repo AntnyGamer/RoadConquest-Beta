@@ -31,8 +31,9 @@ class OsrmTurnTest {
         JSONObject().put("name", name).put("distance", 30).put("geometry", JSONObject()
             .put("type", "LineString").put("coordinates", JSONArray(coordinates.toList())))
     ))
-    private fun matching(vararg legs: JSONObject) = JSONObject().put("confidence", 0.95)
-        .put("legs", JSONArray(legs.toList()))
+    private fun matching(vararg legs: JSONObject) = matchingWithConfidence(0.95, *legs)
+    private fun matchingWithConfidence(confidence: Double, vararg legs: JSONObject) =
+        JSONObject().put("confidence", confidence).put("legs", JSONArray(legs.toList()))
     private fun response(traces: List<JSONObject>, vararg matchings: JSONObject) = JSONObject()
         .put("code", "Ok").put("tracepoints", JSONArray(traces))
         .put("matchings", JSONArray(matchings.toList())).toString()
@@ -145,6 +146,37 @@ class OsrmTurnTest {
         assertEquals(listOf("Approach", "Entry", "Turn", "Exit"), result.roads.map { it.name })
         assertEquals(setOf(1L, 2L, 3L, 4L, 5L), result.matchedPointConfidences.keys)
         assertTrue(result.roads[2].coordinatesJson.contains(junction.toString()))
+    }
+
+    @Test fun contextualInternalAlternativeDoesNotRetryForeverAtAcceptedConfidence() {
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, a), trace(0, 1, b), trace(0, 2, c, 2),
+            trace(0, 3, d), trace(0, 4, e)
+        ), matchingWithConfidence(
+            0.60,
+            leg("Approach", a, b),
+            leg("Entry", b, c),
+            leg("Turn", c, junction, d),
+            leg("Exit", d, e)
+        )), points(a, b, c, d, e)))
+
+        assertEquals(setOf(1L, 2L, 3L, 4L, 5L), result.matchedPointConfidences.keys)
+        assertEquals(4, result.roads.size)
+    }
+
+    @Test fun contextualInternalAlternativeStillWaitsBelowAcceptedConfidence() {
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, a), trace(0, 1, b), trace(0, 2, c, 2),
+            trace(0, 3, d), trace(0, 4, e)
+        ), matchingWithConfidence(
+            0.40,
+            leg("Approach", a, b),
+            leg("Entry", b, c),
+            leg("Turn", c, junction, d),
+            leg("Exit", d, e)
+        )), points(a, b, c, d, e)))
+
+        assertFalse(3L in result.matchedPointConfidences)
     }
 
     @Test fun unsupportedDetourCannotTurnARecordedStraightDriveIntoAnInventedRoad() {

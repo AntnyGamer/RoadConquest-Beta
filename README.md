@@ -17,7 +17,7 @@ location settings and allow background battery use. Settings includes shortcuts 
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
 This release keeps the permanent signing identity and application ID `com.roadfog.app`.
-Its internal Android version code is 31 so it can update the latest signed development build
+Its internal Android version code is 32 so it can update the latest signed development build
 without uninstalling it. The current database schema, saved history, settings and accounts are
 preserved. Older unsupported database schemas require a fresh installation; export history before
 uninstalling, because exports currently have no in-app import.

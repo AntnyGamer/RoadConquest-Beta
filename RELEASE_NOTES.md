@@ -1,24 +1,12 @@
-# RoadConquest 1.0 Beta 5
+# RoadConquest 1.0 Beta 6
 
-- Reorganize Settings into clearer Appearance, Tracking, Account, Progress, Data and privacy,
-  and About sections.
-- Replace several slash and ampersand-heavy Settings labels with simpler wording and move export,
-  privacy details, credits, and project links into the sections where they belong.
-- Treat the first resolved town, state/region, and country after a fresh install or data reset as
-  the starting baseline instead of awarding 2,100 points and three discoveries for opening the app.
-- Safely convert an existing unspent Beta 4 starter trio into that zero-point baseline when it can
-  be identified without rewriting purchases or place-achievement rewards.
-- Keep later town, state/region, and country discoveries rewardable exactly once, while preserving
-  existing place progress from earlier builds.
-- Add a mutually exclusive map overlay picker: explored countries are blue, states/regions purple, and towns green, with semi-transparent native map fills below the fog.
-- Make highlighted areas tappable for place type, population when available, and computed boundary area.
-- Cache overlay boundaries locally and throttle opt-in boundary lookups so overlays do not add continuous background work.
-- Fix a road-history repair bug where overlapping matcher batches could delete previously saved
-  road geometry after a data reset, leaving only scattered blue snippets even though most GPS fixes matched.
-- Rebuild saved road geometry once from raw GPS under matcher revision 3; mileage and raw history are preserved,
-  and resets now clear stale matcher-repair state.
-- Add regression coverage for the fresh-slate place baseline behavior, road-rebuild/reset behavior, and overlay parsing.
-- Keep the Beta 4 classic car marker, zoom cap, sword points icon, progression shop, tracking,
-  account, and leaderboard systems unchanged.
+- Fix place overlays after a fresh reset: the starting country, state/region, and town are now kept as overlay-visible baseline places while still awarding zero points and counting as zero discoveries.
+- Recover Beta 5 counter-only starter baselines the next time that location resolves, without changing points or achievement progress.
+- Refresh a selected overlay even when reverse geocoding only resolves zero-point starter places.
+- When an overlay is enabled after a reset, seed place resolution from the best fresh cached location so the current baseline can appear without requiring a rewarded discovery first.
+- Make overlay loading fall back to the default Nominatim boundary service when the remote provider-config file is temporarily unavailable, and bypass stale Beta 5 negative overlay cache entries.
+- Keep unmatched raw GPS only as a faint, narrow provisional trace while OSRM is resolving it. Confirmed traveled roads remain thicker and nearly opaque and use road-snapped geometry, so pending data does not look like a finalized off-road route while the map still stays visually continuous.
+- Fix a matcher dead-zone where an otherwise acceptable 45–79% confidence OSRM match with an internally ambiguous junction could be retried forever even after fixes on both sides constrained the route. Contextual interior points now use the same 45% acceptance threshold as the saved road geometry, while ambiguous trace endpoints still stay pending for more evidence.
+- Preserve the Beta 5 matcher repair, Settings organization, progression system, cosmetics, account, leaderboard, and fog behavior.
 
-Android version code is 31. Android 12 or newer is required.
+Android version code is 32. Android 12 or newer is required.
