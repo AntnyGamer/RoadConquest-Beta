@@ -13,7 +13,11 @@
 - Add a mutually exclusive map overlay picker: explored countries are blue, states/regions purple, and towns green, with semi-transparent native map fills below the fog.
 - Make highlighted areas tappable for place type, population when available, and computed boundary area.
 - Cache overlay boundaries locally and throttle opt-in boundary lookups so overlays do not add continuous background work.
-- Add regression coverage for the fresh-slate place baseline behavior and overlay parsing.
+- Fix a road-history repair bug where overlapping matcher batches could delete previously saved
+  road geometry after a data reset, leaving only scattered blue snippets even though most GPS fixes matched.
+- Rebuild saved road geometry once from raw GPS under matcher revision 3; mileage and raw history are preserved,
+  and resets now clear stale matcher-repair state.
+- Add regression coverage for the fresh-slate place baseline behavior, road-rebuild/reset behavior, and overlay parsing.
 - Keep the Beta 4 classic car marker, zoom cap, sword points icon, progression shop, tracking,
   account, and leaderboard systems unchanged.
 
