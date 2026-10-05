@@ -28,6 +28,7 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
@@ -317,6 +318,14 @@ class MapRenderingDeviceTest {
                 assertTrue("Fog layer is recreated after style reload", map.style!!.getLayer("roadconquest-fog-raster") is RasterLayer)
                 assertTrue("Car source is recreated after style reload", map.style!!.getSource("roadconquest-car") is GeoJsonSource)
                 assertTrue("Car layer is recreated after style reload", map.style!!.getLayer("roadconquest-car-symbol") is SymbolLayer)
+                assertTrue(map.style!!.getLayer("roadconquest-country-overlays-fill") is FillLayer)
+                assertTrue(map.style!!.getLayer("roadconquest-state-overlays-fill") is FillLayer)
+                assertTrue(map.style!!.getLayer("roadconquest-town-overlays-fill") is FillLayer)
+                val ids = map.style!!.layers.map { it.id }
+                assertTrue(ids.indexOf("roadconquest-country-overlays-fill") < ids.indexOf("roadconquest-state-overlays-fill"))
+                assertTrue(ids.indexOf("roadconquest-state-overlays-fill") < ids.indexOf("roadconquest-town-overlays-fill"))
+                assertTrue(ids.indexOf("roadconquest-town-overlays-fill") < ids.indexOf("roadconquest-world-fog-raster"))
+                assertTrue(ids.indexOf("roadconquest-town-overlays-fill") < ids.indexOf("roadconquest-fog-raster"))
             }
         }
     }
@@ -352,6 +361,11 @@ class MapRenderingDeviceTest {
                 }
             }
             assertTrue("Bundled style must load", ready.await(30, TimeUnit.SECONDS))
+            scenario.onActivity {
+                (map.style!!.getSource("roadconquest-town-overlays") as GeoJsonSource).setGeoJson(
+                    """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"overlay_name":"Projection Town","overlay_kind":"TOWN","area_sq_km":1.0},"geometry":{"type":"Polygon","coordinates":[[[-122.4194,37.7747],[-122.4188,37.7747],[-122.4188,37.7751],[-122.4194,37.7751],[-122.4194,37.7747]]]}}]}"""
+                )
+            }
 
             fun moveAndAssert(target: LatLng, zoom: Double, bearing: Double): android.graphics.PointF {
                 val idle = CountDownLatch(1)
@@ -386,6 +400,14 @@ class MapRenderingDeviceTest {
                     if (!found) SystemClock.sleep(50)
                 }
                 assertTrue("Traveled road stays rendered at its projected geographic point", found)
+                var overlayFound = false
+                scenario.onActivity {
+                    overlayFound = map.queryRenderedFeatures(
+                        map.projection.toScreenLocation(roadPoint),
+                        "roadconquest-town-overlays-fill"
+                    ).isNotEmpty()
+                }
+                assertTrue("Place overlay stays anchored to its geographic polygon", overlayFound)
                 return screen
             }
 
