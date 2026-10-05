@@ -50,7 +50,7 @@ class AccountActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        setTheme(R.style.Theme_RoadConquest)
+        setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         WindowCompat.enableEdgeToEdge(window)
