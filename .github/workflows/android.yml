@@ -35,6 +35,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Verify competitive version allowlist includes this Android build
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts)
+          allowed=$(sed -n 's/^PLAY_VERSION_CODES=\([0-9,][0-9,]*\)$/\1/p' server/README.md | head -n 1)
+          test -n "$version_code"
+          test -n "$allowed"
+          case ",$allowed," in
+            *",$version_code,"*) ;;
+            *) echo "::error::Android versionCode $version_code is missing from PLAY_VERSION_CODES=$allowed"; exit 1 ;;
+          esac
       - name: Set up Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -227,6 +239,14 @@ jobs:
           cp "${unsigned_apks[0]}" "$out/RoadConquest-$version-unsigned.apk"
           git archive --format=zip --prefix="RoadConquest/" HEAD > "$out/RoadConquest-AndroidStudio-$version.zip"
           cp RELEASE_NOTES.md "$out/Release-notes.md"
+          function_dir="$RUNNER_TEMP/roadconquest-account-function"
+          gh run download "$GITHUB_RUN_ID" -n account-function -D "$function_dir"
+          mapfile -t account_bundles < <(find "$function_dir" -type f -name 'index.mjs' -print)
+          if [ "${#account_bundles[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one tested account function artifact, found ${#account_bundles[@]}."
+            exit 1
+          fi
+          cp "${account_bundles[0]}" "$out/RoadConquest-account-function-$version.mjs"
           # Publish only an installable APK with the permanent signing identity.
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
           printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/roadconquest-release.keystore"
@@ -239,8 +259,8 @@ jobs:
           new_cert=$("$signer" verify --print-certs "$out/RoadConquest-$version.apk" | sed -n 's/Signer #1 certificate SHA-256 digest: //p')
           test "$new_cert" = "cd3c4b180b4740a0bff77e37de109be6cab264cd1bd66e0ced05441252ad9ae1"
           rm "$out/RoadConquest-$version-unsigned.apk"
-          (cd "$out" && sha256sum *.apk *.zip > "RoadConquest-$version-SHA256SUMS.txt")
+          (cd "$out" && sha256sum *.apk *.zip *.mjs > "RoadConquest-$version-SHA256SUMS.txt")
           release_flags=()
           if [[ "$version" == *-beta* ]]; then release_flags+=(--prerelease); fi
           gh release create "$tag" --target "$GITHUB_SHA" --title "RoadConquest ${version/-beta/ Beta}" "${release_flags[@]}" \
-            --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.zip "$out"/*SHA256SUMS.txt
+            --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.zip "$out"/*.mjs "$out"/*SHA256SUMS.txt

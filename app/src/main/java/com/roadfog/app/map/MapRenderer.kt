@@ -425,7 +425,10 @@ class MapRenderer(
 
     private fun updateFogCoverage(force: Boolean = false) {
         val coordinates = detailedFogCoordinates
-        val detailed = fogEnabled && !cameraMoving && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
+        // Keep the georeferenced detailed bitmap during gestures for as long as it still
+        // covers the viewport. Fall back to the world layer only when movement actually outruns
+        // that coverage, avoiding a visible "fog closes again" flash on every pan or pinch.
+        val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
                 FogCoverage.coversViewport(fogCoverageScreen, mapView.width, mapView.height)

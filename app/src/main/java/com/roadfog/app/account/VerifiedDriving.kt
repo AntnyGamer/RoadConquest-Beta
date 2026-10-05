@@ -19,8 +19,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Only live fixes enter competition. Saved history/imports and local totals are never uploaded. */
 class VerifiedDriving(context: Context) {
     private val context = context.applicationContext
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newSingleThreadScheduledExecutor()
     private val busy = AtomicBoolean(false)
+    @Volatile private var drainTask: java.util.concurrent.ScheduledFuture<*>? = null
     private val queueLock = Any()
     private val pendingLocations = ArrayDeque<Location>()
     private val points = mutableListOf<JSONObject>()
@@ -46,18 +47,20 @@ class VerifiedDriving(context: Context) {
     }
 
     private fun scheduleDrain() {
-        if (!busy.compareAndSet(false, true)) return
+        if (!accepting || !busy.compareAndSet(false, true)) return
+        val delay = (retryAfter - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
         val submitted = runCatching {
-            executor.execute {
+            drainTask = executor.schedule({
                 try {
                     drainQueuedLocations()
                 } finally {
+                    drainTask = null
                     busy.set(false)
                     if (accepting && synchronized(queueLock) { pendingLocations.isNotEmpty() }) {
                         scheduleDrain()
                     }
                 }
-            }
+            }, delay, TimeUnit.MILLISECONDS)
         }.isSuccess
         if (!submitted) busy.set(false)
     }
@@ -70,11 +73,15 @@ class VerifiedDriving(context: Context) {
             try {
                 accept(location)
             } catch (_: Exception) {
-                // Keep a committed-but-unacknowledged batch for an idempotent live retry.
-                // A failed Google provider is prepared again; no unverified fallback exists.
+                // Keep a committed-but-unacknowledged batch and every still-fresh queued fix.
+                // Retry after a short cooldown; never turn an account/Integrity outage into a
+                // permanent hole in otherwise valid competitive mileage.
                 provider = null
                 retryAfter = SystemClock.elapsedRealtime() + RETRY_AFTER_FAILURE_MS
-                synchronized(queueLock) { pendingLocations.clear() }
+                synchronized(queueLock) {
+                    if (pendingLocations.size >= MAX_BUFFERED_FIXES) pendingLocations.removeLast()
+                    pendingLocations.addFirst(location)
+                }
                 return
             }
         }
@@ -179,6 +186,11 @@ class VerifiedDriving(context: Context) {
 
     fun close() {
         accepting = false
+        // A pending cooldown must not delay the normal stop-time final submission.
+        retryAfter = 0L
+        drainTask?.cancel(false)
+        drainTask = null
+        busy.set(false)
         executor.execute {
             try {
                 // Anything copied before close() remains live evidence, so drain it before the

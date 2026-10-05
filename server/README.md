@@ -187,7 +187,7 @@ PLAY_SERVICE_ACCOUNT_FILE=/run/secrets/play-integrity.json
 # or PLAY_SERVICE_ACCOUNT_JSON=<service-account JSON stored as a secret env var>
 PLAY_CLOUD_PROJECT_NUMBER=<numeric linked Google Cloud project>
 PLAY_CERTIFICATES=<base64url SHA256 app-signing certificate, without padding>
-PLAY_VERSION_CODES=26
+PLAY_VERSION_CODES=26,27,28
 ```
 
 Configure and authorize the Google Cloud project for Play Integrity token decoding. Play-installed
@@ -243,7 +243,7 @@ monitoring for quota failures and 503/422 responses: failures must never grant s
 runs real PostgreSQL constraint races, transaction/retry races, visibility, ties, road de-duplication,
 overlap and account-boundary tests. CI always supplies PostgreSQL, so those tests are not skipped.
 `python3 -m unittest discover -s test -p '*_test.py'` checks the streaming catalog importer.
-Actual Google token decoding, your OSRM extract/annotation behavior, geographic coverage, and
+Each GitHub app release also attaches the exact tested `account-function` bundle. Deploy that artifact (or a byte-identical build) before treating the hosted API as matching the release.\n\nActual Google token decoding, your OSRM extract/annotation behavior, geographic coverage, and
 physical-phone GPS still require production integration/field verification. Do not enable public
 rankings solely because deterministic automated tests passed.
 
