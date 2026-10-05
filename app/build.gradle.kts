@@ -8,8 +8,8 @@ val accountApiUrl = providers.gradleProperty("ROADCONQUEST_ACCOUNT_API_URL").get
 val osrmApiUrl = providers.gradleProperty("ROADCONQUEST_OSRM_API_URL").getOrElse(
     "https://router.project-osrm.org"
 )
-val placeOverlayApiUrl = providers.gradleProperty("ROADCONQUEST_PLACE_OVERLAY_API_URL").getOrElse(
-    "https://nominatim.openstreetmap.org"
+val placeOverlayConfigUrl = providers.gradleProperty("ROADCONQUEST_PLACE_OVERLAY_CONFIG_URL").getOrElse(
+    "https://raw.githubusercontent.com/AntnyGamer/RoadConquest-Beta/main/OVERLAY_PROVIDER.txt"
 )
 
 android {
@@ -26,10 +26,10 @@ android {
         testInstrumentationRunnerArguments["timeout_msec"] = "120000"
         val escapedAccountApiUrl = accountApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
         val escapedOsrmApiUrl = osrmApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
-        val escapedPlaceOverlayApiUrl = placeOverlayApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
+        val escapedPlaceOverlayConfigUrl = placeOverlayConfigUrl.replace("\\", "\\\\").replace("\"", "\\\"")
         buildConfigField("String", "ACCOUNT_API_URL", "\"$escapedAccountApiUrl\"")
         buildConfigField("String", "OSRM_API_URL", "\"$escapedOsrmApiUrl\"")
-        buildConfigField("String", "PLACE_OVERLAY_API_URL", "\"$escapedPlaceOverlayApiUrl\"")
+        buildConfigField("String", "PLACE_OVERLAY_CONFIG_URL", "\"$escapedPlaceOverlayConfigUrl\"")
     }
 
     buildFeatures {
