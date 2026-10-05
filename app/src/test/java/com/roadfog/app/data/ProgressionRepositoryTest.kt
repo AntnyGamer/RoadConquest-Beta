@@ -10,15 +10,16 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.SQLiteMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
-@SQLiteMode(SQLiteMode.Mode.LEGACY)
 class ProgressionRepositoryTest {
     private val context: android.content.Context get() = RuntimeEnvironment.getApplication()
 
     @Before fun reset() {
+        val field = AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
+        (field.get(null) as? AppDatabase)?.close()
+        field.set(null, null)
         ProgressionRepository(context).clearProgression()
         Achievements.reset(context)
     }
