@@ -50,7 +50,7 @@ class TrackingService : Service(), LocationListener {
     private var lastAccepted: Location? = null
     private var lastExplored: Location? = null
     private var lastPlaceCandidate: Location? = null
-    private var baselineCandidateCaptured = false
+    @Volatile private var baselineCandidateCaptured = false
     private var lastBearingDegrees = 0.0
     @Volatile private var lastMatchAttempt = 0L
     @Volatile private var ready = false
@@ -150,7 +150,7 @@ class TrackingService : Service(), LocationListener {
         // never from a later sparse discovery candidate. If Location was off, this naturally
         // waits until the first good fix after the user turns it back on.
         if (!baselineCandidateCaptured && !location.isMock &&
-            location.hasAccuracy() && location.accuracy in 0.01f..MAX_ACCURACY_M
+            location.hasAccuracy() && location.accuracy in 0.01f..MAX_PREVIEW_ACCURACY_M
         ) {
             baselineCandidateCaptured = true
             val baseline = Location(location)
