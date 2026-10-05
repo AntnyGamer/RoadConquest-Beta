@@ -348,7 +348,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:text="Drive history and explored places stay on this device. Road matching sends GPS batches to OSRM. Verified scoring sends live GPS and app-integrity evidence only when enabled."
+                android:text="Drive history stays on this device unless you export it. Enabling a place overlay sends discovered place names to the configured boundary service and caches returned public boundaries locally. Road matching sends GPS batches to OSRM. Verified scoring sends live GPS and app-integrity evidence only when enabled."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="12sp" />
         </LinearLayout>
@@ -375,7 +375,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
-                android:text="Map: OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors. Road matching: OSRM."
+                android:text="Map and overlay data: OpenStreetMap contributors via OpenFreeMap/OpenMapTiles and Nominatim. Road matching: OSRM."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="11sp" />
 
