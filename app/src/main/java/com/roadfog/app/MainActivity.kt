@@ -557,7 +557,7 @@ class MainActivity : Activity() {
         val checked = BooleanArray(modes.size) { modes[it] == current }
         lateinit var dialog: AlertDialog
         dialog = AlertDialog.Builder(this)
-            .setTitle("Map overlay")
+            .setTitle("Map overlay — choose one")
             .setMultiChoiceItems(choices, checked) { _, which, isChecked ->
                 val next = if (isChecked) modes[which] else PlaceOverlayMode.NONE
                 for (index in modes.indices) {
@@ -569,7 +569,6 @@ class MainActivity : Activity() {
                 }
                 renderer?.setPlaceOverlayMode(next) ?: Prefs.setPlaceOverlayMode(this, next)
             }
-            .setMessage("Choose at most one explored-place highlight. Uncheck the selected item for no overlay.")
             .setPositiveButton("Done", null)
             .create()
         dialog.show()
