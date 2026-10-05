@@ -76,6 +76,9 @@ class ProgressionRepositoryTest {
             assertEquals(0L, it.countries)
         }
         assertFalse(progression.repairLegacyStarterPlaceRewards())
+        assertEquals(listOf("United States"), progression.visitedPlaces(PlaceKind.COUNTRY).map { it.displayName })
+        assertEquals(listOf("New Jersey"), progression.visitedPlaces(PlaceKind.STATE).map { it.displayName })
+        assertEquals(listOf("Glassboro"), progression.visitedPlaces(PlaceKind.TOWN).map { it.displayName })
 
         val nextTown = starter.last().copy(
             key = "us|new jersey|pitman",
@@ -104,6 +107,9 @@ class ProgressionRepositoryTest {
             assertEquals(0L, it.states)
             assertEquals(0L, it.countries)
         }
+        assertEquals(listOf("United States"), progression.visitedPlaces(PlaceKind.COUNTRY).map { it.displayName })
+        assertEquals(listOf("New Jersey"), progression.visitedPlaces(PlaceKind.STATE).map { it.displayName })
+        assertEquals(listOf("Glassboro"), progression.visitedPlaces(PlaceKind.TOWN).map { it.displayName })
 
         val nextTown = baseline.take(2) + PlaceDiscovery(
             PlaceKind.TOWN, "us|new jersey|pitman", "Pitman", "New Jersey", "United States",
@@ -121,6 +127,26 @@ class ProgressionRepositoryTest {
             assertEquals(1L, it.towns)
             assertEquals(0L, it.states)
             assertEquals(0L, it.countries)
+        }
+    }
+
+    @Test fun beta5CounterOnlyBaselineIsRecoveredForOverlayWithoutProgress() {
+        val progression = ProgressionRepository(context)
+        val baseline = PlaceDiscovery(
+            PlaceKind.TOWN, "us|new jersey|glassboro", "Glassboro", "New Jersey", "United States",
+            1_000L, 39.7, -75.1
+        )
+        progression.readableDatabase().execSQL(
+            "INSERT OR REPLACE INTO progression_counters(counter_key,value) VALUES(?,1)",
+            arrayOf("baseline:town:${baseline.key}")
+        )
+        val candidate = PendingPlaceCandidate(12, 22, 39.7, -75.1, 1_000L, 0)
+
+        assertEquals(0, progression.resolveCandidate(candidate, listOf(baseline)))
+        assertEquals(listOf("Glassboro"), progression.visitedPlaces(PlaceKind.TOWN).map { it.displayName })
+        progression.snapshot().let {
+            assertEquals(0L, it.balance)
+            assertEquals(0L, it.towns)
         }
     }
 
