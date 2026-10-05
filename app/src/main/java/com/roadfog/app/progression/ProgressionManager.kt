@@ -13,15 +13,20 @@ object ProgressionManager {
     fun sync(context: Context, summary: DataSummary): ProgressionSnapshot {
         val repository = ProgressionRepository(context)
         var snapshot = repository.snapshot()
+        val expectedGeneration = summary.historyGeneration.takeIf { it >= 0L }
         if (summary.roadsUnlockedCount > snapshot.rewardedRoads) {
-            repository.syncRoadRewards(summary.roadsUnlockedCount)
+            repository.syncRoadRewards(summary.roadsUnlockedCount, expectedGeneration)
             snapshot = repository.snapshot()
         }
         val achievements = Achievements.progress(context, summary, metrics(snapshot))
         var changed = false
         for (achievement in achievements) {
             if (achievement.unlocked && achievement.id !in snapshot.rewardedAchievements) {
-                changed = repository.awardAchievement(achievement.id, achievement.rewardPoints) || changed
+                changed = repository.awardAchievement(
+                    achievement.id,
+                    achievement.rewardPoints,
+                    expectedGeneration
+                ) || changed
             }
         }
         return if (changed) repository.snapshot() else snapshot
