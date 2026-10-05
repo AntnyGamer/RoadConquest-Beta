@@ -21,8 +21,10 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.roadfog.app.data.TrackingRepository
+import com.roadfog.app.data.ProgressionRepository
 import com.roadfog.app.account.VerifiedDriving
 import com.roadfog.app.matching.OsrmMatcher
+import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.util.LocationProviders
 import com.roadfog.app.util.Prefs
 import java.util.concurrent.Executors
@@ -33,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TrackingService : Service(), LocationListener {
     private lateinit var locationManager: LocationManager
     private lateinit var repository: TrackingRepository
+    private lateinit var progressionRepository: ProgressionRepository
     private lateinit var verifiedDriving: VerifiedDriving
     private val matcher = OsrmMatcher(BuildConfig.OSRM_API_URL)
     private val matchingExecutor = Executors.newSingleThreadScheduledExecutor()
@@ -46,10 +49,12 @@ class TrackingService : Service(), LocationListener {
     private var lastObserved: Location? = null
     private var lastAccepted: Location? = null
     private var lastExplored: Location? = null
+    private var lastPlaceCandidate: Location? = null
     private var lastBearingDegrees = 0.0
     @Volatile private var lastMatchAttempt = 0L
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
+    private var batteryReceiverRegistered = false
     private val providerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
@@ -57,10 +62,24 @@ class TrackingService : Service(), LocationListener {
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
         }
     }
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != Intent.ACTION_BATTERY_CHANGED) return
+            val level = intent.getIntExtra("level", -1)
+            val scale = intent.getIntExtra("scale", -1)
+            if (level < 0 || scale <= 0) return
+            val percent = (level * 100 / scale).coerceIn(0, 100)
+            // No progression I/O is needed for ordinary battery levels.
+            if (percent <= 5 && ProgressionManager.recordBatteryPercent(this@TrackingService, percent)) {
+                sendBroadcast(Intent(ACTION_STATS_UPDATED).setPackage(packageName))
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         repository = TrackingRepository(this)
+        progressionRepository = ProgressionRepository(this)
         verifiedDriving = VerifiedDriving(this)
         locationManager = getSystemService(LocationManager::class.java)
         createNotificationChannel()
@@ -83,6 +102,14 @@ class TrackingService : Service(), LocationListener {
             addAction(LocationManager.MODE_CHANGED_ACTION)
         }, ContextCompat.RECEIVER_NOT_EXPORTED)
         providerReceiverRegistered = true
+        ContextCompat.registerReceiver(
+            this,
+            batteryReceiver,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        batteryReceiverRegistered = true
+        ProgressionManager.recordBatteryFromSystem(this)
         Prefs.markEverStarted(this)
         sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
     }
@@ -143,9 +170,13 @@ class TrackingService : Service(), LocationListener {
             (lastExplored?.distanceTo(location) ?: Float.POSITIVE_INFINITY) >= 20f) {
             val visited = Location(location)
             lastExplored = visited
+            val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
+                PLACE_CANDIDATE_MIN_DISTANCE_M
+            if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
             storageExecutor.execute {
                 try {
                     if (repository.recordExploredPlace(visited)) {
+                        if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
                         sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
                     }
                 } catch (error: Exception) {
@@ -225,6 +256,8 @@ class TrackingService : Service(), LocationListener {
         ready = false
         if (providerReceiverRegistered) runCatching { unregisterReceiver(providerReceiver) }
         providerReceiverRegistered = false
+        if (batteryReceiverRegistered) runCatching { unregisterReceiver(batteryReceiver) }
+        batteryReceiverRegistered = false
         if (::locationManager.isInitialized) runCatching { locationManager.removeUpdates(this) }
         matchingExecutor.shutdownNow()
         if (::verifiedDriving.isInitialized) verifiedDriving.close()
@@ -553,6 +586,7 @@ class TrackingService : Service(), LocationListener {
         private const val MAX_LOCATION_AGE_NANOS = MAX_LOCATION_AGE_MS * 1_000_000L
         private const val MAX_START_ANCHOR_AGE_MS = 10_000L
         private const val MATCH_INTERVAL_MS = 10_000L
+        private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 1_000f
         private const val MATCH_RETRY_AFTER_PARTIAL_MS = 30_000L
         private const val MATCH_RETRY_AFTER_FAILURE_MS = 5 * 60 * 1000L
         private const val MATCH_SINGLE_POINT_DEFERRAL_MS = 30_000L
