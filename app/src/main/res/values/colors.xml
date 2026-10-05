@@ -5,4 +5,9 @@
     <color name="fog">#121820</color>
     <color name="text_primary">#111827</color>
     <color name="text_secondary">#4B5563</color>
+    <color name="gold_screen_bg">#FFF9E8</color>
+    <color name="gold_panel_bg">#F7FFF2CC</color>
+    <color name="gold_text_primary">#3A2A00</color>
+    <color name="gold_text_secondary">#705A18</color>
+    <color name="gold_accent">#C99100</color>
 </resources>
