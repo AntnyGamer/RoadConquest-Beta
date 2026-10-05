@@ -8,7 +8,10 @@
   the starting baseline instead of awarding 2,100 points and three discoveries for opening the app.
 - Keep later town, state/region, and country discoveries rewardable exactly once, while preserving
   existing place progress from earlier builds.
-- Add regression coverage for the fresh-slate place baseline behavior.
+- Add a mutually exclusive map overlay picker: explored countries are blue, states/regions purple, and towns green, with semi-transparent native map fills below the fog.
+- Make highlighted areas tappable for place type, population when available, and computed boundary area.
+- Cache overlay boundaries locally and throttle opt-in boundary lookups so overlays do not add continuous background work.
+- Add regression coverage for the fresh-slate place baseline behavior and overlay parsing.
 - Keep the Beta 4 classic car marker, zoom cap, sword points icon, progression shop, map behavior,
   tracking, account, and leaderboard systems unchanged.
 
