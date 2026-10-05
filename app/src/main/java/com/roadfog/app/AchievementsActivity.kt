@@ -28,7 +28,7 @@ class AchievementsActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        setTheme(R.style.Theme_RoadConquest)
+        setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
         WindowCompat.enableEdgeToEdge(window)
         WindowCompat.getInsetsController(window, window.decorView).apply {
