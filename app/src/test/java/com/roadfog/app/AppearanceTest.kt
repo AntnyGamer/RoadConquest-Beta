@@ -76,6 +76,26 @@ class AppearanceTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+    @Test fun settingsUsesGroupedModernCards() {
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
+        try {
+            val activity = controller.get()
+            for (id in listOf(
+                R.id.mapSettingsCard,
+                R.id.trackingSettingsCard,
+                R.id.accountSettingsCard,
+                R.id.progressSettingsCard,
+                R.id.privacySettingsCard
+            )) {
+                val card = activity.findViewById<android.view.View>(id)
+                assertNotNull(card.background)
+                assertTrue(card.elevation > 0f)
+            }
+            assertNotNull(activity.findViewById<Button>(R.id.mapStyleButton).background)
+            assertNotNull(activity.findViewById<Button>(R.id.shopButton).background)
+        } finally { controller.pause().stop().destroy() }
+    }
+
     @Test fun unknownPreferencesFallBackAndAppKeepsItsUpgradeIdentity() {
         val app = RuntimeEnvironment.getApplication()
         app.getSharedPreferences("roadfog_preferences", 0).edit().putString("ui_theme", "bad").putString("map_mode", "bad").commit()

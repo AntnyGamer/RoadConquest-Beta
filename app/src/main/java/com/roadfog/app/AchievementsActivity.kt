@@ -64,7 +64,7 @@ class AchievementsActivity : Activity() {
                 if (isDestroyed) return@runOnUiThread
                 result.fold(
                     onSuccess = { (progression, achievements) ->
-                        points.text = String.format(Locale.getDefault(), "★ %,d points", progression.balance)
+                        points.text = String.format(Locale.getDefault(), "⚔ %,d points", progression.balance)
                         text.visibility = android.view.View.GONE
                         list.removeAllViews()
                         achievements.forEach { addAchievement(list, it) }

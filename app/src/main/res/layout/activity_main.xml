@@ -10,7 +10,7 @@
         android:id="@+id/mapView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        maplibre:maplibre_cameraZoomMax="22.0"
+        maplibre:maplibre_cameraZoomMax="20.0"
         maplibre:maplibre_renderTextureMode="true"
         maplibre:maplibre_pixelRatio="2.0" />
 
@@ -39,7 +39,7 @@
         android:clickable="true"
         android:elevation="8dp"
         android:focusable="true"
-        android:text="★ 0 points"
+        android:text="⚔ 0 points"
         android:textColor="?attr/rcTextPrimary"
         android:textSize="14sp"
         android:textStyle="bold" />

@@ -498,7 +498,7 @@ class MainActivity : Activity() {
                 result.fold(
                     onSuccess = { (value, progression, unlocked) ->
                         statsText.text = StatsText.format(this, value)
-                        pointsText.text = String.format(Locale.getDefault(), "★ %,d points", progression.balance)
+                        pointsText.text = String.format(Locale.getDefault(), "⚔ %,d points", progression.balance)
                         if (unlocked.isNotEmpty()) {
                             val reward = unlocked.sumOf { it.rewardPoints }
                             val message = if (unlocked.size == 1) {

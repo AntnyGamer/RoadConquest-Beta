@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:background="@drawable/panel_background"
-            android:text="★ 0 points"
+            android:text="⚔ 0 points"
             android:textColor="?attr/rcTextPrimary"
             android:textSize="17sp"
             android:textStyle="bold" />

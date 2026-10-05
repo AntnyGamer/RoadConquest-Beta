@@ -416,7 +416,7 @@ object FogBitmapRenderer {
     const val LOCATION_FULL_M = ROAD_FULL_M
     const val MAX_FOG_ALPHA = 0.80f
     const val MIN_ROAD_ZOOM = 9.0
-    const val MAX_ZOOM = 22.0
+    const val MAX_ZOOM = 20.0
     const val CENTER_ZOOM = 18.0
     const val MAX_BITMAP_DIMENSION = 768
     const val VIEWPORT_PADDING_MULTIPLIER = 1.5f

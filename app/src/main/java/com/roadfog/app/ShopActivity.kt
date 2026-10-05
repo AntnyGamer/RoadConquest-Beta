@@ -77,7 +77,7 @@ class ShopActivity : Activity() {
     }
 
     private fun render(snapshot: ProgressionSnapshot) {
-        pointsText.text = String.format(Locale.getDefault(), "★ %,d points", snapshot.balance)
+        pointsText.text = String.format(Locale.getDefault(), "⚔ %,d points", snapshot.balance)
         progressText.text = String.format(
             Locale.getDefault(),
             "%,d roads rewarded • %,d towns • %,d states/regions • %,d countries\n%,d lifetime points earned • %,d spent",
