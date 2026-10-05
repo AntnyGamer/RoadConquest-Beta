@@ -118,7 +118,7 @@ Keep the signing backup outside the repository and release assets. Each release 
 Override the account endpoint with the Gradle property
 `ROADCONQUEST_ACCOUNT_API_URL=https://accounts.example.com`. Local matching defaults to the public
 OSRM demo; a compatible controlled matcher can be selected with
-`ROADCONQUEST_OSRM_API_URL=https://roads.example.com`. Administrative overlay boundaries default to the public Nominatim endpoint and are requested only after the user enables an overlay; results are cached and requests are throttled. Override it with `ROADCONQUEST_PLACE_OVERLAY_API_URL=https://nominatim.example.com` for a controlled provider.
+`ROADCONQUEST_OSRM_API_URL=https://roads.example.com`. Administrative overlay boundaries are requested only after the user enables an overlay; results are cached and requests are throttled. The APK reads the active provider from `OVERLAY_PROVIDER.txt` on this repository’s `main` branch so the service can be switched or disabled without an app update. Custom builds can point at another remote config with `ROADCONQUEST_PLACE_OVERLAY_CONFIG_URL=https://example.com/overlay-provider.txt`.
 See [server setup](server/README.md) and the [physical-device checklist](ANDROID_TEST_CHECKLIST.md).
 
 ## Privacy and map credits
