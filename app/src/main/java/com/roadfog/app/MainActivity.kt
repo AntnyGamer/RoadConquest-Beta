@@ -30,6 +30,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.data.RoadRecord
+import com.roadfog.app.data.ProgressionRepository
 import com.roadfog.app.account.AccountOnboarding
 import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.map.MapRenderer
@@ -574,6 +575,16 @@ class MainActivity : Activity() {
                     }
                 }
                 renderer?.setPlaceOverlayMode(next) ?: Prefs.setPlaceOverlayMode(this, next)
+                if (next != PlaceOverlayMode.NONE) {
+                    // After a reset there may be no named-place row yet. Seed one from the best
+                    // fresh cached fix so the current country/state/town can become an uncounted
+                    // starter baseline and render immediately once reverse geocoding finishes.
+                    showFreshCachedLocation()
+                    lastPreviewLocation?.takeIf(::isFreshLocation)?.let {
+                        ProgressionRepository(this).recordPlaceCandidate(it)
+                    }
+                    resolvePendingPlaces()
+                }
             }
             .setPositiveButton("Done", null)
             .create()
