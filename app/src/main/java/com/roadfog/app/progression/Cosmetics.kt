@@ -118,15 +118,35 @@ object Cosmetics {
         val glass = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         val dark = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(17, 24, 39) }
 
-        when (carStyle(context)) {
+        val style = carStyle(context)
+        when (style) {
             CarStyle.CLASSIC -> {
-                canvas.drawRoundRect(RectF(10f, 18f, 38f, 38f), 5f, 5f, body)
                 canvas.drawPath(Path().apply {
-                    moveTo(15f, 19f); lineTo(18f, 11f); lineTo(30f, 11f); lineTo(34f, 19f); close()
+                    moveTo(12f, 29f)
+                    lineTo(14f, 19f)
+                    cubicTo(14.6f, 16f, 17.2f, 14f, 20.2f, 14f)
+                    lineTo(27.8f, 14f)
+                    cubicTo(30.8f, 14f, 33.4f, 16f, 34f, 19f)
+                    lineTo(36f, 29f)
+                    lineTo(39f, 31f)
+                    lineTo(39f, 39f)
+                    lineTo(34f, 39f)
+                    lineTo(34f, 36f)
+                    lineTo(14f, 36f)
+                    lineTo(14f, 39f)
+                    lineTo(9f, 39f)
+                    lineTo(9f, 31f)
+                    close()
                 }, body)
                 canvas.drawPath(Path().apply {
-                    moveTo(19f, 14f); lineTo(29f, 14f); lineTo(31f, 20f); lineTo(17f, 20f); close()
+                    moveTo(17f, 20f)
+                    lineTo(31f, 20f)
+                    lineTo(32.5f, 27f)
+                    lineTo(15.5f, 27f)
+                    close()
                 }, glass)
+                canvas.drawCircle(15.5f, 33.5f, 2.5f, dark)
+                canvas.drawCircle(32.5f, 33.5f, 2.5f, dark)
             }
             CarStyle.SPORT -> {
                 canvas.drawPath(Path().apply {
@@ -152,7 +172,7 @@ object Cosmetics {
                 }, glass)
             }
         }
-        if (carStyle(context) != CarStyle.RACER) {
+        if (style == CarStyle.SPORT || style == CarStyle.SUV) {
             canvas.drawCircle(14f, 36f, 3f, dark)
             canvas.drawCircle(34f, 36f, 3f, dark)
         }
