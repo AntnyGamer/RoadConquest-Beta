@@ -13,6 +13,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.achievements.AchievementProgress
 import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.data.TrackingRepository
+import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.util.Appearance
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -51,13 +52,19 @@ class AchievementsActivity : Activity() {
         ViewCompat.requestApplyInsets(root)
 
         val text = findViewById<TextView>(R.id.achievementsText)
+        val points = findViewById<TextView>(R.id.achievementPointsText)
         val list = findViewById<LinearLayout>(R.id.achievementsList)
         executor.execute {
-            val result = runCatching { Achievements.progress(this, TrackingRepository(this).getSummary()) }
+            val result = runCatching {
+                val summary = TrackingRepository(this).getSummary()
+                val progression = ProgressionManager.sync(this, summary)
+                progression to Achievements.progress(this, summary, ProgressionManager.metrics(progression))
+            }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 result.fold(
-                    onSuccess = { achievements ->
+                    onSuccess = { (progression, achievements) ->
+                        points.text = String.format(Locale.getDefault(), "★ %,d points", progression.balance)
                         text.visibility = android.view.View.GONE
                         list.removeAllViews()
                         achievements.forEach { addAchievement(list, it) }
@@ -81,13 +88,13 @@ class AchievementsActivity : Activity() {
         }
         card.addView(TextView(this).apply {
             text = (if (item.unlocked) "UNLOCKED  " else "LOCKED  ") + item.title
-            setTextColor(getColor(R.color.text_primary))
+            setTextColor(Appearance.color(this@AchievementsActivity, R.attr.rcTextPrimary))
             textSize = 17f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         card.addView(TextView(this).apply {
-            text = item.description
-            setTextColor(getColor(R.color.text_secondary))
+            text = item.description + String.format(Locale.getDefault(), "  •  +%,d points", item.rewardPoints)
+            setTextColor(Appearance.color(this@AchievementsActivity, R.attr.rcTextSecondary))
             textSize = 14f
             setPadding(0, dp(4), 0, dp(8))
         })
@@ -98,7 +105,7 @@ class AchievementsActivity : Activity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(18)))
         card.addView(TextView(this).apply {
             text = progressText(item)
-            setTextColor(getColor(R.color.text_secondary))
+            setTextColor(Appearance.color(this@AchievementsActivity, R.attr.rcTextSecondary))
             textSize = 13f
             setPadding(0, dp(6), 0, 0)
         })
@@ -108,18 +115,17 @@ class AchievementsActivity : Activity() {
         ).apply { bottomMargin = dp(12) })
     }
 
-    private fun progressText(item: AchievementProgress): String =
-        if (item.unit == "roads") {
-            String.format(
-                Locale.getDefault(), "%,.0f / %,.0f roads",
-                item.progress.coerceAtMost(item.goal), item.goal
-            )
-        } else {
-            String.format(
-                Locale.getDefault(), "%,.1f / %,.0f mi",
-                item.progress.coerceAtMost(item.goal), item.goal
-            )
-        }
+    private fun progressText(item: AchievementProgress): String = when (item.unit) {
+        "mi" -> String.format(
+            Locale.getDefault(), "%,.1f / %,.0f mi",
+            item.progress.coerceAtMost(item.goal), item.goal
+        )
+        "complete" -> if (item.unlocked) "Completed" else "Not completed"
+        else -> String.format(
+            Locale.getDefault(), "%,.0f / %,.0f %s",
+            item.progress.coerceAtMost(item.goal), item.goal, item.unit
+        )
+    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
