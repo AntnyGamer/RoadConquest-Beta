@@ -143,6 +143,7 @@ class TrackingRepositoryTest {
             .remove("road_matching_revision")
             .commit()
         repository.clearHistory()
+        repository = TrackingRepository(context)
         assertFalse(context.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
             .getBoolean("road_history_repair_active", false))
         assertFalse(repository.prepareRoadHistoryRepair())
