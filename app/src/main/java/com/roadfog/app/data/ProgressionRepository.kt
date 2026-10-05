@@ -153,6 +153,35 @@ class ProgressionRepository(context: Context) {
         ) != -1L
     }
 
+    /**
+     * Capture the exact first good live fix for a fresh/reset progression history. Ordinary
+     * sparse place candidates never substitute for this zero-point starting location.
+     */
+    fun recordBaselineCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
+        if (!location.latitude.isFinite() || !location.longitude.isFinite() ||
+            location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0
+        ) return@synchronized false
+        val db = dbHelper.writableDatabase
+        if (db.rawQuery("SELECT 1 FROM visited_places LIMIT 1", null).use { it.moveToFirst() }) {
+            return@synchronized false
+        }
+        val values = ContentValues().apply {
+            put("cell_x", BASELINE_CANDIDATE_X)
+            put("cell_y", BASELINE_CANDIDATE_Y)
+            put("latitude", location.latitude)
+            put("longitude", location.longitude)
+            put("first_seen_at", location.time.takeIf { it > 0L } ?: System.currentTimeMillis())
+            put("attempts", 0)
+            put("next_attempt_ms", 0)
+        }
+        db.insertWithOnConflict(
+            "place_candidates",
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_IGNORE
+        ) != -1L
+    }
+
     fun pendingPlaceCandidates(
         limit: Int = 8,
         nowMillis: Long = System.currentTimeMillis()
@@ -160,9 +189,8 @@ class ProgressionRepository(context: Context) {
         require(limit in 1..50)
         val db = dbHelper.readableDatabase
 
-        // Before any place is known, the zero-point baseline must describe where this fresh
-        // history actually started. Pin resolution to the oldest recorded candidate; if its
-        // geocoder lookup is temporarily deferred, later driving must not steal the baseline.
+        // With no place data yet, wait specifically for the exact live baseline fix. A later
+        // sparse driving candidate must never become the zero-point starting location.
         val hasKnownPlace = db.rawQuery(
             "SELECT 1 FROM visited_places LIMIT 1",
             null
@@ -174,11 +202,11 @@ class ProgressionRepository(context: Context) {
                     "cell_x", "cell_y", "latitude", "longitude",
                     "first_seen_at", "attempts", "next_attempt_ms"
                 ),
+                "cell_x = ? AND cell_y = ?",
+                arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString()),
                 null,
                 null,
                 null,
-                null,
-                "first_seen_at ASC, cell_x ASC, cell_y ASC",
                 "1"
             ).use { cursor ->
                 if (!cursor.moveToFirst() || cursor.getLong(6) > nowMillis) {
@@ -202,8 +230,12 @@ class ProgressionRepository(context: Context) {
         db.query(
             "place_candidates",
             arrayOf("cell_x", "cell_y", "latitude", "longitude", "first_seen_at", "attempts"),
-            "next_attempt_ms <= ?",
-            arrayOf(nowMillis.toString()),
+            "next_attempt_ms <= ? AND NOT (cell_x = ? AND cell_y = ?)",
+            arrayOf(
+                nowMillis.toString(),
+                BASELINE_CANDIDATE_X.toString(),
+                BASELINE_CANDIDATE_Y.toString()
+            ),
             null,
             null,
             "attempts ASC, next_attempt_ms ASC, first_seen_at ASC, cell_x ASC, cell_y ASC",
@@ -226,17 +258,17 @@ class ProgressionRepository(context: Context) {
     fun resolveCandidate(candidate: PendingPlaceCandidate, discoveries: List<PlaceDiscovery>): Int =
         synchronized(dbHelper.historyLock) {
             val db = dbHelper.writableDatabase
+            val baseline = candidate.cellX == BASELINE_CANDIDATE_X &&
+                candidate.cellY == BASELINE_CANDIDATE_Y
             db.beginTransaction()
             try {
                 var added = 0
                 for (discovery in discoveries) {
-                    val baselineKey = baselineKey(discovery)
-                    if (!hasKnownPlaceKind(db, discovery.kind)) {
-                        // A fresh install/reset starts inside one town, state/region and country.
-                        // Keep those places available to overlays, but award no points and do not
-                        // count them toward discovery achievements.
+                    if (baseline) {
+                        // The exact first live fix after install/reset defines the zero-point
+                        // town/state/country. It is visible to overlays but earns no points.
                         insertVisitedPlace(db, discovery)
-                        putCounter(db, baselineKey, 1L)
+                        putCounter(db, baselineKey(discovery), 1L)
                         continue
                     }
                     val inserted = insertVisitedPlace(db, discovery)
@@ -454,19 +486,6 @@ class ProgressionRepository(context: Context) {
     private fun baselineKey(discovery: PlaceDiscovery): String =
         "baseline:${discovery.kind.name.lowercase()}:${discovery.key}"
 
-    private fun hasKnownPlaceKind(db: SQLiteDatabase, kind: PlaceKind): Boolean {
-        val kindName = kind.name
-        val hasVisited = db.rawQuery(
-            "SELECT 1 FROM visited_places WHERE kind = ? LIMIT 1",
-            arrayOf(kindName)
-        ).use { it.moveToFirst() }
-        if (hasVisited) return true
-        return db.rawQuery(
-            "SELECT 1 FROM progression_counters WHERE counter_key LIKE ? LIMIT 1",
-            arrayOf("baseline:${kindName.lowercase()}:%")
-        ).use { it.moveToFirst() }
-    }
-
     private fun currentBalance(db: SQLiteDatabase): Long {
         val earned = db.rawQuery("SELECT COALESCE(SUM(points), 0) FROM progression_rewards", null)
             .use { check(it.moveToFirst()); it.getLong(0) }
@@ -510,6 +529,8 @@ class ProgressionRepository(context: Context) {
     companion object {
         const val POINTS_PER_ROAD = 5L
         private const val PLACE_CANDIDATE_CELL_M = 2_000.0
+        private const val BASELINE_CANDIDATE_X = Long.MIN_VALUE
+        private const val BASELINE_CANDIDATE_Y = Long.MIN_VALUE
         private const val COUNTER_REWARDED_ROADS = "rewarded_roads"
         private const val COUNTER_ADS_WATCHED = "ads_watched"
         private const val COUNTER_LOWEST_BATTERY = "lowest_battery_percent"
