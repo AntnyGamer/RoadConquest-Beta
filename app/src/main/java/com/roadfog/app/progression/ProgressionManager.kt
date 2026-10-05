@@ -12,6 +12,7 @@ import com.roadfog.app.map.PlaceOverlayCache
 object ProgressionManager {
     fun sync(context: Context, summary: DataSummary): ProgressionSnapshot {
         val repository = ProgressionRepository(context)
+        repository.repairLegacyStarterPlaceRewards()
         var snapshot = repository.snapshot()
         if (summary.roadsUnlockedCount > snapshot.rewardedRoads) {
             repository.syncRoadRewards(summary.roadsUnlockedCount)
