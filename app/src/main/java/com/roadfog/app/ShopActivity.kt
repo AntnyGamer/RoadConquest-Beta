@@ -48,7 +48,6 @@ class ShopActivity : Activity() {
         pointsText = findViewById(R.id.shopPointsText)
         progressText = findViewById(R.id.shopProgressText)
         items = findViewById(R.id.shopItems)
-        refresh()
     }
 
     override fun onResume() {
