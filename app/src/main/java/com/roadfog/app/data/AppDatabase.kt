@@ -104,6 +104,7 @@ class AppDatabase private constructor(context: Context) :
                 cell_y INTEGER NOT NULL,
                 latitude REAL NOT NULL,
                 longitude REAL NOT NULL,
+                first_seen_at INTEGER NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0,
                 next_attempt_ms INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (cell_x, cell_y)
