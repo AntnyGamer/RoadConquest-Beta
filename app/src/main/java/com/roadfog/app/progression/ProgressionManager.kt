@@ -13,7 +13,7 @@ object ProgressionManager {
         val repository = ProgressionRepository(context)
         repository.syncRoadRewards(summary.roadsUnlockedCount)
         var snapshot = repository.snapshot()
-        val achievements = Achievements.progress(context, summary, snapshot.metrics())
+        val achievements = Achievements.progress(context, summary, metrics(snapshot))
         for (achievement in achievements) {
             if (achievement.unlocked) {
                 repository.awardAchievement(achievement.id, achievement.rewardPoints)
@@ -33,7 +33,7 @@ object ProgressionManager {
         val repository = ProgressionRepository(context)
         val changed = repository.recordBatteryPercent(percent)
         if (changed) {
-            val metrics = repository.snapshot().metrics()
+            val metrics = metrics(repository.snapshot())
             Achievements.progress(DataSummary(0, 0, null, null), metrics)
                 .asSequence()
                 .filter { it.unlocked && it.id.startsWith("battery_") }
@@ -67,12 +67,12 @@ object ProgressionManager {
         return added
     }
 
-    private fun ProgressionSnapshot.metrics() = AchievementMetrics(
-        towns = towns,
-        states = states,
-        countries = countries,
-        adsWatched = adsWatched,
-        lowestBatteryPercent = lowestBatteryPercent
+    fun metrics(snapshot: ProgressionSnapshot) = AchievementMetrics(
+        towns = snapshot.towns,
+        states = snapshot.states,
+        countries = snapshot.countries,
+        adsWatched = snapshot.adsWatched,
+        lowestBatteryPercent = snapshot.lowestBatteryPercent
     )
 }
 
