@@ -662,9 +662,10 @@ class TrackingRepository(context: Context) {
             val preferences = appContext.getSharedPreferences("roadfog_preferences", Context.MODE_PRIVATE)
             if (preferences.getInt(KEY_ROAD_MATCHING_REVISION, 0) >= ROAD_MATCHING_REVISION) return false
             val db = dbHelper.writableDatabase
+            var hasPoints = false
             db.beginTransaction()
             try {
-                val hasPoints = db.rawQuery("SELECT 1 FROM track_points LIMIT 1", null)
+                hasPoints = db.rawQuery("SELECT 1 FROM track_points LIMIT 1", null)
                     .use { it.moveToFirst() }
                 if (hasPoints) {
                     db.delete("road_visits", null, null)
