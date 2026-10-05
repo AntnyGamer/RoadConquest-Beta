@@ -959,13 +959,37 @@ class TrackingRepository(context: Context) {
             null,
             null
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (storedGeometry == null) return primary
-
         val incomingKey = canonicalGeometryKey(coordinates)
+        val normalizedName = name.trim().lowercase(Locale.US).ifBlank { "unnamed road" }
+        if (storedGeometry == null) {
+            // A previous geometry collision can outlive the primary row during history repair.
+            // Reuse its deterministic alternate ID instead of recreating identical geometry
+            // under the now-free primary ID.
+            db.query(
+                "roads",
+                arrayOf("segment_id", "name", "geometry_json"),
+                "segment_id LIKE 'g%'",
+                null,
+                null,
+                null,
+                null
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val existingName = cursor.getString(1).trim().lowercase(Locale.US)
+                        .ifBlank { "unnamed road" }
+                    if (existingName != normalizedName) continue
+                    val existingKey = runCatching {
+                        canonicalGeometryKey(JSONArray(cursor.getString(2)))
+                    }.getOrNull()
+                    if (existingKey == incomingKey) return cursor.getString(0)
+                }
+            }
+            return primary
+        }
+
         val storedKey = runCatching { canonicalGeometryKey(JSONArray(storedGeometry)) }.getOrNull()
         if (storedKey == incomingKey) return primary
 
-        val normalizedName = name.trim().lowercase(Locale.US).ifBlank { "unnamed road" }
         val digest = MessageDigest.getInstance("SHA-256")
             .digest("$normalizedName|$incomingKey".toByteArray(Charsets.UTF_8))
         return "g" + String(CharArray(31) { i ->
