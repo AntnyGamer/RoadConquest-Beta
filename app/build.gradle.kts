@@ -20,8 +20,8 @@ android {
         applicationId = "com.roadfog.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 31
-        versionName = "1.0-beta.5"
+        versionCode = 32
+        versionName = "1.0-beta.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["timeout_msec"] = "120000"
         val escapedAccountApiUrl = accountApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
