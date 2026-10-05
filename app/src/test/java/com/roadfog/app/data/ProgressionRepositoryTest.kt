@@ -16,7 +16,7 @@ import org.robolectric.annotation.SQLiteMode
 @Config(sdk = [31, 37], manifest = Config.NONE)
 @SQLiteMode(SQLiteMode.Mode.LEGACY)
 class ProgressionRepositoryTest {
-    private val context get() = RuntimeEnvironment.getApplication<android.content.Context>()
+    private val context: android.content.Context get() = RuntimeEnvironment.getApplication()
 
     @Before fun reset() {
         ProgressionRepository(context).clearProgression()
