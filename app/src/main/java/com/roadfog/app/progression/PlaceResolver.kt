@@ -13,7 +13,7 @@ object PlaceResolver {
     fun resolve(context: Context, candidate: PendingPlaceCandidate): List<PlaceDiscovery>? {
         if (!Geocoder.isPresent()) return null
         val address = try {
-            Geocoder(context.applicationContext, Locale.getDefault())
+            Geocoder(context.applicationContext, Locale.US)
                 .getFromLocation(candidate.latitude, candidate.longitude, 1)
                 ?.firstOrNull()
         } catch (_: IOException) {
@@ -25,7 +25,7 @@ object PlaceResolver {
         val countryName = address.countryName?.trim().orEmpty()
         val countryKey = canonical(address.countryCode?.takeIf { it.isNotBlank() } ?: countryName)
         val stateName = address.adminArea?.trim().orEmpty()
-        val townName = (address.locality ?: address.subLocality)?.trim().orEmpty()
+        val townName = address.locality?.trim().orEmpty()
         val result = ArrayList<PlaceDiscovery>(3)
 
         if (countryKey.isNotBlank() && countryName.isNotBlank()) {
