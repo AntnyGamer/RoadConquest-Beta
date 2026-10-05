@@ -338,6 +338,7 @@ class AccountActivity : Activity() {
                             stopForDataDeletion()
                             TrackingRepository(applicationContext).clearHistory()
                             Achievements.reset(applicationContext)
+                            ProgressionManager.resetLocalProgression(applicationContext)
                             Prefs.setTrackingPaused(applicationContext, false)
                             notifyDataDeleted()
                         }
