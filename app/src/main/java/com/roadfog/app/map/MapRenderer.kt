@@ -186,13 +186,15 @@ class MapRenderer(
         val generation = ++overlayGeneration
         clearPlaceOverlaySources()
         val kind = overlayMode.kind ?: return
+        val cacheGeneration = PlaceOverlayCache.generation()
         overlayExecutor.execute {
             val places = runCatching { ProgressionRepository(context).visitedPlaces(kind) }
                 .getOrElse {
                     Log.e("RoadConquest", "Could not load discovered places for overlay", it)
                     return@execute
                 }
-            if (destroyed || generation != overlayGeneration) return@execute
+            if (destroyed || generation != overlayGeneration ||
+                cacheGeneration != PlaceOverlayCache.generation()) return@execute
             val loaded = ArrayList<PlaceOverlayData>(places.size)
             val missing = ArrayList<com.roadfog.app.data.PlaceDiscovery>()
             for (place in places) {
@@ -201,21 +203,33 @@ class MapRenderer(
                 cached.data?.let(loaded::add)
             }
             postPlaceOverlay(generation, kind, loaded)
-            for (place in missing) {
-                if (destroyed || generation != overlayGeneration) return@execute
+            var fetchedSincePost = 0
+            for ((index, place) in missing.withIndex()) {
+                if (destroyed || generation != overlayGeneration ||
+                    cacheGeneration != PlaceOverlayCache.generation()) return@execute
                 val result = runCatching { overlayClient.fetch(place) }
                 if (result.isFailure) {
                     Log.w("RoadConquest", "Could not load place boundary", result.exceptionOrNull())
                     continue
                 }
+                if (cacheGeneration != PlaceOverlayCache.generation()) return@execute
                 val data = result.getOrNull()
                 PlaceOverlayCache.write(context, place, data)
                 if (data != null) {
                     loaded += data
-                    postPlaceOverlay(generation, kind, loaded)
+                    fetchedSincePost++
+                    if (fetchedSincePost >= OVERLAY_UPDATE_BATCH ||
+                        index == missing.lastIndex) {
+                        postPlaceOverlay(generation, kind, loaded)
+                        fetchedSincePost = 0
+                    }
                 }
             }
         }
+    }
+
+    fun cancelPlaceOverlayLoads() {
+        overlayGeneration++
     }
 
     fun overlayInfoAt(screenPoint: PointF): PlaceOverlayInfo? {
@@ -975,5 +989,6 @@ class MapRenderer(
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
         private const val FOG_RENDER_INTERVAL_MS = 80L
+        private const val OVERLAY_UPDATE_BATCH = 4
     }
 }
