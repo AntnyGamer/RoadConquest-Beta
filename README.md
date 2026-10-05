@@ -1,4 +1,4 @@
-# RoadConquest 1.0 Beta 2
+# RoadConquest 1.0 Beta 3
 
 RoadConquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ location settings and allow background battery use. Settings includes shortcuts 
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
 This release keeps the permanent signing identity and application ID `com.roadfog.app`.
-Its internal Android version code is 28 so it can update the latest signed development build
+Its internal Android version code is 29 so it can update the latest signed development build
 without uninstalling it. The current database schema, saved history, settings and accounts are
 preserved. Older unsupported database schemas require a fresh installation; export history before
 uninstalling, because exports currently have no in-app import.
@@ -25,13 +25,19 @@ uninstalling, because exports currently have no in-app import.
 ## Explore
 
 - Recorded driving appears while matching is pending; confirmed road geometry then refines it.
-- Drive to save matched blue road lines and reveal the map. Accurate locations also reveal nearby
+- Drive to save matched road lines and reveal the map. Accurate locations also reveal nearby
   places while walking or stopped, without adding driving miles.
+- Earn points from newly unlocked roads, achievements and first visits to towns, states/regions
+  and countries. Your current point balance is visible directly on the map.
+- Open Garage & Shop to buy and equip car shapes, car colors, road colors, or the Golden
+  RoadConquest UI and launcher icon. Purchases are one-time and equipped cosmetics can be changed later.
 - Choose Streets, Minimal, Night or Satellite maps, and a Light, Dark or phone-controlled appearance.
-- Tap a blue road for its name, saved length, first-unlocked time, last-driven time and times driven.
-- Track six road and mileage achievements, each with its own progress bar.
+- Tap an unlocked road for its name, saved length, first-unlocked time, last-driven time and times driven.
+- Track road, mileage, place, low-battery and rewarded-ad achievements with progress bars and point rewards.
+  Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
 - Use automatic tracking or control it manually. Stop tracking from the foreground notification.
-- Export driving history, road geometry, recorded visits and explored places from Settings.
+- Export driving history, road geometry, explored places, place discoveries, point awards,
+  purchases and progression counters from Settings.
 - Create an optional account, change your username, manage leaderboard visibility or delete your
   account. Device history can also be deleted while offline.
 
@@ -70,8 +76,14 @@ nearby stationary pauses can still reconnect without inventing a route across a 
 
 The fog keeps a cached world layer ready during fast gestures and refreshes detailed reveals
 while the camera moves. A detailed reveal stays visible during a gesture while its georeferenced
-bitmap still covers the viewport, avoiding the old flash back to fully covered fog. The widest zoom accounts for the screen diagonal and camera latitude
-so rotation keeps the map inside its world edges.
+bitmap still covers the viewport, avoiding the old flash back to fully covered fog. The widest zoom
+accounts for the screen diagonal and camera latitude so rotation keeps the map inside its world edges.
+
+Place discovery is intentionally sparse: background tracking records only an occasional local
+candidate, while town/state/country names are resolved later on a foreground worker through
+Android's system geocoder. Point refreshes use aggregate database queries, Shop/Settings avoid
+duplicate launch refreshes, and map cosmetics are only regenerated when their selection changes.
+These choices keep the progression system from adding continuous background network or rendering work.
 
 ## Build and verify
 
@@ -110,9 +122,11 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 
 ## Privacy and map credits
 
-Driving history and explored places stay on the phone. Road matching sends small coordinate
-batches to the selected OSRM service. Pending data remains saved for retry after network or
-matching failures. User-selected ZIP exports contain precise history and road geometry.
+Driving history, explored places, points and purchases stay on the phone. Road matching sends small
+coordinate batches to the selected OSRM service. Town/state/country labels are requested through
+Android's system geocoder only while RoadConquest is foregrounded; the geocoder implementation and
+network behavior are supplied by the device. Pending data remains saved for retry after network or
+matching failures. User-selected ZIP exports contain precise history, road geometry and progression data.
 
 When enabled and available, verified scoring sends precise live GPS batches with Play Integrity
 evidence for independent server matching. The server retains scores, short-lived receipt hashes,
