@@ -117,19 +117,19 @@ object PlaceOverlayCache {
     private fun file(context: Context, place: PlaceDiscovery): File {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest("${place.kind.name}|${place.key}".toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(Locale.US, it) }
+            .joinToString("") { "%02x".format(Locale.US, it.toInt() and 0xff) }
         return File(File(context.applicationContext.filesDir, DIRECTORY), "$digest.json")
     }
 }
 
 class PlaceOverlayClient(
-    private val endpoint: String = BuildConfig.PLACE_OVERLAY_API_URL
+    private val configUrl: String = BuildConfig.PLACE_OVERLAY_CONFIG_URL
 ) {
     private var lastRequestElapsed = Long.MIN_VALUE
+    private var resolvedEndpoint: String? = null
 
     fun fetch(place: PlaceDiscovery): PlaceOverlayData? {
-        val base = endpoint.trim().trimEnd('/')
-        if (!base.startsWith("https://")) throw IOException("Place overlay service must use HTTPS")
+        val base = resolveEndpoint()
         throttle()
         val threshold = when (place.kind) {
             PlaceKind.COUNTRY -> "0.02"
@@ -146,17 +146,7 @@ class PlaceOverlayClient(
             .appendQueryParameter("limit", "8")
             .build()
             .toString()
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8_000
-            readTimeout = 12_000
-            instanceFollowRedirects = false
-            requestMethod = "GET"
-            setRequestProperty(
-                "User-Agent",
-                "RoadConquest/${BuildConfig.VERSION_NAME} (+https://github.com/AntnyGamer/RoadConquest-Beta)"
-            )
-            setRequestProperty("Accept", "application/json")
-        }
+        val connection = open(url, redirects = false, readTimeoutMs = 12_000)
         return try {
             val status = connection.responseCode
             if (status !in 200..299) throw IOException("Place overlay service returned HTTP $status")
@@ -165,6 +155,42 @@ class PlaceOverlayClient(
             connection.disconnect()
         }
     }
+
+    private fun resolveEndpoint(): String {
+        resolvedEndpoint?.let { return it }
+        val url = configUrl.trim()
+        if (!url.startsWith("https://")) throw IOException("Place overlay config must use HTTPS")
+        val connection = open(url, redirects = true, readTimeoutMs = 5_000)
+        val value = try {
+            val status = connection.responseCode
+            if (status !in 200..299 || connection.url.protocol != "https") {
+                throw IOException("Place overlay config is unavailable")
+            }
+            connection.inputStream.bufferedReader().use { reader ->
+                val line = reader.readLine()?.trim().orEmpty()
+                if (line.length > 2_048) throw IOException("Place overlay config is invalid")
+                line.trimEnd('/')
+            }
+        } finally {
+            connection.disconnect()
+        }
+        if (!value.startsWith("https://")) throw IOException("Place overlay service is disabled or invalid")
+        resolvedEndpoint = value
+        return value
+    }
+
+    private fun open(url: String, redirects: Boolean, readTimeoutMs: Int) =
+        (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 8_000
+            readTimeout = readTimeoutMs
+            instanceFollowRedirects = redirects
+            requestMethod = "GET"
+            setRequestProperty(
+                "User-Agent",
+                "RoadConquest/${BuildConfig.VERSION_NAME} (+https://github.com/AntnyGamer/RoadConquest-Beta)"
+            )
+            setRequestProperty("Accept", "application/json, text/plain;q=0.9")
+        }
 
     private fun throttle() {
         synchronized(rateLock) {
