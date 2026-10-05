@@ -582,8 +582,11 @@ class MapRenderer(
 
     private fun installRecordedRouteLayer(style: Style) {
         style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, emptyRoadFeatures()))
+        // Pending evidence is raw GPS, not road geometry. Keep the source available to
+        // matching, but do not paint it as a traveled road; otherwise the user's blue route can
+        // visibly cut beside roads until OSRM has snapped that interval to the road network.
         val layer = LineLayer(PENDING_ROUTE_LAYER_ID, PENDING_ROUTE_SOURCE_ID).withProperties(
-            lineColor(Cosmetics.roadColor(context).argb), lineWidth(4f), lineOpacity(0.65f),
+            lineColor(Cosmetics.roadColor(context).argb), lineWidth(4f), lineOpacity(0f),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
         layer.setMinZoom(FogBitmapRenderer.MIN_ROAD_ZOOM.toFloat())
