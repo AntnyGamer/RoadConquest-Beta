@@ -1,4 +1,4 @@
-# RoadConquest 1.0 Beta 4
+# RoadConquest 1.0 Beta 5
 
 RoadConquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -32,6 +32,7 @@ uninstalling, because exports currently have no in-app import.
 - Open Garage & Shop to buy and equip car shapes, car colors, road colors, or the Golden
   RoadConquest UI and launcher icon. Purchases are one-time and equipped cosmetics can be changed later.
 - Choose Streets, Minimal, Night or Satellite maps, and a Light, Dark or phone-controlled appearance.
+- Use the map overlay button to highlight explored countries in blue, states/regions in purple, or towns in green. Only one overlay type is active at a time; tap a highlighted area for population and area when available.
 - Tap an unlocked road for its name, saved length, first-unlocked time, last-driven time and times driven.
 - Track road, mileage, place, low-battery and rewarded-ad achievements with progress bars and point rewards.
   Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
@@ -117,7 +118,7 @@ Keep the signing backup outside the repository and release assets. Each release 
 Override the account endpoint with the Gradle property
 `ROADCONQUEST_ACCOUNT_API_URL=https://accounts.example.com`. Local matching defaults to the public
 OSRM demo; a compatible controlled matcher can be selected with
-`ROADCONQUEST_OSRM_API_URL=https://roads.example.com`.
+`ROADCONQUEST_OSRM_API_URL=https://roads.example.com`. Administrative overlay boundaries default to the public Nominatim endpoint and are requested only after the user enables an overlay; results are cached and requests are throttled. Override it with `ROADCONQUEST_PLACE_OVERLAY_API_URL=https://nominatim.example.com` for a controlled provider.
 See [server setup](server/README.md) and the [physical-device checklist](ANDROID_TEST_CHECKLIST.md).
 
 ## Privacy and map credits
