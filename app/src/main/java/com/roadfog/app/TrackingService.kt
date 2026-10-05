@@ -431,10 +431,10 @@ class TrackingService : Service(), LocationListener {
                             return@repeat
                         }
 
-                        val acceptedRoads = result.roads.filter { it.confidence >= MIN_MATCH_CONFIDENCE }
+                        val acceptedRoads = result.roads.filter { it.confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE }
                         val matchedIds = result.matchedPointConfidences
                             .filter { (id, confidence) ->
-                                confidence >= MIN_MATCH_CONFIDENCE && id in window.markableIds
+                                confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE && id in window.markableIds
                             }
                             .keys
                             .toList()
@@ -594,7 +594,6 @@ class TrackingService : Service(), LocationListener {
         private const val MATCH_BATCH_SIZE = OsrmMatcher.MAX_MATCH_POINTS
         private const val MAX_MATCH_BATCHES_PER_RUN = 4
         private const val MATCH_BATCH_PAUSE_MS = 1_100L
-        private const val MIN_MATCH_CONFIDENCE = 0.45
 
         @Volatile
         var isRunning: Boolean = false
