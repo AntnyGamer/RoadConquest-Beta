@@ -13,6 +13,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.io.OutputStream
 import java.util.concurrent.Executors
@@ -186,6 +187,26 @@ class DataExporterTest {
         assertEquals(summary, repository.getSummary())
         assertTrue(context.cacheDir.listFiles()!!.none { it.name.startsWith("roadconquest-export-") })
     }
+
+    @Test fun interruptedExportSnapshotsAndSidecarsArePurged() {
+        val context = RuntimeEnvironment.getApplication()
+        val database = File(context.cacheDir, "roadconquest-export-interrupted.db")
+        val wal = File(context.cacheDir, database.name + "-wal")
+        val shm = File(context.cacheDir, database.name + "-shm")
+        database.writeText("orphaned private history")
+        wal.writeText("orphaned wal")
+        shm.writeText("orphaned shm")
+
+        DataExporter.clearTemporarySnapshots(context)
+
+        assertFalse(database.exists())
+        assertFalse(wal.exists())
+        assertFalse(shm.exists())
+        assertTrue(context.cacheDir.listFiles().orEmpty().none {
+            it.name.startsWith("roadconquest-export-")
+        })
+    }
+
 
     private fun readEntries(bytes: ByteArray): Map<String, String> {
         val entries = mutableMapOf<String, String>()
