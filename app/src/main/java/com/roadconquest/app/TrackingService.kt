@@ -606,7 +606,7 @@ class TrackingService : Service(), LocationListener {
         const val EXTRA_BEARING = "bearing"
         const val EXTRA_LOCATION_AGE_MS = "location_age_ms"
 
-        private const val CHANNEL_ID = "roadfog_tracking"
+        private const val CHANNEL_ID = "roadconquest_tracking"
         private const val NOTIFICATION_ID = 4101
         private const val LOCATION_INTERVAL_MS = 3_000L
         private const val LOCATION_MIN_UPDATE_INTERVAL_MS = 1_500L
