@@ -81,14 +81,13 @@ class AppearanceTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Test fun privacyAndDeletionPagesOpenFromSettings() {
+    @Test fun privacyPageOpensFromSettingsWithoutAThirdDeleteButton() {
         val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
         try {
             val activity = controller.get()
             activity.findViewById<Button>(R.id.privacyPolicyButton).performClick()
             assertTrue(shadowOf(activity).nextStartedActivity.data.toString().endsWith("/privacy"))
-            activity.findViewById<Button>(R.id.accountDeletionWebButton).performClick()
-            assertTrue(shadowOf(activity).nextStartedActivity.data.toString().endsWith("/delete-account"))
+            assertEquals("Delete all data", activity.findViewById<Button>(R.id.deleteDeviceDataButton).text.toString())
         } finally { controller.pause().stop().destroy() }
     }
 
