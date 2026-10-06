@@ -189,6 +189,13 @@ class ProgressionRepository(context: Context) {
         if (db.rawQuery("SELECT 1 FROM visited_places LIMIT 1", null).use { it.moveToFirst() }) {
             return@synchronized false
         }
+        // The first exact live fix is authoritative even across service/activity restarts.
+        // Never replace an unresolved sentinel or discard visits queued behind it.
+        if (db.rawQuery(
+                "SELECT 1 FROM place_candidates WHERE cell_x = ? AND cell_y = ? LIMIT 1",
+                arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString())
+            ).use { it.moveToFirst() }
+        ) return@synchronized false
         // Anything queued before the first live/current fix predates the new profile.
         db.delete(
             "place_candidates",
