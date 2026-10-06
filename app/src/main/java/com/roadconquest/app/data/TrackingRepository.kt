@@ -211,7 +211,11 @@ class TrackingRepository(context: Context) {
             }
         }
 
-        val olderSlots = anchorSlots - newerAnchors.size
+        // Once a newer-side anchor exists this is a hole retry, not a live batch.
+        // One incoming anchor preserves the approach direction; spend the additional context
+        // budget on the exit side instead of unnecessarily reaching farther back in history.
+        // Live newest batches have no newer anchor, so they still keep the full older overlap.
+        val olderSlots = if (newerAnchors.isNotEmpty()) 1 else anchorSlots
         val olderAnchors = ArrayList<TrackPoint>(olderSlots)
         if (olderSlots > 0) {
             dbHelper.readableDatabase.query(
