@@ -62,6 +62,7 @@ class TrackingService : Service(), LocationListener {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
             if (locationManager.isLocationEnabled) requestLocations()
+            refreshForegroundNotification()
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
         }
     }
@@ -536,6 +537,20 @@ class TrackingService : Service(), LocationListener {
     }
 
     private fun startAsForeground() {
+        startForeground(
+            NOTIFICATION_ID,
+            buildForegroundNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        )
+    }
+
+    private fun refreshForegroundNotification() {
+        if (!isRunning) return
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildForegroundNotification())
+    }
+
+    private fun buildForegroundNotification(): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -548,21 +563,19 @@ class TrackingService : Service(), LocationListener {
             Intent(this, TrackingService::class.java).setAction(ACTION_STOP_UNTIL_OPEN),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val notification = Notification.Builder(this, CHANNEL_ID)
+        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("RoadConquest is tracking")
-            .setContentText("Your driven roads are being saved locally")
+            .setContentTitle(if (locationEnabled) "RoadConquest is tracking" else "RoadConquest is ready")
+            .setContentText(
+                if (locationEnabled) "Your driven roads are being saved locally"
+                else "Waiting for Android Location to be turned on"
+            )
             .setContentIntent(openApp)
             .addAction(Notification.Action.Builder(null, getString(R.string.stop_tracking), stopTracking).build())
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
-
-        startForeground(
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        )
     }
 
     private fun createNotificationChannel() {
