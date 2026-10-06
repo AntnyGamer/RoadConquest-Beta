@@ -128,6 +128,9 @@ class SettingsActivity : Activity() {
             if (!renderingAccountPrivacy) updateLeaderboardPrivacy(visible)
         }
 
+        findViewById<Button>(R.id.privacyPolicyButton).setOnClickListener { openAccountPage("/privacy") }
+        findViewById<Button>(R.id.accountDeletionWebButton).setOnClickListener { openAccountPage("/delete-account") }
+
         findViewById<Button>(R.id.githubButton).setOnClickListener {
             val url = getString(R.string.github_repository_url)
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -222,6 +225,18 @@ class SettingsActivity : Activity() {
             insets
         }
         ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun openAccountPage(path: String) {
+        val url = AccountClient.publicPage(path)
+        if (url == null) {
+            Toast.makeText(this, "Road Conquest web pages are unavailable in this build.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+        if (SystemSettingsNavigator.launchFirst(listOf(intent), ::startActivity) == null) {
+            Toast.makeText(this, getString(R.string.web_page_unavailable, url), Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun openBatteryOptimizationSettings() {
