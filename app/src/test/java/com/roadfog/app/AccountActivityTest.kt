@@ -24,6 +24,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.SQLiteMode
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
@@ -148,6 +149,9 @@ class AccountActivityTest {
             latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
         })
         Prefs.setManualOnly(context, false)
+        Prefs.setDriveVerificationEnabled(context, true)
+        File(context.cacheDir, "roadconquest-export-stale.db").writeText("stale snapshot")
+        File(context.cacheDir, "roadconquest-export-stale.db-wal").writeText("stale sidecar")
         val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
         try {
             val activity = controller.get()
@@ -174,7 +178,10 @@ class AccountActivityTest {
             assertEquals(0L, repository.getSummary().trackPointCount)
             assertTrue(Prefs.isManualOnly(context))
             assertFalse(Prefs.isTrackingPaused(context))
-            assertEquals(0L, repository.getSummary().trackPointCount)
+            assertFalse(Prefs.isDriveVerificationEnabled(context))
+            assertTrue(context.cacheDir.listFiles().orEmpty().none {
+                it.name.startsWith("roadconquest-export-")
+            })
         } finally { controller.pause().stop().destroy() }
     }
 }
