@@ -144,7 +144,9 @@ class ProgressionRepository(context: Context) {
      */
     fun recordPlaceCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
         if (!isCurrentHistory()) return@synchronized false
-        if (location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0) return@synchronized false
+        if (location.isMock || !location.latitude.isFinite() || !location.longitude.isFinite() ||
+            location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0
+        ) return@synchronized false
         val db = dbHelper.writableDatabase
         // Keep discoveries observed while the exact zero-point baseline is still resolving.
         // pendingPlaceCandidates() gates them behind the baseline, so they cannot earn points
