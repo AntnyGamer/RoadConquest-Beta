@@ -160,6 +160,25 @@ class TrackingRepositoryTest {
         assertEquals(current.toSet(), window.markableIds)
     }
 
+    @Test fun multiMinuteMovingGapNearTheSameAreaDoesNotInventAConnection() {
+        val old = point(1_000_000L, 40.0000, speed = 5f)
+        val current = listOf(
+            point(1_120_000L, 40.0005, speed = 5f),
+            point(1_123_000L, 40.0007, speed = 5f)
+        )
+
+        val window = repository.loadMatchingWindow()
+        assertEquals(current, window.points.map { it.id })
+        assertFalse(old in window.markableIds)
+
+        val pending = repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0)
+        assertEquals(1, pending.size)
+        assertEquals(
+            2,
+            org.json.JSONArray(pending.single().geometryJson).length()
+        )
+    }
+
     @Test fun nearbySavedStopAnchorReconnectsWithinTheSameParkingPause() {
         val ids = listOf(
             point(1_000_000L),
