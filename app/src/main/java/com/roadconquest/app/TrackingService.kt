@@ -270,7 +270,13 @@ class TrackingService : Service(), LocationListener {
     // Keep the existing registration while Location is off so the provider can resume when
     // the user turns Location back on; re-registering while disabled can lose that callback.
     override fun onProviderDisabled(provider: String) {
-        if (ready) sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+        if (ready) {
+            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            // No more fixes may arrive while Android Location is off. Give any unresolved
+            // corner/end-of-drive intervals an immediate final pass instead of waiting for
+            // their ordinary retry deadline.
+            maybeRunMatching(force = true)
+        }
         if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
             requestLocations()
         }
