@@ -184,9 +184,9 @@ class TrackingRepository(context: Context) {
         val earliest = newestFirst.first()
         val latest = newestFirst.last()
 
-        // When retrying a hole inside an otherwise matched drive, keep one point on the newer
-        // side so OSRM has context in both directions. For a live newest batch this is absent,
-        // leaving both anchor slots for older points and a two-point overlap with the next batch.
+        // When retrying a hole inside an otherwise matched drive, keep up to two points on
+        // the newer side so OSRM sees the exit direction as well as the junction itself. For a
+        // live newest batch these are absent, so the available context slots come from behind.
         val newerAnchors = ArrayList<TrackPoint>(minOf(2, anchorSlots))
         dbHelper.readableDatabase.query(
             "track_points",
