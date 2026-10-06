@@ -771,8 +771,8 @@ class MainActivity : Activity() {
         // Keep MapLibre's required logo/attribution visible above RoadConquest's bottom panel.
         // The default compass occupies the same top-right area as the Settings gear, so disable it.
         map.uiSettings.setCompassEnabled(false)
-        map.uiSettings.setLogoGravity(Gravity.BOTTOM or Gravity.LEFT)
-        map.uiSettings.setAttributionGravity(Gravity.BOTTOM or Gravity.RIGHT)
+        map.uiSettings.setLogoGravity(Gravity.BOTTOM or Gravity.START)
+        map.uiSettings.setAttributionGravity(Gravity.BOTTOM or Gravity.END)
         val sideMargin = dpToPx(12f)
 
         fun updateMargins() {
