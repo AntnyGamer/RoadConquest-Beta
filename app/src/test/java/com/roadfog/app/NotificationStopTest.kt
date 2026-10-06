@@ -122,4 +122,18 @@ class NotificationStopTest {
             assertFalse(Shadows.shadowOf(service).isStoppedBySelf)
         } finally { controller.destroy() }
     }
+
+    @Test fun pausedTrackingOnlyAutoResumesInAutomaticMode() {
+        val app = RuntimeEnvironment.getApplication()
+        Prefs.setTrackingPaused(app, true)
+        Prefs.setManualOnly(app, false)
+        assertTrue(Prefs.shouldResumePausedTracking(app))
+
+        Prefs.setManualOnly(app, true)
+        assertFalse(Prefs.shouldResumePausedTracking(app))
+
+        Prefs.setTrackingPaused(app, false)
+        assertFalse(Prefs.shouldResumePausedTracking(app))
+    }
+
 }
