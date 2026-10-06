@@ -53,6 +53,9 @@ object Prefs {
 
     fun isTrackingPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_TRACKING_PAUSED, false)
 
+    fun shouldResumePausedTracking(context: Context): Boolean =
+        isTrackingPaused(context) && !isManualOnly(context)
+
     fun setTrackingPaused(context: Context, paused: Boolean) {
         // Persist before stopping the service so a process restart cannot undo the stop.
         prefs(context).edit().putBoolean(KEY_TRACKING_PAUSED, paused).commit()
