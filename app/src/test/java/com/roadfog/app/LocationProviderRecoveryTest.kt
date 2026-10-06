@@ -37,6 +37,25 @@ class LocationProviderRecoveryTest {
         assertEquals("fused", LocationProviders.preferred(manager))
     }
 
+    @Test fun startingPlaceRejectsFixesOlderThanTheCurrentLocationRequest() {
+        val old = Location("gps").apply {
+            time = 9_000L
+            elapsedRealtimeNanos = 9_000_000_000L
+        }
+        val current = Location("gps").apply {
+            time = 10_000L
+            elapsedRealtimeNanos = 10_000_000_000L
+        }
+        assertFalse(LocationProviders.isFixSince(old, 10_000_000_000L, 10_000L))
+        assertTrue(LocationProviders.isFixSince(current, 10_000_000_000L, 10_000L))
+
+        // Providers without elapsedRealtime still fall back to wall-clock fix time.
+        current.elapsedRealtimeNanos = 0L
+        old.elapsedRealtimeNanos = 0L
+        assertFalse(LocationProviders.isFixSince(old, 10_000_000_000L, 10_000L))
+        assertTrue(LocationProviders.isFixSince(current, 10_000_000_000L, 10_000L))
+    }
+
     @Test fun freshAccuracyWinsRegardlessOfProviderAndOldFixesCannotFreezeTracking() {
         fun fix(provider: String, seconds: Long, accuracyMeters: Float) = Location(provider).apply {
             time = seconds * 1_000L
@@ -102,6 +121,35 @@ class LocationProviderRecoveryTest {
             assertFalse(service in shadow.getLocationUpdateListeners("network"))
             assertTrue(Shadows.shadowOf(app).broadcastIntents.any { it.action == TrackingService.ACTION_TRACKING_STATE_CHANGED })
         } finally { controller.destroy() }
+    }
+
+    @Test fun serviceStartedWhileLocationIsOffWaitsForFirstFixInsteadOfStopping() {
+        val app = RuntimeEnvironment.getApplication()
+        Shadows.shadowOf(app).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            "${app.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        )
+        val manager = app.getSystemService(LocationManager::class.java)
+        val shadow = Shadows.shadowOf(manager)
+        shadow.setLocationEnabled(false)
+
+        val controller = Robolectric.buildService(TrackingService::class.java).create()
+        val service = controller.get()
+        fun field(name: String) = TrackingService::class.java.getDeclaredField(name).apply { isAccessible = true }
+        try {
+            assertFalse(Shadows.shadowOf(service).isStoppedBySelf)
+            assertTrue(field("ready").getBoolean(service))
+            assertNotNull(Shadows.shadowOf(service).lastForegroundNotification)
+            assertEquals(android.app.Service.START_STICKY, service.onStartCommand(Intent(), 0, 1))
+
+            shadow.setLocationEnabled(true)
+            shadow.setProviderEnabled("gps", true)
+            val receiver = field("providerReceiver").get(service) as BroadcastReceiver
+            receiver.onReceive(service, Intent(LocationManager.MODE_CHANGED_ACTION))
+            assertTrue(service in shadow.getLocationUpdateListeners("gps"))
+        } finally {
+            controller.destroy()
+        }
     }
 
     @Test fun locationOffRetainsRegistrationAndLocationOnRestoresIt() {

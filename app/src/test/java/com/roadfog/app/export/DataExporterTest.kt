@@ -69,6 +69,64 @@ class DataExporterTest {
         assertEquals(2, entries.getValue("road_visits.csv").lineSequence().filter { it.isNotEmpty() }.count())
     }
 
+    @Test fun zeroPointBaselineIsExportedButDoesNotInflateDiscoveryTotals() {
+        val context = RuntimeEnvironment.getApplication()
+        val progression = ProgressionRepository(context)
+        progression.clearProgression()
+        val fix = Location("gps").apply {
+            latitude = 39.7
+            longitude = -75.1
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(fix))
+        val candidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+        assertEquals(
+            0,
+            progression.resolveCandidate(
+                candidate,
+                listOf(
+                    com.roadfog.app.data.PlaceDiscovery(
+                        com.roadfog.app.data.PlaceKind.COUNTRY,
+                        "us",
+                        "United States",
+                        visitedAt = candidate.visitedAt,
+                        latitude = candidate.latitude,
+                        longitude = candidate.longitude
+                    ),
+                    com.roadfog.app.data.PlaceDiscovery(
+                        com.roadfog.app.data.PlaceKind.STATE,
+                        "us|new jersey",
+                        "New Jersey",
+                        countryName = "United States",
+                        visitedAt = candidate.visitedAt,
+                        latitude = candidate.latitude,
+                        longitude = candidate.longitude
+                    ),
+                    com.roadfog.app.data.PlaceDiscovery(
+                        com.roadfog.app.data.PlaceKind.TOWN,
+                        "us|new jersey|glassboro",
+                        "Glassboro",
+                        parentName = "New Jersey",
+                        countryName = "United States",
+                        visitedAt = candidate.visitedAt,
+                        latitude = candidate.latitude,
+                        longitude = candidate.longitude
+                    )
+                )
+            )
+        )
+
+        val output = ByteArrayOutputStream()
+        DataExporter.writeZip(context, TrackingRepository(context), output)
+        val entries = readEntries(output.toByteArray())
+        val metadata = JSONObject(entries.getValue("metadata.json"))
+        assertEquals(0L, metadata.getLong("towns_visited"))
+        assertEquals(0L, metadata.getLong("states_regions_visited"))
+        assertEquals(0L, metadata.getLong("countries_visited"))
+        assertEquals(4, entries.getValue("visited_places.csv").lineSequence().count { it.isNotEmpty() })
+    }
+
     @Config(sdk = [31, 35, 37], manifest = Config.NONE)
     @Test fun exportSnapshotStaysConsistentAndReleasesDatabaseBeforeSlowOutput() {
         val context = RuntimeEnvironment.getApplication()

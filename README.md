@@ -1,4 +1,4 @@
-# RoadConquest 1.0 Beta 6
+# RoadConquest 1.0 Beta 7
 
 RoadConquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ location settings and allow background battery use. Settings includes shortcuts 
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
 This release keeps the permanent signing identity and application ID `com.roadfog.app`.
-Its internal Android version code is 32.
+Its internal Android version code is 33.
 
 ## Explore
 
@@ -40,9 +40,13 @@ Its internal Android version code is 32.
   account. Device history can also be deleted while offline.
 
 Turning Show fog off changes only its visibility. Tracking continues and the saved reveals return
-when fog is enabled again. Manual tracking stays off until you enable it. Automatic tracking depends
-on location permissions and Android's background-execution rules; a force-stopped app must be
-opened manually before it can resume.
+when fog is enabled again. Manual tracking stays off until you enable it. In automatic mode,
+RoadConquest can stay armed while Android Location is off and begins using the first good live fix
+after Location is enabled. After a fresh install or device-data reset, that first current fix defines
+the zero-point starting town/state/country and awards no discovery points. Cached fixes from before
+the new location request cannot become that baseline. Automatic tracking still depends on location
+permissions and Android's background-execution rules; a force-stopped app must be opened manually
+before it can resume.
 
 Mileage estimates distance between accepted driving fixes, including repeat drives. GPS speed is
 a heuristic and cannot prove you are in a car. Long gaps, reversed timestamps and implausible jumps

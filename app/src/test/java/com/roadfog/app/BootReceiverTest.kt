@@ -35,21 +35,29 @@ class BootReceiverTest {
         }
     }
 
-    @Test fun manualModeMissingPermissionsAndLocationOffPreventBackgroundStartup() {
+    @Test fun manualModeAndMissingPermissionsPreventBackgroundStartupButLocationOffDoesNot() {
         val app = RuntimeEnvironment.getApplication()
         Prefs.markEverStarted(app)
         val receiver = BootReceiver()
-        fun boot() {
+        fun bootBlocked() {
             receiver.onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
             assertNull(Shadows.shadowOf(app).nextStartedService)
         }
-        Prefs.setManualOnly(app, true); boot()
+        Prefs.setManualOnly(app, true); bootBlocked()
         Prefs.setManualOnly(app, false)
-        Shadows.shadowOf(app).denyPermissions(Manifest.permission.ACCESS_BACKGROUND_LOCATION); boot()
+        Shadows.shadowOf(app).denyPermissions(Manifest.permission.ACCESS_BACKGROUND_LOCATION); bootBlocked()
         Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-        Shadows.shadowOf(app).denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION); boot()
+        Shadows.shadowOf(app).denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION); bootBlocked()
         Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
-        Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(false); boot()
+
+        // Automatic mode stays armed through a reboot even if Android Location is currently
+        // off, so the service can take the first good fix after the user enables Location.
+        Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(false)
+        receiver.onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertEquals(
+            TrackingService::class.java.name,
+            Shadows.shadowOf(app).nextStartedService.component!!.className
+        )
     }
 
     @Test fun unrelatedBroadcastCannotStartTracking() {

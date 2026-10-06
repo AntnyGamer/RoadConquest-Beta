@@ -22,6 +22,16 @@ object LocationProviders {
         if (!registered && LocationManager.NETWORK_PROVIDER in enabled) register(LocationManager.NETWORK_PROVIDER)
     }
 
+    /** A baseline must come from a fix produced after the current location request began. */
+    fun isFixSince(location: Location, requestElapsedNanos: Long, requestWallMillis: Long): Boolean {
+        val fixElapsedNanos = location.elapsedRealtimeNanos
+        return if (fixElapsedNanos > 0L && requestElapsedNanos > 0L) {
+            fixElapsedNanos >= requestElapsedNanos
+        } else {
+            location.time > 0L && location.time >= requestWallMillis
+        }
+    }
+
     /** Compare near-contemporaneous fixes by reported accuracy, without holding a moving car stale. */
     fun isBetterFix(candidate: Location, previous: Location?): Boolean {
         if (previous == null) return true

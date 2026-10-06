@@ -50,6 +50,9 @@ class TrackingService : Service(), LocationListener {
     private var lastAccepted: Location? = null
     private var lastExplored: Location? = null
     private var lastPlaceCandidate: Location? = null
+    @Volatile private var baselineCandidateCaptured = false
+    private var baselineRequestElapsedNanos = 0L
+    private var baselineRequestWallMillis = 0L
     private var lastBearingDegrees = 0.0
     @Volatile private var lastMatchAttempt = 0L
     @Volatile private var ready = false
@@ -59,6 +62,7 @@ class TrackingService : Service(), LocationListener {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
             if (locationManager.isLocationEnabled) requestLocations()
+            refreshForegroundNotification()
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
         }
     }
@@ -84,8 +88,7 @@ class TrackingService : Service(), LocationListener {
         locationManager = getSystemService(LocationManager::class.java)
         createNotificationChannel()
         if (Prefs.isTrackingPaused(this) ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
-            !locationManager.isLocationEnabled
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) {
             stopSelf()
             return
@@ -96,6 +99,8 @@ class TrackingService : Service(), LocationListener {
             stopSelf()
             return
         }
+        baselineRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()
+        baselineRequestWallMillis = System.currentTimeMillis()
         ready = true
         isRunning = true
         ContextCompat.registerReceiver(this, providerReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION).apply {
@@ -144,6 +149,27 @@ class TrackingService : Service(), LocationListener {
         verifiedDriving.offer(location)
         val previous = lastObserved
         if (!LocationProviders.isBetterFix(location, previous)) return
+
+        // A fresh/reset profile gets its zero-point place from the first good LIVE fix,
+        // never from a later sparse discovery candidate. If Location was off, this naturally
+        // waits until the first good fix after the user turns it back on.
+        if (!baselineCandidateCaptured && !location.isMock &&
+            location.hasAccuracy() && location.accuracy in 0.01f..MAX_PREVIEW_ACCURACY_M &&
+            LocationProviders.isFixSince(location, baselineRequestElapsedNanos, baselineRequestWallMillis)
+        ) {
+            baselineCandidateCaptured = true
+            val baseline = Location(location)
+            storageExecutor.execute {
+                try {
+                    if (progressionRepository.recordBaselineCandidate(baseline)) {
+                        sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+                    }
+                } catch (error: Exception) {
+                    Log.e("RoadConquest", "Could not save starting place location", error)
+                    baselineCandidateCaptured = false
+                }
+            }
+        }
         if (previous != null && elapsedMillis(previous, location) == 0L) {
             // A better simultaneous source may improve the marker/next baseline, never add mileage twice.
             if (location.hasAccuracy() && location.accuracy <= MAX_ACCURACY_M) lastObserved = Location(location)
@@ -311,7 +337,8 @@ class TrackingService : Service(), LocationListener {
         ageMs: Long,
         distance: Float
     ): Boolean {
-        if (!location.hasAccuracy() || !location.accuracy.isFinite() || location.accuracy !in 0f..MAX_ACCURACY_M ||
+        if (location.isMock || previous?.isMock == true ||
+            !location.hasAccuracy() || !location.accuracy.isFinite() || location.accuracy !in 0f..MAX_ACCURACY_M ||
             previous == null || !previous.hasAccuracy() || !previous.accuracy.isFinite() || previous.accuracy !in 0f..MAX_ACCURACY_M ||
             ageMs <= 0L || ageMs > MAX_MOTION_SAMPLE_AGE_MS || !distance.isFinite()
         ) return false
@@ -510,6 +537,20 @@ class TrackingService : Service(), LocationListener {
     }
 
     private fun startAsForeground() {
+        startForeground(
+            NOTIFICATION_ID,
+            buildForegroundNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        )
+    }
+
+    private fun refreshForegroundNotification() {
+        if (!isRunning) return
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildForegroundNotification())
+    }
+
+    private fun buildForegroundNotification(): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -522,21 +563,19 @@ class TrackingService : Service(), LocationListener {
             Intent(this, TrackingService::class.java).setAction(ACTION_STOP_UNTIL_OPEN),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val notification = Notification.Builder(this, CHANNEL_ID)
+        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("RoadConquest is tracking")
-            .setContentText("Your driven roads are being saved locally")
+            .setContentTitle(if (locationEnabled) "RoadConquest is tracking" else "RoadConquest is ready")
+            .setContentText(
+                if (locationEnabled) "Your driven roads are being saved locally"
+                else "Waiting for Android Location to be turned on"
+            )
             .setContentIntent(openApp)
             .addAction(Notification.Action.Builder(null, getString(R.string.stop_tracking), stopTracking).build())
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
-
-        startForeground(
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        )
     }
 
     private fun createNotificationChannel() {

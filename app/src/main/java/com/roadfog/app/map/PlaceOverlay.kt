@@ -10,6 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.io.Reader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -125,7 +126,6 @@ object PlaceOverlayCache {
 class PlaceOverlayClient(
     private val configUrl: String = BuildConfig.PLACE_OVERLAY_CONFIG_URL
 ) {
-    private var lastRequestElapsed = Long.MIN_VALUE
     private var resolvedEndpoint: String? = null
 
     fun fetch(place: PlaceDiscovery): PlaceOverlayData? {
@@ -167,11 +167,7 @@ class PlaceOverlayClient(
                 if (status !in 200..299 || connection.url.protocol != "https") {
                     throw IOException("Place overlay config is unavailable")
                 }
-                connection.inputStream.bufferedReader().use { reader ->
-                    val line = reader.readLine()?.trim().orEmpty()
-                    if (line.length > 2_048) throw IOException("Place overlay config is invalid")
-                    line.trimEnd('/')
-                }
+                connection.inputStream.bufferedReader().use(::readConfigEndpoint)
             } finally {
                 connection.disconnect()
             }
@@ -225,7 +221,22 @@ class PlaceOverlayClient(
     }
 
     companion object {
+        internal fun readConfigEndpoint(reader: Reader): String {
+            val builder = StringBuilder()
+            while (true) {
+                val next = reader.read()
+                if (next < 0 || next == '\n'.code || next == '\r'.code) break
+                if (builder.length >= MAX_CONFIG_LENGTH) {
+                    throw IOException("Place overlay config is invalid")
+                }
+                builder.append(next.toChar())
+            }
+            return builder.toString().trim().trimEnd('/')
+        }
+
         private val rateLock = Any()
+        private var lastRequestElapsed = Long.MIN_VALUE
+        private const val MAX_CONFIG_LENGTH = 2_048
         private const val DEFAULT_ENDPOINT = "https://nominatim.openstreetmap.org"
         private const val EARTH_RADIUS_M = 6_371_008.8
 

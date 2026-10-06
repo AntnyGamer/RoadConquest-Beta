@@ -39,5 +39,6 @@ data class DataSummary(
     val firstTrackAt: Long?,
     val lastTrackAt: Long?,
     val distanceMeters: Double = 0.0,
-    val roadsUnlockedCount: Long = roadSegmentCount
+    val roadsUnlockedCount: Long = roadSegmentCount,
+    val historyGeneration: Long = -1L
 )

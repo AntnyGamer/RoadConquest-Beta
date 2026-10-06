@@ -15,6 +15,7 @@ import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.util.Appearance
+import com.roadfog.app.util.ForegroundSession
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
@@ -128,6 +129,16 @@ class AchievementsActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    override fun onStart() {
+        super.onStart()
+        ForegroundSession.app.onStart()
+    }
+
+    override fun onStop() {
+        ForegroundSession.app.onStop(isChangingConfigurations)
+        super.onStop()
+    }
 
     override fun onDestroy() {
         executor.shutdownNow()

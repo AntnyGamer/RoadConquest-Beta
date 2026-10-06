@@ -12,20 +12,28 @@ object PlaceResolver {
     @Suppress("DEPRECATION")
     fun resolve(context: Context, candidate: PendingPlaceCandidate): List<PlaceDiscovery>? {
         if (!Geocoder.isPresent()) return null
-        val address = try {
+        val addresses = try {
             Geocoder(context.applicationContext, Locale.US)
-                .getFromLocation(candidate.latitude, candidate.longitude, 1)
-                ?.firstOrNull()
+                .getFromLocation(candidate.latitude, candidate.longitude, MAX_RESULTS)
+                .orEmpty()
         } catch (_: IOException) {
-            null
+            emptyList()
         } catch (_: IllegalArgumentException) {
-            null
-        } ?: return null
+            emptyList()
+        }
+        if (addresses.isEmpty()) return null
 
-        val countryName = address.countryName?.trim().orEmpty()
-        val countryKey = canonical(address.countryCode?.takeIf { it.isNotBlank() } ?: countryName)
-        val stateName = address.adminArea?.trim().orEmpty()
-        val townName = address.locality?.trim().orEmpty()
+        fun firstValue(selector: (android.location.Address) -> String?): String =
+            addresses.asSequence().mapNotNull(selector).map(String::trim).firstOrNull(String::isNotBlank).orEmpty()
+
+        // Reverse geocoders sometimes return a road/address result first with incomplete
+        // administrative fields. Combine only results for this same coordinate rather than
+        // letting one sparse result permanently omit the zero-point state/town.
+        val countryName = firstValue { it.countryName }
+        val countryCode = firstValue { it.countryCode }
+        val countryKey = canonical(countryCode.ifBlank { countryName })
+        val stateName = firstValue { it.adminArea }
+        val townName = firstValue { it.locality }
         val result = ArrayList<PlaceDiscovery>(3)
 
         if (countryKey.isNotBlank() && countryName.isNotBlank()) {
@@ -63,4 +71,6 @@ object PlaceResolver {
 
     private fun canonical(value: String): String =
         value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+
+    private const val MAX_RESULTS = 5
 }

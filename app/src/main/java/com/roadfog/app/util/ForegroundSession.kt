@@ -1,6 +1,6 @@
 package com.roadfog.app.util
 
-/** Counts both app screens so a shade dismissal, Settings return or recreation is not an open. */
+/** Counts all app screens so shade dismissals, internal navigation and recreation are not app reopens. */
 class ForegroundSession {
     private var started = 0
     private var recreating = 0

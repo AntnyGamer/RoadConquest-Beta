@@ -96,6 +96,9 @@ class MainActivity : Activity() {
     }
 
     private var lastPreviewLocation: Location? = null
+    private var baselinePreviewCapturedForRegistration = false
+    private var baselinePreviewRequestElapsedNanos = 0L
+    private var baselinePreviewRequestWallMillis = 0L
     private val previewLocationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             if (Prefs.isTrackingPaused(this@MainActivity) || TrackingService.isRunning || !isFreshLocation(location) ||
@@ -103,6 +106,17 @@ class MainActivity : Activity() {
             ) return
             if (!LocationProviders.isBetterFix(location, lastPreviewLocation)) return
             lastPreviewLocation = Location(location)
+            if (!baselinePreviewCapturedForRegistration && !location.isMock &&
+                location.accuracy in 0.01f..MAX_PREVIEW_ACCURACY_M &&
+                LocationProviders.isFixSince(
+                    location,
+                    baselinePreviewRequestElapsedNanos,
+                    baselinePreviewRequestWallMillis
+                )
+            ) {
+                baselinePreviewCapturedForRegistration = true
+                captureStartingPlace(Location(location))
+            }
             if (location.hasBearing() && (!location.hasSpeed() || location.speed >= 0.5f)) {
                 previewBearingDegrees = location.bearing.toDouble()
             }
@@ -140,13 +154,21 @@ class MainActivity : Activity() {
                 }
                 LocationManager.PROVIDERS_CHANGED_ACTION, LocationManager.MODE_CHANGED_ACTION -> {
                     refreshControls()
+                    if (!TrackingService.isRunning && !Prefs.isManualOnly(this@MainActivity) &&
+                        !Prefs.isTrackingPaused(this@MainActivity) && locationManager.isLocationEnabled
+                    ) {
+                        startTrackingIfPossible(requestIfMissing = false)
+                    }
                     if (!TrackingService.isRunning) startPreviewLocation()
                 }
                 TrackingService.ACTION_ROADS_UPDATED -> {
                     renderer?.refreshRoads()
                     refreshControls()
                 }
-                TrackingService.ACTION_EXPLORATION_UPDATED -> renderer?.refreshExploration()
+                TrackingService.ACTION_EXPLORATION_UPDATED -> {
+                    renderer?.refreshExploration()
+                    if (resumed) resolvePendingPlaces()
+                }
                 TrackingService.ACTION_TRACKING_STATE_CHANGED -> {
                     refreshControls()
                     if (TrackingService.isRunning || Prefs.isTrackingPaused(this@MainActivity)) stopPreviewLocation() else startPreviewLocation()
@@ -292,6 +314,29 @@ class MainActivity : Activity() {
         resolvePendingPlaces()
     }
 
+    private fun captureStartingPlace(location: Location) {
+        discoveryExecutor.execute {
+            val recorded = runCatching {
+                ProgressionRepository(applicationContext).recordBaselineCandidate(location)
+            }.getOrDefault(false)
+            if (!recorded) return@execute
+
+            val added = runCatching {
+                ProgressionManager.resolvePendingPlaces(applicationContext, 6)
+            }.getOrDefault(0)
+            if (!isDestroyed) {
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    renderer?.refreshExploration()
+                    if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) {
+                        renderer?.refreshPlaceOverlays()
+                    }
+                    if (added > 0) refreshControls()
+                }
+            }
+        }
+    }
+
     private fun resolvePendingPlaces() {
         if (!placeResolutionInFlight.compareAndSet(false, true)) return
         discoveryExecutor.execute {
@@ -412,8 +457,8 @@ class MainActivity : Activity() {
             }
             return
         }
-        if (!locationManager.isLocationEnabled) {
-            if (requestIfMissing) showLocationOffDialog()
+        if (!locationManager.isLocationEnabled && requestIfMissing) {
+            showLocationOffDialog()
             return
         }
         if (!TrackingService.isRunning) {
@@ -576,9 +621,9 @@ class MainActivity : Activity() {
                 }
                 renderer?.setPlaceOverlayMode(next) ?: Prefs.setPlaceOverlayMode(this, next)
                 if (next != PlaceOverlayMode.NONE) {
-                    // After a reset there may be no named-place row yet. Seed one from the best
-                    // fresh cached fix so the current country/state/town can become an uncounted
-                    // starter baseline and render immediately once reverse geocoding finishes.
+                    // A fresh cached fix can queue ordinary place discovery immediately.
+                    // Fresh/reset baseline selection remains stricter: only a new live fix produced
+                    // after the current location request can define the zero-point starter place.
                     showFreshCachedLocation()
                     lastPreviewLocation?.takeIf(::isFreshLocation)?.let {
                         ProgressionRepository(this).recordPlaceCandidate(it)
@@ -826,6 +871,9 @@ class MainActivity : Activity() {
     private fun startPreviewLocation() {
         if (Prefs.isTrackingPaused(this) || !resumed || !hasLocationPermission() || TrackingService.isRunning || !locationManager.isLocationEnabled) return
         stopPreviewLocation()
+        baselinePreviewCapturedForRegistration = false
+        baselinePreviewRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()
+        baselinePreviewRequestWallMillis = System.currentTimeMillis()
         LocationProviders.registerHighAccuracy(locationManager, ::registerPreviewProvider)
     }
 

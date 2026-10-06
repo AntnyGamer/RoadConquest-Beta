@@ -1,11 +1,20 @@
-# RoadConquest 1.0 Beta 6
+# RoadConquest 1.0 Beta 7
 
-- Fix place overlays after a fresh reset: the starting country, state/region, and town are now kept as overlay-visible baseline places while still awarding zero points and counting as zero discoveries.
-- Refresh a selected overlay even when reverse geocoding only resolves zero-point starter places.
-- When an overlay is enabled after a reset, seed place resolution from the best fresh cached location so the current baseline can appear without requiring a rewarded discovery first.
-- Make overlay loading fall back to the default Nominatim boundary service when the remote provider-config file is temporarily unavailable.
-- Keep unmatched raw GPS only as a faint, narrow provisional trace while OSRM is resolving it. Confirmed traveled roads remain thicker and nearly opaque and use road-snapped geometry, so pending data does not look like a finalized off-road route while the map still stays visually continuous.
-- Fix a matcher dead-zone where an otherwise acceptable 45–79% confidence OSRM match with an internally ambiguous junction could be retried forever even after fixes on both sides constrained the route. Contextual interior points now use the same 45% acceptance threshold as the saved road geometry, while ambiguous trace endpoints still stay pending for more evidence.
-- Remove beta-to-beta database, progression, and road-history migration/repair paths so the beta uses only the current data model.
+- Make the zero-point starting place use the first good live/current location fix after a fresh install or device-data reset. Cached fixes from before the new location request cannot become the baseline, and the starting town/state/country still awards zero discovery points.
+- Retry failed zero-point reverse geocoding quickly instead of blocking fresh place discovery for about an hour, and combine several geocoder results from the same coordinate to fill missing country/state/town fields more reliably.
+- Show a truthful foreground-notification waiting state while Android Location is off, then switch back to tracking text when Location returns.
+- Keep automatic tracking armed when Android Location is off, including after reboot and when switching Manual -> Always. The first good fix after Location is turned back on can immediately establish the fresh starting place and resume tracking.
+- Reject mock-location fixes from local driving history so they cannot add blue roads or mileage.
+- Prevent stale pre-reset background work from restoring roads/progression rewards, place candidates, achievements, ad progress, battery progress, or purchases after device data has been deleted.
+- Prevent stale pre-reset summaries from restoring the separate achievement progress cache after deletion.
+- Keep exported town/state/country discovery totals aligned with in-app progression: the zero-point baseline remains in visited_places.csv for history/overlays but does not inflate discovery counts.
+- Read multi-query progression snapshots under the shared history lock so concurrent reset/reward activity cannot briefly produce mixed UI totals.
+- Make local progression reset self-contained, including achievement preference/history state, so a fresh profile cannot inherit old maximum-road progress or announcement state.
+- Keep exported town/state/country discovery totals aligned with the app: the zero-point baseline remains in `visited_places.csv` for history/overlays but does not inflate discovery counts in metadata.
+- Count Account, Achievements, Garage & Shop, and Leaderboards as RoadConquest foreground screens so internal navigation cannot be mistaken for leaving and reopening the app.
+- Remove the unnecessary full saved-road regroup on the first summary of each app process; current road groups are maintained transactionally as roads are stored.
+- Flush successful partial place-overlay download batches immediately even when a later boundary request fails, and enforce the Nominatim request throttle across all overlay clients in the process.
+- Restrict direct external launching of MainActivity; launcher aliases remain the exported app entry points.
+- Retain the Beta 6 road-matching, fog, progression, account, overlay, and migration-removal behavior unless changed above.
 
-Android version code is 32. Android 12 or newer is required.
+Android version code is 33. Android 12 or newer is required.

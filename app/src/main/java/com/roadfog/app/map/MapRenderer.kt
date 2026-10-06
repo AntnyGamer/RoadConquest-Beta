@@ -218,13 +218,15 @@ class MapRenderer(
                 if (data != null) {
                     loaded += data
                     fetchedSincePost++
-                    if (fetchedSincePost >= OVERLAY_UPDATE_BATCH ||
-                        index == missing.lastIndex) {
+                    if (fetchedSincePost >= OVERLAY_UPDATE_BATCH) {
                         postPlaceOverlay(generation, kind, loaded)
                         fetchedSincePost = 0
                     }
                 }
             }
+            // Flush a partial final batch even when the last request failed or returned no
+            // boundary. Successful earlier downloads should appear without waiting for refresh.
+            if (fetchedSincePost > 0) postPlaceOverlay(generation, kind, loaded)
         }
     }
 

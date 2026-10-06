@@ -13,15 +13,23 @@ object ProgressionManager {
     fun sync(context: Context, summary: DataSummary): ProgressionSnapshot {
         val repository = ProgressionRepository(context)
         var snapshot = repository.snapshot()
+        val expectedGeneration = summary.historyGeneration.takeIf { it >= 0L }
+        if (expectedGeneration != null && !repository.isHistoryGenerationCurrent(expectedGeneration)) {
+            return snapshot
+        }
         if (summary.roadsUnlockedCount > snapshot.rewardedRoads) {
-            repository.syncRoadRewards(summary.roadsUnlockedCount)
+            repository.syncRoadRewards(summary.roadsUnlockedCount, expectedGeneration)
             snapshot = repository.snapshot()
         }
         val achievements = Achievements.progress(context, summary, metrics(snapshot))
         var changed = false
         for (achievement in achievements) {
             if (achievement.unlocked && achievement.id !in snapshot.rewardedAchievements) {
-                changed = repository.awardAchievement(achievement.id, achievement.rewardPoints) || changed
+                changed = repository.awardAchievement(
+                    achievement.id,
+                    achievement.rewardPoints,
+                    expectedGeneration
+                ) || changed
             }
         }
         return if (changed) repository.snapshot() else snapshot
@@ -60,6 +68,7 @@ object ProgressionManager {
 
     fun resetLocalProgression(context: Context) {
         ProgressionRepository(context).clearProgression()
+        Achievements.reset(context)
         PlaceOverlayCache.clear(context)
         com.roadfog.app.util.Prefs.resetCosmetics(context)
         com.roadfog.app.util.Prefs.setPlaceOverlayMode(context, com.roadfog.app.map.PlaceOverlayMode.NONE)
@@ -67,14 +76,22 @@ object ProgressionManager {
     }
 
     fun resolvePendingPlaces(context: Context, limit: Int = 6): Int {
+        require(limit > 0)
         val repository = ProgressionRepository(context)
         var added = 0
-        for (candidate in repository.pendingPlaceCandidates(limit)) {
-            val discoveries = PlaceResolver.resolve(context, candidate)
-            if (discoveries == null) {
-                repository.deferCandidate(candidate)
-            } else {
-                added += repository.resolveCandidate(candidate, discoveries)
+        var processed = 0
+        while (processed < limit) {
+            val candidates = repository.pendingPlaceCandidates(limit - processed)
+            if (candidates.isEmpty()) break
+            for (candidate in candidates) {
+                val discoveries = PlaceResolver.resolve(context, candidate)
+                if (discoveries.isNullOrEmpty()) {
+                    repository.deferCandidate(candidate)
+                } else {
+                    added += repository.resolveCandidate(candidate, discoveries)
+                }
+                processed++
+                if (processed >= limit) break
             }
         }
         return added

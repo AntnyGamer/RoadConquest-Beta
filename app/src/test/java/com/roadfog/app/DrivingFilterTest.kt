@@ -35,6 +35,11 @@ class DrivingFilterTest {
         assertFalse(accepts(point(40.0002, 9), point(40.0, 10)))
     }
 
+    @Test fun mockLocationsCannotUnlockLocalRoads() {
+        assertFalse(accepts(point(40.0002, 13).apply { isMock = true }, point(40.0, 10)))
+        assertFalse(accepts(point(40.0002, 13), point(40.0, 10).apply { isMock = true }))
+    }
+
     @Test fun nanAccuracyCannotAuthorizeDriving() {
         assertFalse(accepts(point(40.0002, 13).apply { accuracy = Float.NaN }, point(40.0, 10)))
     }
