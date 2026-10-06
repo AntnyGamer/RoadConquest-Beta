@@ -92,15 +92,15 @@ class PlaceOverlayTest {
             "New Jersey",
             "United States",
             1L,
-            39.717675,
-            -75.090175
+            40.0000,
+            -75.0000
         )
         val body = """
             [
               {
                 "name":"Washington Township",
-                "lat":"40.9800",
-                "lon":"-74.1000",
+                "lat":"41.0000",
+                "lon":"-74.0000",
                 "addresstype":"administrative",
                 "address":{
                   "township":"Washington Township",
@@ -109,13 +109,13 @@ class PlaceOverlayTest {
                 },
                 "extratags":{"population":"111"},
                 "geojson":{"type":"Polygon","coordinates":[[
-                  [-74.11,40.97],[-74.09,40.97],[-74.09,40.99],[-74.11,40.99],[-74.11,40.97]
+                  [-74.01,40.99],[-73.99,40.99],[-73.99,41.01],[-74.01,41.01],[-74.01,40.99]
                 ]]}
               },
               {
                 "name":"Washington Township",
-                "lat":"39.7180",
-                "lon":"-75.0900",
+                "lat":"40.0100",
+                "lon":"-75.0100",
                 "addresstype":"administrative",
                 "address":{
                   "township":"Washington Township",
@@ -124,7 +124,7 @@ class PlaceOverlayTest {
                 },
                 "extratags":{"population":"222"},
                 "geojson":{"type":"Polygon","coordinates":[[
-                  [-75.10,39.71],[-75.08,39.71],[-75.08,39.73],[-75.10,39.73],[-75.10,39.71]
+                  [-75.02,40.00],[-75.00,40.00],[-75.00,40.02],[-75.02,40.02],[-75.02,40.00]
                 ]]}
               }
             ]
