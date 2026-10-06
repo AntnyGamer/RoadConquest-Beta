@@ -274,8 +274,8 @@ class TrackingService : Service(), LocationListener {
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
             // No more fixes may arrive while Android Location is off. Give any unresolved
             // corner/end-of-drive intervals an immediate final pass instead of waiting for
-            // their ordinary retry deadline.
-            maybeRunMatching(force = true)
+            // their ordinary retry deadline. A single provider handoff does not need this.
+            if (!locationManager.isLocationEnabled) maybeRunMatching(force = true)
         }
         if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
             requestLocations()
