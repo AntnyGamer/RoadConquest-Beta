@@ -146,6 +146,26 @@ class ProgressionRepositoryTest {
         assertTrue(ProgressionRepository(context).pendingPlaceCandidates(nowMillis = 4_000L).isEmpty())
     }
 
+    @Test fun failedBaselineGeocodingRetriesPromptly() {
+        val progression = ProgressionRepository(context)
+        val fix = android.location.Location("gps").apply {
+            latitude = 39.9
+            longitude = -75.0
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(fix))
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+
+        progression.deferCandidate(baseline, nowMillis = 10_000L)
+
+        assertTrue(progression.pendingPlaceCandidates(nowMillis = 69_999L).isEmpty())
+        val retry = progression.pendingPlaceCandidates(nowMillis = 70_000L).single()
+        assertEquals(1, retry.attempts)
+        assertEquals(baseline.latitude, retry.latitude, 0.0)
+        assertEquals(baseline.longitude, retry.longitude, 0.0)
+    }
+
     @Test fun freshBaselineUsesExactFirstLiveFixAndBlocksOrdinaryCandidatesUntilThen() {
         val progression = ProgressionRepository(context)
 
