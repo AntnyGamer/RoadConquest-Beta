@@ -19,8 +19,8 @@ This checklist is for final device-level validation on supported Android 12+ pho
 5. Confirm the labeled OpenFreeMap base map loads.
 6. Confirm the map centers on the first fresh phone-location fix and the car icon follows current position.
 7. Zoom in fully and confirm fog, blue unlocked-road lines, and the car marker remain visible at Road Conquest's maximum zoom on the device.
-8. Zoom progressively outward and confirm the cloud pattern stays broad instead of collapsing into many tiny repeated texture tiles.
-9. At world zoom and the next three zoom levels, pan through several full world copies in both directions. Confirm fog stays over the whole map while crossing the date line and looping. At intermediate zooms, unlocked road lines stay visibly above fog as they load.
+8. Zoom progressively outward and confirm the fog keeps visible cloud texture without collapsing into many tiny repeated tiles or producing a bright halo around traveled roads.
+9. Confirm blue traveled-road lines remain visible from zoom 6, but cleared fog corridors disappear below zoom 9. At world zoom and the next three zoom levels, pan through several full world copies in both directions and confirm fog stays over the whole map while crossing the date line and looping.
 10. Confirm the points chip is visible below the map stats and opens Garage & Shop.
 11. Buy/equip at least one car shape/color and one road color; return to the map and verify each changes without restarting tracking.
 12. If enough test points are available, equip Golden Road Conquest and verify the app palette and launcher icon change, then switch back to Standard UI.
@@ -76,7 +76,7 @@ If all of the above pass on the target Android device and firmware, that provide
   must leave the original account unchanged.
 - Cancel both deletion confirmations and verify that all data remains.
 - **Account → Delete account** must require the current password, delete the cloud account/sessions/leaderboard data, and leave saved device history intact.
-- **Settings → Data and privacy → Delete all data** must be unavailable while signed out, require the current password when signed in, and only begin local deletion after the server accepts that password without deleting the account. The cloud account and leaderboard scores stay. Then tracking stops, verified-drive sharing turns off, history and fog reveals clear, points/purchases/cosmetics clear, and delayed road matches cannot restore them. The
+- **Settings → Data and privacy → Delete all data** must remain available while signed out and require typing `I confirm I want to delete all of my local data.` exactly, including the period. A partial/mismatched phrase must not delete anything. After exact confirmation, local deletion must begin without any account or network dependency; the cloud account and leaderboard scores stay. Then tracking stops, verified-drive sharing turns off, history and fog reveals clear, points/purchases/cosmetics clear, and delayed road matches cannot restore them. The
   cloud account remains when only device data is deleted. Tracking and verified sharing can be
   explicitly re-enabled later.
 - Interrupt an export (for example by killing the app during export), reopen Road Conquest, then
