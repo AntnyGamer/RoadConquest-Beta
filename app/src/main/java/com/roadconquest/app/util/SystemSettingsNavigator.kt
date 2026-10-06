@@ -41,9 +41,9 @@ object SystemSettingsNavigator {
         val launched = launchFirst(intents(destination, activity.packageName), activity::startActivity)
         val message = when {
             launched == null -> "Open your device settings manually."
-            launched.action == Settings.ACTION_SETTINGS -> "Find RoadConquest under Apps, then choose the required setting."
+            launched.action == Settings.ACTION_SETTINGS -> "Find Road Conquest under Apps, then choose the required setting."
             destination == Destination.LOCATION_PERMISSION -> "Choose Permissions → Location, then enable Precise and Allow all the time."
-            destination == Destination.BATTERY && launched.action == Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS -> "Find RoadConquest and allow background battery use if your device offers that option."
+            destination == Destination.BATTERY && launched.action == Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS -> "Find Road Conquest and allow background battery use if your device offers that option."
             launched.action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS && destination == Destination.BATTERY -> "Choose Battery, then allow background use or Unrestricted if your device offers it."
             else -> null
         }
