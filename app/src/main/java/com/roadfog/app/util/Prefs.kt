@@ -108,11 +108,13 @@ object Prefs {
     }
 
     fun resetCosmetics(context: Context) {
+        // Device-data deletion promises these local selections are gone when it returns.
         prefs(context).edit()
             .remove("car_style")
             .remove("car_color")
             .remove("road_color")
             .remove("gold_ui_enabled")
-            .apply()
+            .putString("place_overlay_mode", PlaceOverlayMode.NONE.name)
+            .commit()
     }
 }
