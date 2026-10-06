@@ -311,7 +311,15 @@ class ProgressionRepository(context: Context) {
         synchronized(dbHelper.historyLock) {
             if (!isCurrentHistory()) return@synchronized
             val attempts = (candidate.attempts + 1).coerceAtMost(10)
-            val delay = (30L * 60_000L * (1L shl attempts.coerceAtMost(5))).coerceAtMost(24L * 60L * 60_000L)
+            val baseline = candidate.cellX == BASELINE_CANDIDATE_X &&
+                candidate.cellY == BASELINE_CANDIDATE_Y
+            val delay = if (baseline) {
+                (BASELINE_RETRY_MS * (1L shl (attempts - 1).coerceAtMost(4)))
+                    .coerceAtMost(BASELINE_RETRY_MAX_MS)
+            } else {
+                (30L * 60_000L * (1L shl attempts.coerceAtMost(5)))
+                    .coerceAtMost(24L * 60L * 60_000L)
+            }
             dbHelper.writableDatabase.update(
                 "place_candidates",
                 ContentValues().apply {
@@ -551,6 +559,8 @@ class ProgressionRepository(context: Context) {
     companion object {
         const val POINTS_PER_ROAD = 5L
         private const val PLACE_CANDIDATE_CELL_M = 2_000.0
+        private const val BASELINE_RETRY_MS = 60_000L
+        private const val BASELINE_RETRY_MAX_MS = 15 * 60_000L
         private const val BASELINE_CANDIDATE_X = Long.MIN_VALUE
         private const val BASELINE_CANDIDATE_Y = Long.MIN_VALUE
         private const val COUNTER_REWARDED_ROADS = "rewarded_roads"
