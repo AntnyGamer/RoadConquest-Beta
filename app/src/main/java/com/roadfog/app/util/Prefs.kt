@@ -47,7 +47,8 @@ object Prefs {
     fun isManualOnly(context: Context): Boolean = prefs(context).getBoolean(KEY_MANUAL_ONLY, false)
 
     fun setManualOnly(context: Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_MANUAL_ONLY, value).apply()
+        // Tracking-mode changes must survive an abrupt process death.
+        prefs(context).edit().putBoolean(KEY_MANUAL_ONLY, value).commit()
     }
 
     fun isTrackingPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_TRACKING_PAUSED, false)
@@ -66,8 +67,9 @@ object Prefs {
     fun isDriveVerificationEnabled(context: Context): Boolean = prefs(context).getBoolean("verify_drives", false)
 
     fun setDriveVerificationEnabled(context: Context, enabled: Boolean) {
+        // Precise-GPS sharing consent is security-sensitive; persist the opt-in/out before returning.
         prefs(context).edit().putBoolean("verify_drives", enabled)
-            .putLong("verification_consent_version", driveVerificationConsentVersion(context) + 1L).apply()
+            .putLong("verification_consent_version", driveVerificationConsentVersion(context) + 1L).commit()
     }
 
     fun driveVerificationConsentVersion(context: Context): Long = prefs(context).getLong("verification_consent_version", 0L)
