@@ -58,6 +58,27 @@ class NotificationStopTest {
         } finally { controller.destroy() }
     }
 
+    @Test fun locationOffForegroundServiceSaysItIsWaitingInsteadOfTracking() {
+        val app = RuntimeEnvironment.getApplication()
+        Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(false)
+        val controller = Robolectric.buildService(TrackingService::class.java).create()
+        try {
+            val service = controller.get()
+            val notification = Shadows.shadowOf(service).lastForegroundNotification
+            assertNotNull(notification)
+            assertEquals(
+                "RoadConquest is ready",
+                notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
+            )
+            assertEquals(
+                "Waiting for Android Location to be turned on",
+                notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()
+            )
+        } finally {
+            controller.destroy()
+        }
+    }
+
     @Test fun pausedServiceCannotSubscribeToGpsUntilTheAppResumesTracking() {
         val app = RuntimeEnvironment.getApplication()
         val manager = app.getSystemService(LocationManager::class.java)
