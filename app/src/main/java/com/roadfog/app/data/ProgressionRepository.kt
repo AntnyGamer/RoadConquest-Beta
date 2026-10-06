@@ -383,7 +383,7 @@ class ProgressionRepository(context: Context) {
         arrayOf(itemId)
     ).use { it.moveToFirst() }
 
-    fun snapshot(): ProgressionSnapshot {
+    fun snapshot(): ProgressionSnapshot = synchronized(dbHelper.historyLock) {
         val db = dbHelper.readableDatabase
         val earned = db.rawQuery("SELECT COALESCE(SUM(points), 0) FROM progression_rewards", null)
             .use { check(it.moveToFirst()); it.getLong(0) }
