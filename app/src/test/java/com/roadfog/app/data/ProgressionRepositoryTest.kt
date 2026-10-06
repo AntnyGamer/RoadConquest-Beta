@@ -142,6 +142,11 @@ class ProgressionRepositoryTest {
         ProgressionManager.sync(context, staleSummary)
         assertEquals(0L, ProgressionRepository(context).snapshot().balance)
         assertEquals(0L, ProgressionRepository(context).snapshot().rewardedRoads)
+        assertEquals(
+            0L,
+            context.getSharedPreferences("roadfog_achievements", 0)
+                .getLong("max_roads_seen", 0L)
+        )
 
         val queuedLocation = android.location.Location("gps").apply {
             latitude = 39.9
