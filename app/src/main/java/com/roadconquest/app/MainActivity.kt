@@ -36,6 +36,7 @@ import com.roadconquest.app.account.AccountOnboarding
 import com.roadconquest.app.achievements.Achievements
 import com.roadconquest.app.export.DataExporter
 import com.roadconquest.app.map.MapRenderer
+import com.roadconquest.app.map.FogBitmapRenderer
 import com.roadconquest.app.map.PlaceOverlayInfo
 import com.roadconquest.app.map.PlaceOverlayMode
 import com.roadconquest.app.progression.ProgressionManager
@@ -249,7 +250,7 @@ class MainActivity : Activity() {
                     showOverlayInfo(overlayInfo)
                     true
                 } else {
-                    if (map.cameraPosition.zoom >= 9.0) {
+                    if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM) {
                         val radiusMeters = (
                             map.projection.getMetersPerPixelAtLatitude(point.latitude) * 16.0
                         ).coerceIn(12.0, 100.0)
@@ -259,7 +260,7 @@ class MainActivity : Activity() {
                 }
             }
             renderer = MapRenderer(this, map, repository, mapView, mapWasCentered).also { renderer ->
-                renderer.initialize { showFreshCachedLocation() }
+                renderer.initialize { showFreshCachedOrStartingLocation() }
             }
         }
     }
@@ -328,7 +329,7 @@ class MainActivity : Activity() {
             startTrackingIfPossible(requestIfMissing = false)
             maybeExplainBackgroundLocation()
         }
-        showFreshCachedLocation()
+        showFreshCachedOrStartingLocation()
         if (!TrackingService.isRunning) startPreviewLocation()
         resolvePendingPlaces()
     }
@@ -531,9 +532,8 @@ class MainActivity : Activity() {
         locationDisclosure = AlertDialog.Builder(this)
             .setTitle("Location use")
             .setMessage(
-                "Road Conquest uses precise location to record driven roads, reveal visited places, and show your position. " +
-                    "When automatic tracking is enabled, location can be used in the background when the app is closed or not in use. " +
-                    "Road matching sends small GPS batches to the configured OSRM service. Verified scoring sends live GPS and app-integrity evidence only if you explicitly enable it."
+                "Road Conquest collects precise location data to record driven roads and reveal visited places, including in the background when automatic tracking is enabled and the app is closed or not in use. " +
+                    "It also uses location to show your position. Road matching sends small GPS batches to the configured OSRM service. Verified scoring sends live GPS and app-integrity evidence only if you explicitly enable it."
             )
             .setPositiveButton("Continue") { _, _ ->
                 Prefs.setLocationDisclosureShown(this, true)
@@ -896,6 +896,23 @@ class MainActivity : Activity() {
             insets
         }
         ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun showFreshCachedOrStartingLocation() {
+        showFreshCachedLocation()
+        val activeRenderer = renderer ?: return
+        if (activeRenderer.hasCentered || Prefs.isDeviceDataDeletionPending(this)) return
+
+        summaryExecutor.execute {
+            val starting = runCatching {
+                ProgressionRepository(applicationContext).startingLocation()
+            }.getOrNull() ?: return@execute
+            runOnUiThread {
+                if (!isDestroyed) {
+                    renderer?.centerOnStartingLocation(starting.latitude, starting.longitude)
+                }
+            }
+        }
     }
 
     private fun showFreshCachedLocation() {
