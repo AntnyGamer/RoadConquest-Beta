@@ -308,5 +308,7 @@ jobs:
           (cd "$out" && sha256sum *.apk *.aab *.zip *.mjs > "RoadConquest-$version-SHA256SUMS.txt")
           release_flags=()
           if [[ "$version" == *-beta* ]]; then release_flags+=(--prerelease); fi
-          gh release create "$tag" --target "$GITHUB_SHA" --title "Road Conquest ${version/-beta/ Beta}" "${release_flags[@]}" \
+          release_title="${version/-beta./ Beta }"
+          release_title="${release_title/-beta/ Beta}"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Road Conquest $release_title" "${release_flags[@]}" \
             --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.aab "$out"/*.zip "$out"/*.mjs "$out"/*SHA256SUMS.txt
