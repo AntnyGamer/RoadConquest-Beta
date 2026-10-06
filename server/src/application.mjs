@@ -366,7 +366,8 @@ async function handle(req, res) {
       return send(res, 400, { error: renameAccount
         ? "Enter your current password and a valid username." : "Enter your current password." });
     }
-    if (!await rateLimit("account-change", String(user.id), 5, 15 * 60 * 1000)) {
+    const accountRateBucket = reauthenticate ? "reauth" : "account-change";
+    if (!await rateLimit(accountRateBucket, String(user.id), 5, 15 * 60 * 1000)) {
       return send(res, 429, { error: "Too many attempts. Try again later." });
     }
     const client = await pool.connect();
@@ -403,8 +404,9 @@ async function handle(req, res) {
       // Foreign keys remove every session, score, unlocked way, live run and receipt.
       await client.query("DELETE FROM users WHERE id = $1", [user.id]);
       for (const [bucket, key] of [
-        ["account-change", String(user.id)], ["drive-start", String(user.id)],
-        ["drive-batch", String(user.id)], ["login-user", saved.username_key]
+        ["account-change", String(user.id)], ["reauth", String(user.id)],
+        ["drive-start", String(user.id)], ["drive-batch", String(user.id)],
+        ["login-user", saved.username_key]
       ]) {
         await client.query("DELETE FROM auth_rate_limits WHERE bucket = $1 AND key_hash = $2", [bucket, opaqueRateKey(bucket, key)]);
       }
