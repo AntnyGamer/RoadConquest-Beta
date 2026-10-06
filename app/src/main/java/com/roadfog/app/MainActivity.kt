@@ -621,9 +621,9 @@ class MainActivity : Activity() {
                 }
                 renderer?.setPlaceOverlayMode(next) ?: Prefs.setPlaceOverlayMode(this, next)
                 if (next != PlaceOverlayMode.NONE) {
-                    // After a reset there may be no named-place row yet. Seed one from the best
-                    // fresh cached fix so the current country/state/town can become an uncounted
-                    // starter baseline and render immediately once reverse geocoding finishes.
+                    // A fresh cached fix can queue ordinary place discovery immediately.
+                    // Fresh/reset baseline selection remains stricter: only a new live fix produced
+                    // after the current location request can define the zero-point starter place.
                     showFreshCachedLocation()
                     lastPreviewLocation?.takeIf(::isFreshLocation)?.let {
                         ProgressionRepository(this).recordPlaceCandidate(it)
