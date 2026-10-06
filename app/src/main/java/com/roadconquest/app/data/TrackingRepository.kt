@@ -137,9 +137,9 @@ class TrackingRepository(context: Context) {
     )
 
     /**
-     * Returns the newest contiguous group of pending points with up to two adjacent raw points
-     * as unmarkable context. Live batches overlap by a full segment; retries inside an already
-     * matched drive also get a newer-side anchor when one is available.
+     * Returns the newest contiguous group of pending points with adjacent raw points as
+     * unmarkable context. Production windows reserve up to three context slots; hole retries
+     * keep at least one approach point and can use two exit-side points around a junction.
      */
     @Synchronized
     fun loadMatchingWindow(limit: Int = 50, nowMillis: Long = System.currentTimeMillis()): MatchingWindow {
