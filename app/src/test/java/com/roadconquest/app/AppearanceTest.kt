@@ -112,7 +112,7 @@ class AppearanceTest {
         app.getSharedPreferences("roadfog_preferences", 0).edit().putString("ui_theme", "bad").putString("map_mode", "bad").commit()
         assertEquals(UiTheme.SYSTEM, Prefs.uiTheme(app))
         assertEquals(MapMode.STREETS, Prefs.mapMode(app))
-        assertEquals("RoadConquest", app.getString(R.string.app_name))
+        assertEquals("Road Conquest", app.getString(R.string.app_name))
         assertEquals("com.roadconquest.app", app.packageName)
         assertFalse(app.getString(R.string.stats_initial).contains("GPS"))
     }
