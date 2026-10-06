@@ -17,7 +17,7 @@ object DataExporter {
     private const val SNAPSHOT_SUFFIX = ".db"
     private val snapshotLock = Any()
 
-    fun writeZip(context: Context, repository: TrackingRepository, output: OutputStream) =
+    fun writeZip(context: Context, repository: TrackingRepository, output: OutputStream): Unit =
         synchronized(snapshotLock) {
             // A killed process cannot execute the previous export's finally block. Remove any
             // orphaned private SQLite snapshot before copying current history into a new one.
@@ -53,7 +53,7 @@ object DataExporter {
         cache.listFiles()
             .orEmpty()
             .filter { it.name.startsWith(SNAPSHOT_PREFIX) && it.name.endsWith(SNAPSHOT_SUFFIX) }
-            .forEach(SQLiteDatabase::deleteDatabase)
+            .forEach { SQLiteDatabase.deleteDatabase(it) }
         // deleteDatabase removes normal -wal/-shm files with the base DB. Sweep by prefix too
         // in case process death happened between sidecar creation and the base-file flush.
         cache.listFiles().orEmpty()
