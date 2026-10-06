@@ -13,6 +13,7 @@ import com.roadfog.app.account.AccountClient
 import com.roadfog.app.account.AccountStore
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.data.AppDatabase
+import com.roadfog.app.data.LocalDataReset
 import com.roadfog.app.util.Prefs
 import org.junit.Assert.*
 import org.junit.Before
