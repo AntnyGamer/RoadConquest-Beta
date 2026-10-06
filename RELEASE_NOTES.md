@@ -1,14 +1,15 @@
-# Road Conquest 1.0 Beta 9
+# Road Conquest 1.0 Beta 10
 
-- Strengthen road matching around turns by widening high-quality OSRM candidate searches while retaining strict post-match distance, geometry, confidence, and detour validation.
-- Give ambiguous junction retries context on both sides of the turn, including an approach anchor and up to two exit-side fixes.
-- Retry partial turn matches sooner and run a final repair pass when Android Location is turned off.
-- Serialize that final repair behind queued GPS persistence so the last accepted fixes cannot be missed at the end of a drive.
-- Keep unresolved GPS intervals visible as a thin translucent trace until confirmed road geometry replaces them; provisional traces never count as unlocked roads.
-- Fix same-named town overlay selection by preferring the boundary nearest the recorded discovery location, including township and administrative results.
-- Invalidate stale place-overlay cache entries and shorten negative boundary caching so corrected town boundaries can recover quickly.
-- Retain the explored-place overlay behavior: country below state below town below fog, one overlay category active at a time, with tap-for-info support.
-- Remove redundant full-screen root backgrounds that duplicated the theme window background and caused avoidable overdraw.
-- Keep Android 12+ support, the permanent `com.roadconquest.app` package ID, local-data/privacy behavior, accounts, achievements, cosmetics, fog, and leaderboard security semantics unchanged unless listed above.
+- Add dedicated thin outline layers for country, state/region, and town overlays so neighboring explored areas remain visually separated while preserving the existing country → state → town → fog stacking order.
+- Keep overlay outlines anchored to geographic boundaries and rebuild line geometry from both Polygon and MultiPolygon boundary rings.
+- Render confirmed blue roads and road/place fog reveals beginning at zoom 8 instead of zoom 9, making explored areas visible from roughly twice as far away without changing the real-world reveal fade distance at normal driving zooms.
+- Preserve a small minimum on-screen fog-reveal radius at the farthest supported overview zoom so revealed routes do not disappear into sub-pixel rendering.
+- When Android Location is off, start the map at the exact saved zero-point location rather than the world overview. While Location is available, fresh live GPS still wins and controls initial centering.
+- Recover the zero-point camera location both while baseline reverse geocoding is still pending and after the baseline has been resolved.
+- Use the farther-out road visibility threshold consistently for road tapping and native map rendering.
+- Match verified-leaderboard OSRM candidate search to the strengthened local turn envelope while retaining the stricter server-side 0.95 confidence, no-alternative, distance, speed, and catalog checks.
+- Update the prominent in-app and hosted privacy disclosures to explicitly state that Road Conquest collects precise location data for driven-road and visited-place features in the background when automatic tracking is enabled and the app is closed or not in use.
+- Add a CI gate that verifies 16 KB native-library ZIP alignment and 64-bit ELF LOAD-segment alignment before a Play release can be published.
+- Keep Android 12+ support, API 37 targeting, the permanent `com.roadconquest.app` package ID, accounts, local-data deletion, fog safety fallbacks, and release signing behavior unchanged unless listed above.
 
-Android version code is 35. Android 12 or newer is required.
+Android version code is 36. Android 12 or newer is required.
