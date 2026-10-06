@@ -86,7 +86,9 @@ export async function matchEvidence(fixes, config) {
   url.search = new URLSearchParams({
     annotations: "nodes,distance", steps: "false", overview: "false", tidy: "false", gaps: "ignore",
     timestamps: fixes.map(f => Math.floor(f.time / 1000)).join(";"),
-    // Match the Android client’s turn candidate envelope; scoreMatch still requires a\n    // very high-confidence, unambiguous snap before any leaderboard credit is accepted.\n    radiuses: fixes.map(f => Math.max(10, f.accuracy)).join(";")
+    // Match the Android client's turn candidate envelope; scoreMatch still requires a
+    // very high-confidence, unambiguous snap before any leaderboard credit is accepted.
+    radiuses: fixes.map(f => Math.max(10, f.accuracy)).join(";")
   }).toString();
   return boundedJson(await fetch(url, { redirect: "error", signal: AbortSignal.timeout(8000) }));
 }
