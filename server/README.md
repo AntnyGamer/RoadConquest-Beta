@@ -118,9 +118,10 @@ Keep these URLs publicly reachable when publishing. They are intentionally stati
 
 ## Account changes and deletion
 
-`PUT /v1/username` accepts `{username, password}` under the current bearer session.
-`DELETE /v1/account` accepts `{password}` under the current bearer session. Both require the
-current password, apply a per-account attempt limit, and lock the user row in a transaction.
+`PUT /v1/username` accepts `{username, password}`, `POST /v1/reauth` accepts
+`{password}`, and `DELETE /v1/account` accepts `{password}` under the current bearer session.
+All current-password operations apply a per-account attempt limit and lock the user row in a
+transaction. Reauthentication verifies the password without changing account or session state.
 Username changes preserve the stable account ID and all scores; duplicate names return 409.
 Deletion cascades through every session, score, competitive road, live run and receipt. Other
 accounts and the shared road catalog are preserved. Device history is local and is cleared by
@@ -234,6 +235,7 @@ Endpoint summary:
 | `GET /v1/verified/me` | Authenticated private scores for the current map season |
 | `GET /v1/leaderboard?metric=miles` | Top 50 visible eligible profiles by verified distance |
 | `GET /v1/leaderboard?metric=roads` | Top 50 visible eligible profiles by unique way sections |
+| `POST /v1/reauth` | Authenticated current-password check without changing account/session state |
 | `PUT /v1/privacy` | Existing authenticated visibility setting; immediate public exclusion |
 
 Precise evidence is processed in memory, not saved as a route. Boundary validation persists only
