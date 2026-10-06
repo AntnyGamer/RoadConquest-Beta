@@ -328,7 +328,10 @@ object FogBitmapRenderer {
                 val localMetersPerPixel = request.metersPerScreenPixelAtCenter *
                     cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878))) / centerCos
                 if (!localMetersPerPixel.isFinite() || localMetersPerPixel <= 0) continue
-                val radius = (ROAD_FULL_M / localMetersPerPixel * request.screenScale).toFloat()
+                val radius = maxOf(
+                    (ROAD_FULL_M / localMetersPerPixel * request.screenScale).toFloat(),
+                    MIN_VISIBLE_REVEAL_RADIUS_PX * request.screenScale
+                )
                 drawRoadReveal(
                     revealCanvas,
                     ((request.roadScreen[i] - request.screenLeft) * request.screenScale).toFloat(),
@@ -358,7 +361,10 @@ object FogBitmapRenderer {
         if (!x.isFinite() || !y.isFinite()) return
         val metersPerPixel = request.metersPerScreenPixelAtCenter *
             cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878))) / centerCos
-        val radius = (LOCATION_FULL_M / metersPerPixel * request.screenScale).toFloat()
+        val radius = maxOf(
+            (LOCATION_FULL_M / metersPerPixel * request.screenScale).toFloat(),
+            MIN_VISIBLE_REVEAL_RADIUS_PX * request.screenScale
+        )
         if (!radius.isFinite() || radius <= 0f) return
         val drawX = ((x - request.screenLeft) * request.screenScale).toFloat()
         val drawY = ((y - request.screenTop) * request.screenScale).toFloat()
@@ -415,11 +421,14 @@ object FogBitmapRenderer {
     const val LOCATION_CLEAR_M = ROAD_CLEAR_M
     const val LOCATION_FULL_M = ROAD_FULL_M
     const val MAX_FOG_ALPHA = 0.80f
-    const val MIN_ROAD_ZOOM = 9.0
+    const val MIN_ROAD_ZOOM = 8.0
     const val MAX_ZOOM = 20.0
     const val CENTER_ZOOM = 18.0
     const val MAX_BITMAP_DIMENSION = 768
     const val VIEWPORT_PADDING_MULTIPLIER = 1.5f
+    // Keep narrow road/place reveals perceptible at the farthest supported overview zoom
+    // without changing their real-world fade distance at ordinary driving zoom levels.
+    private const val MIN_VISIBLE_REVEAL_RADIUS_PX = 1.25f
 
     fun bitmapDimensionForZoom(zoom: Double): Int = when {
         zoom < MIN_ROAD_ZOOM -> 512

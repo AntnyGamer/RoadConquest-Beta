@@ -37,6 +37,12 @@ data class PendingPlaceCandidate(
     val attempts: Int
 )
 
+data class StartingLocation(
+    val latitude: Double,
+    val longitude: Double,
+    val recordedAt: Long
+)
+
 data class ProgressionSnapshot(
     val balance: Long,
     val lifetimeEarned: Long,
@@ -456,6 +462,54 @@ class ProgressionRepository(context: Context) {
             purchasedItems = purchases,
             rewardedAchievements = rewardedAchievements
         )
+    }
+
+    /**
+     * Returns the exact zero-point location captured after install/reset. While reverse
+     * geocoding is still pending, the sentinel candidate is authoritative. Once resolved,
+     * baseline-marked visited places retain the same original coordinates.
+     */
+    fun startingLocation(): StartingLocation? = synchronized(dbHelper.historyLock) {
+        if (!isCurrentHistory()) return@synchronized null
+        val db = dbHelper.readableDatabase
+        db.query(
+            "place_candidates",
+            arrayOf("latitude", "longitude", "first_seen_at"),
+            "cell_x = ? AND cell_y = ?",
+            arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString()),
+            null,
+            null,
+            null,
+            "1"
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                return@synchronized StartingLocation(
+                    cursor.getDouble(0),
+                    cursor.getDouble(1),
+                    cursor.getLong(2)
+                )
+            }
+        }
+
+        db.rawQuery(
+            """SELECT v.latitude, v.longitude, v.first_visited_at
+               FROM visited_places v
+               WHERE EXISTS (
+                   SELECT 1 FROM progression_counters c
+                   WHERE c.counter_key = 'baseline:' || lower(v.kind) || ':' || v.place_key
+                     AND c.value = 1
+               )
+               ORDER BY CASE v.kind WHEN 'TOWN' THEN 0 WHEN 'STATE' THEN 1 ELSE 2 END,
+                        v.first_visited_at ASC
+               LIMIT 1""",
+            null
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else StartingLocation(
+                cursor.getDouble(0),
+                cursor.getDouble(1),
+                cursor.getLong(2)
+            )
+        }
     }
 
     fun visitedPlaces(kind: PlaceKind): List<PlaceDiscovery> {

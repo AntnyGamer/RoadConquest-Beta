@@ -157,10 +157,24 @@ class FogOverlayTest {
     }
 
     @Test fun wideZoomFogUsesSmallerUploadBitmaps() {
-        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(8.9))
-        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(9.0))
+        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(7.9))
+        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(8.0))
         assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(11.9))
         assertEquals(768, FogBitmapRenderer.bitmapDimensionForZoom(12.0))
+    }
+
+    @Test fun overviewRoadRevealDoesNotCollapseBelowOneScreenPixel() {
+        val roads = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
+        val rendered = FogBitmapRenderer.render(request(
+            roads = roads,
+            roadScreen = doubleArrayOf(100.0, 320.0, 540.0, 320.0),
+            metersPerPixel = 2_000.0
+        ))
+        // At this scale the physical 1500 ft fade would be sub-pixel. The overview
+        // minimum should still cut fog opacity substantially without pretending the whole
+        // 1500 ft corridor is fully clear at continent-scale zoom.
+        assertTrue(Color.alpha(rendered.getPixel(320, 320)) < 120)
+        assertEquals(204, Color.alpha(rendered.getPixel(320, 324)))
     }
 
     @Test fun fogAlphaIsExactlyEightyPercentAwayFromClearings() {

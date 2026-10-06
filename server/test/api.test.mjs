@@ -193,6 +193,9 @@ test("signup/login/privacy/logout are server-enforced and duplicate usernames ar
     const newLogin = await json(baseUrl, "/v1/login", "POST", { username: "newdriver", password });
     assert.equal(newLogin.status, 200);
     assert.equal((await json(baseUrl, "/v1/login", "POST", { username: "DriverOne", password })).status, 401);
+    assert.equal((await json(baseUrl, "/v1/reauth", "POST", { password: "wrong password" }, originalToken)).status, 403);
+    assert.equal((await json(baseUrl, "/v1/reauth", "POST", { password }, originalToken)).status, 200);
+    assert.equal((await json(baseUrl, "/v1/me", "GET", undefined, originalToken)).status, 200);
     assert.equal((await json(baseUrl, "/v1/account", "DELETE", { password: "wrong password" }, originalToken)).status, 403);
     assert.equal((await json(baseUrl, "/v1/me", "GET", undefined, originalToken)).status, 200);
     assert.equal((await json(baseUrl, "/v1/account", "DELETE", { password }, originalToken)).status, 200);

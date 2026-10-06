@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 9
+# Road Conquest 1.0 Beta 10
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 35.
+This release uses Android application ID `com.roadconquest.app` and internal version code 36.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -37,10 +37,8 @@ the Google Play listing is created; changing it later would create a different a
   Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
 - Use automatic tracking or control it manually. Stop tracking from the foreground notification.
 - Export driving history, road geometry, explored places, place discoveries, point awards,
-  purchases and progression counters from Settings. Device-data deletion also lives under Settings → Data and privacy,
-  stops tracking, turns off verified-drive GPS sharing, and removes private interrupted-export snapshots.
-- Create an optional account, change your username, manage leaderboard visibility or delete your
-  account. Device history can also be deleted while offline.
+  purchases and progression counters from Settings.
+- Create an optional account, change your username and manage leaderboard visibility. There are exactly two destructive account/data actions in the app: Account → Delete account removes the cloud account while keeping saved device history; Settings → Data and privacy → Delete all data removes all local Road Conquest data while keeping the cloud account and leaderboard scores. Both require the current account password. Local full-data deletion stops tracking, disables verified-drive sharing and removes private interrupted-export snapshots.
 
 Turning Show fog off changes only its visibility. Tracking continues and the saved reveals return
 when fog is enabled again. Manual tracking stays off until you enable it. In automatic mode,
@@ -128,9 +126,10 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 ## Google Play submission
 
 The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload.
-The account service exposes browser pages at `/privacy` and `/delete-account`; the app links both from
-Settings → Data and privacy. Use those deployed HTTPS URLs for the Play Console privacy-policy and
-account-deletion fields. The first Android location permission flow is preceded by a prominent disclosure
+CI verifies 16 KB native-library packaging/alignment before publication, in addition to unit tests, lint,
+release builds, account-server tests, and native map tests on supported Android generations.
+The account service exposes browser pages at `/privacy` and `/delete-account`. The app links the privacy policy from
+Settings; keep the deletion page publicly reachable for the Play Console account-deletion field without adding a third in-app delete action. The first Android location permission flow is preceded by a prominent disclosure
 covering precise location, background use, road matching, and optional verified scoring.
 
 Play Console still requires the publisher to complete the Data safety form, background-location declaration,

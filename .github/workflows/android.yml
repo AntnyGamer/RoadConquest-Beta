@@ -99,6 +99,46 @@ jobs:
           fi
       - name: Test, lint and build
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon --console=plain
+      - name: Verify 16 KB native-library compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release-unsigned.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$apk"
+          tmp="$RUNNER_TEMP/roadconquest-native-libs"
+          rm -rf "$tmp"
+          mkdir -p "$tmp"
+          if ! unzip -Z1 "$apk" 'lib/*/*.so' | grep -q .; then
+            echo "::notice::No native libraries found; 16 KB ELF checks are not needed."
+            exit 0
+          fi
+          unzip -qq "$apk" 'lib/*/*.so' -d "$tmp"
+
+          if [ -d "$tmp/lib/armeabi-v7a" ] && [ ! -d "$tmp/lib/arm64-v8a" ]; then
+            echo "::error::armeabi-v7a is packaged without the required arm64-v8a counterpart."
+            exit 1
+          fi
+          if [ -d "$tmp/lib/x86" ] && [ ! -d "$tmp/lib/x86_64" ]; then
+            echo "::error::x86 is packaged without the required x86_64 counterpart."
+            exit 1
+          fi
+
+          found64=0
+          while IFS= read -r -d '' so; do
+            found64=1
+            while read -r alignment; do
+              [ -n "$alignment" ] || continue
+              value=$((alignment))
+              if [ "$value" -lt 16384 ]; then
+                echo "::error file=$so::64-bit native LOAD segment alignment is $alignment; Google Play requires 16 KB compatibility."
+                exit 1
+              fi
+            done < <(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }')
+          done < <(find "$tmp/lib" -type f \( -path '*/arm64-v8a/*.so' -o -path '*/x86_64/*.so' \) -print0)
+          if [ "$found64" -eq 0 ]; then
+            echo "::error::Native libraries are packaged but no supported 64-bit ABI was found."
+            exit 1
+          fi
       - name: Save verification reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

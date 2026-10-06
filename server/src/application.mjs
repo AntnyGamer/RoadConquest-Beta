@@ -28,14 +28,14 @@ const PRIVACY_HTML = `<!doctype html>
 <style>body{font:16px system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.55}h1,h2{line-height:1.2}code{overflow-wrap:anywhere}</style></head>
 <body><h1>Road Conquest Privacy Policy</h1>
 <p><strong>Effective:</strong> October 6, 2026. <strong>Developer/publisher:</strong> AntnyGamer.</p>
-<p>Road Conquest uses location to record driven roads, reveal visited places, display your live map position, and support automatic tracking when enabled. Precise driving history, explored places, points, purchases, and cosmetics are stored on your device unless you export them.</p>
+<p>Road Conquest collects precise location data to record driven roads and reveal visited places, including in the background when automatic tracking is enabled and the app is closed or not in use. It also uses location to display your live map position. Precise driving history, explored places, points, purchases, and cosmetics are stored on your device unless you export them.</p>
 <h2>Data sent to services</h2>
 <p>Road matching sends small GPS coordinate batches to the configured OSRM service. Map providers receive requests for areas you view. Android's system geocoder may process coordinates while the app is in the foreground to resolve town, state/region, and country names. If you enable place overlays, discovered place names are sent to the configured boundary service and returned public boundaries are cached locally.</p>
 <p>Optional Road Conquest accounts send your username and password over HTTPS for signup/login; passwords are salted and scrypt-hashed on the server and are not stored in plaintext. Android stores an encrypted session token. If you explicitly enable verified scoring, live non-mock GPS evidence and Google Play Integrity evidence are sent to the Road Conquest account service for server-side road matching and leaderboard credit. Ordinary local driving history is not uploaded for leaderboard scoring.</p>
 <h2>Retention and deletion</h2>
-<p>Local app data remains on your device until you delete device data, uninstall the app, or otherwise clear app storage. Exported files are controlled by you and must be deleted separately. Cloud account data remains until you delete your account. Account deletion removes the account, sessions, leaderboard scores, verified-road records, live runs, and verification receipts associated with that account. Some short-lived anti-abuse and verification records expire automatically.</p>
+<p>Local app data remains on your device until you use Delete all data, uninstall the app, or otherwise clear app storage. Delete all data requires your current account password and removes local Road Conquest data while keeping the cloud account and leaderboard scores. Exported files are controlled by you and must be deleted separately. Delete account removes the cloud account, sessions, leaderboard scores, verified-road records, live runs, and verification receipts while leaving saved device history in place. Some short-lived anti-abuse and verification records expire automatically.</p>
 <h2>Security and choices</h2>
-<p>Network account traffic uses HTTPS. You can use Road Conquest without an account, hide yourself from leaderboards, leave verified-drive sharing off, use manual tracking, export your data, delete device data, and delete your cloud account.</p>
+<p>Network account traffic uses HTTPS. You can use Road Conquest without an account, hide yourself from leaderboards, leave verified-drive sharing off, use manual tracking, export your data, delete only your cloud account, or delete all local Road Conquest data while keeping your account.</p>
 <h2>Privacy inquiries</h2>
 <p>For privacy questions, use the Road Conquest project's <a href="https://github.com/AntnyGamer/RoadConquest-Beta/issues">GitHub Issues page</a>. Do not post passwords, precise location history, session tokens, or other sensitive information in a public issue.</p>
 <p><a href="/delete-account">Delete a Road Conquest account</a></p></body></html>`;
@@ -354,7 +354,8 @@ async function handle(req, res) {
 
   const renameAccount = req.method === "PUT" && url.pathname === "/v1/username";
   const deleteAccount = req.method === "DELETE" && url.pathname === "/v1/account";
-  if (renameAccount || deleteAccount) {
+  const reauthenticate = req.method === "POST" && url.pathname === "/v1/reauth";
+  if (renameAccount || deleteAccount || reauthenticate) {
     const user = await authenticatedUser(req);
     if (!user) return send(res, 401, { error: "Authentication required." });
     const body = await readJson(req);
@@ -365,7 +366,8 @@ async function handle(req, res) {
       return send(res, 400, { error: renameAccount
         ? "Enter your current password and a valid username." : "Enter your current password." });
     }
-    if (!await rateLimit("account-change", String(user.id), 5, 15 * 60 * 1000)) {
+    const accountRateBucket = reauthenticate ? "reauth" : "account-change";
+    if (!await rateLimit(accountRateBucket, String(user.id), 5, 15 * 60 * 1000)) {
       return send(res, 429, { error: "Too many attempts. Try again later." });
     }
     const client = await pool.connect();
@@ -384,6 +386,10 @@ async function handle(req, res) {
         await client.query("ROLLBACK");
         return send(res, 403, { error: "Current password is incorrect." });
       }
+      if (reauthenticate) {
+        await client.query("COMMIT");
+        return send(res, 200, { ok: true });
+      }
       if (renameAccount) {
         const renamed = await client.query(
           "UPDATE users SET username_display = $1, username_key = $2 WHERE id = $3 RETURNING username_display, leaderboard_visible",
@@ -398,8 +404,9 @@ async function handle(req, res) {
       // Foreign keys remove every session, score, unlocked way, live run and receipt.
       await client.query("DELETE FROM users WHERE id = $1", [user.id]);
       for (const [bucket, key] of [
-        ["account-change", String(user.id)], ["drive-start", String(user.id)],
-        ["drive-batch", String(user.id)], ["login-user", saved.username_key]
+        ["account-change", String(user.id)], ["reauth", String(user.id)],
+        ["drive-start", String(user.id)], ["drive-batch", String(user.id)],
+        ["login-user", saved.username_key]
       ]) {
         await client.query("DELETE FROM auth_rate_limits WHERE bucket = $1 AND key_hash = $2", [bucket, opaqueRateKey(bucket, key)]);
       }

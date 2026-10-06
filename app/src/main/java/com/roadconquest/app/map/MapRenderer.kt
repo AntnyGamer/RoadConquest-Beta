@@ -311,6 +311,20 @@ class MapRenderer(
         return true
     }
 
+    fun centerOnStartingLocation(latitude: Double, longitude: Double): Boolean {
+        if (destroyed || centeredOnce || !latitude.isFinite() || !longitude.isFinite() ||
+            latitude !in -85.05112878..85.05112878 || longitude !in -180.0..180.0
+        ) return false
+        centeredOnce = true
+        val camera = CameraPosition.Builder(map.cameraPosition)
+            .target(LatLng(latitude, longitude))
+            .zoom(STARTING_LOCATION_ZOOM)
+            .tilt(0.0)
+            .build()
+        map.moveCamera(CameraUpdateFactory.newCameraPosition(camera))
+        return true
+    }
+
     fun clearCurrentLocation() {
         if (destroyed) return
         mainHandler.removeCallbacks(expireLocation)
@@ -486,18 +500,38 @@ class MapRenderer(
     private fun installPlaceOverlayLayers(style: Style) {
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
             style.addSource(GeoJsonSource(overlaySourceId(mode), EMPTY_FEATURES))
+            style.addSource(GeoJsonSource(overlayBoundarySourceId(mode), EMPTY_FEATURES))
             val color = when (mode) {
                 PlaceOverlayMode.COUNTRY -> Color.parseColor("#2F80ED")
                 PlaceOverlayMode.STATE -> Color.parseColor("#8E44AD")
                 PlaceOverlayMode.TOWN -> Color.parseColor("#27AE60")
                 PlaceOverlayMode.NONE -> Color.TRANSPARENT
             }
+            val outline = when (mode) {
+                PlaceOverlayMode.COUNTRY -> Color.parseColor("#174A8B")
+                PlaceOverlayMode.STATE -> Color.parseColor("#5D2C72")
+                PlaceOverlayMode.TOWN -> Color.parseColor("#176B3D")
+                PlaceOverlayMode.NONE -> Color.TRANSPARENT
+            }
             style.addLayer(
                 FillLayer(overlayLayerId(mode), overlaySourceId(mode)).withProperties(
                     fillColor(color),
                     fillOpacity(0.30f),
+                    // Keep the built-in antialiased edge subtle; the dedicated 1.25 px line
+                    // below supplies the visible separator without making borders look heavy.
                     fillOutlineColor(color),
                     fillAntialias(true)
+                )
+            )
+            // A dedicated boundary layer gives neighboring places a stable, thin separator.
+            // Fill outlines alone can disappear where adjacent/overlapping polygons meet.
+            style.addLayer(
+                LineLayer(overlayBoundaryLayerId(mode), overlayBoundarySourceId(mode)).withProperties(
+                    lineColor(outline),
+                    lineOpacity(0.90f),
+                    lineWidth(1.25f),
+                    lineCap(Property.LINE_CAP_ROUND),
+                    lineJoin(Property.LINE_JOIN_ROUND)
                 )
             )
         }
@@ -507,6 +541,7 @@ class MapRenderer(
     private fun clearPlaceOverlaySources() {
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
+            (map.style?.getSource(overlayBoundarySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
         }
     }
 
@@ -525,12 +560,45 @@ class MapRenderer(
             }
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)
                 ?.setGeoJson(overlayFeatureCollection(snapshot))
+            (map.style?.getSource(overlayBoundarySourceId(mode)) as? GeoJsonSource)
+                ?.setGeoJson(overlayBoundaryFeatureCollection(snapshot))
         }
     }
 
     private fun overlayFeatureCollection(data: List<PlaceOverlayData>): String {
         val features = JSONArray()
         data.forEach { features.put(it.featureJson()) }
+        return JSONObject().put("type", "FeatureCollection").put("features", features).toString()
+    }
+
+    private fun overlayBoundaryFeatureCollection(data: List<PlaceOverlayData>): String {
+        val features = JSONArray()
+        fun addRings(rings: JSONArray) {
+            for (ringIndex in 0 until rings.length()) {
+                val ring = rings.optJSONArray(ringIndex) ?: continue
+                if (ring.length() < 2) continue
+                features.put(
+                    JSONObject()
+                        .put("type", "Feature")
+                        .put("properties", JSONObject())
+                        .put("geometry", JSONObject()
+                            .put("type", "LineString")
+                            .put("coordinates", ring))
+                )
+            }
+        }
+        for (overlay in data) {
+            val geometry = runCatching { JSONObject(overlay.geometryJson) }.getOrNull() ?: continue
+            val coordinates = geometry.optJSONArray("coordinates") ?: continue
+            when (geometry.optString("type")) {
+                "Polygon" -> addRings(coordinates)
+                "MultiPolygon" -> {
+                    for (polygonIndex in 0 until coordinates.length()) {
+                        coordinates.optJSONArray(polygonIndex)?.let(::addRings)
+                    }
+                }
+            }
+        }
         return JSONObject().put("type", "FeatureCollection").put("features", features).toString()
     }
 
@@ -541,11 +609,25 @@ class MapRenderer(
         PlaceOverlayMode.NONE -> error("None has no overlay source")
     }
 
+    private fun overlayBoundarySourceId(mode: PlaceOverlayMode): String = when (mode) {
+        PlaceOverlayMode.COUNTRY -> COUNTRY_OVERLAY_BOUNDARY_SOURCE_ID
+        PlaceOverlayMode.STATE -> STATE_OVERLAY_BOUNDARY_SOURCE_ID
+        PlaceOverlayMode.TOWN -> TOWN_OVERLAY_BOUNDARY_SOURCE_ID
+        PlaceOverlayMode.NONE -> error("None has no overlay boundary source")
+    }
+
     private fun overlayLayerId(mode: PlaceOverlayMode): String = when (mode) {
         PlaceOverlayMode.COUNTRY -> COUNTRY_OVERLAY_LAYER_ID
         PlaceOverlayMode.STATE -> STATE_OVERLAY_LAYER_ID
         PlaceOverlayMode.TOWN -> TOWN_OVERLAY_LAYER_ID
         PlaceOverlayMode.NONE -> error("None has no overlay layer")
+    }
+
+    private fun overlayBoundaryLayerId(mode: PlaceOverlayMode): String = when (mode) {
+        PlaceOverlayMode.COUNTRY -> COUNTRY_OVERLAY_BOUNDARY_LAYER_ID
+        PlaceOverlayMode.STATE -> STATE_OVERLAY_BOUNDARY_LAYER_ID
+        PlaceOverlayMode.TOWN -> TOWN_OVERLAY_BOUNDARY_LAYER_ID
+        PlaceOverlayMode.NONE -> error("None has no overlay boundary layer")
     }
 
     private fun installRoadLayer(style: Style) {
@@ -977,9 +1059,15 @@ class MapRenderer(
         private const val COUNTRY_OVERLAY_SOURCE_ID = "roadconquest-country-overlays"
         private const val STATE_OVERLAY_SOURCE_ID = "roadconquest-state-overlays"
         private const val TOWN_OVERLAY_SOURCE_ID = "roadconquest-town-overlays"
+        private const val COUNTRY_OVERLAY_BOUNDARY_SOURCE_ID = "roadconquest-country-overlay-boundaries"
+        private const val STATE_OVERLAY_BOUNDARY_SOURCE_ID = "roadconquest-state-overlay-boundaries"
+        private const val TOWN_OVERLAY_BOUNDARY_SOURCE_ID = "roadconquest-town-overlay-boundaries"
         private const val COUNTRY_OVERLAY_LAYER_ID = "roadconquest-country-overlays-fill"
         private const val STATE_OVERLAY_LAYER_ID = "roadconquest-state-overlays-fill"
         private const val TOWN_OVERLAY_LAYER_ID = "roadconquest-town-overlays-fill"
+        private const val COUNTRY_OVERLAY_BOUNDARY_LAYER_ID = "roadconquest-country-overlays-outline"
+        private const val STATE_OVERLAY_BOUNDARY_LAYER_ID = "roadconquest-state-overlays-outline"
+        private const val TOWN_OVERLAY_BOUNDARY_LAYER_ID = "roadconquest-town-overlays-outline"
         private const val ROAD_SOURCE_ID = "roadconquest-traveled-roads"
         private const val PENDING_ROUTE_SOURCE_ID = "roadconquest-recorded-route"
         private const val PENDING_ROUTE_LAYER_ID = "roadconquest-recorded-route-line"
@@ -1003,5 +1091,6 @@ class MapRenderer(
         private const val FOG_RENDER_INTERVAL_MS = 80L
         private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.50
         private const val OVERLAY_UPDATE_BATCH = 4
+        private const val STARTING_LOCATION_ZOOM = 15.0
     }
 }

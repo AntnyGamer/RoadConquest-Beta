@@ -55,6 +55,10 @@ object AccountClient {
         request("/v1/account", "DELETE", JSONObject().put("password", password), token)
     }
 
+    fun verifyPassword(token: String, password: String) {
+        request("/v1/reauth", "POST", JSONObject().put("password", password), token)
+    }
+
     private fun auth(path: String, username: String, password: String): Account {
         val body = request(
             path,

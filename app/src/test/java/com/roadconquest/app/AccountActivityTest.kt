@@ -1,8 +1,6 @@
 package com.roadconquest.app
 
 import android.view.View
-import android.app.AlertDialog
-import android.os.Looper
 import android.location.Location
 import android.view.WindowManager
 import android.widget.Button
@@ -25,7 +23,6 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.SQLiteMode
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
@@ -142,55 +139,20 @@ class AccountActivityTest {
         }
     }
 
-    @Test fun settingsDeviceDataDeletionWorksOfflineRequiresConfirmationAndStopsAutomaticTracking() {
-        // Robolectric resets legacy SQLite pointers between tests, but the app's
-        // process-wide helper survives. Start this database test with a fresh helper.
-        AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
-            .set(null, null)
+    @Test fun deleteAllDataRequiresSignedInAccountForPasswordConfirmation() {
         val context = RuntimeEnvironment.getApplication()
-        val repository = TrackingRepository(context)
-        repository.insertLocation(Location("gps").apply {
-            latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
-        })
-        Prefs.setManualOnly(context, false)
-        Prefs.setDriveVerificationEnabled(context, true)
-        File(context.cacheDir, "roadconquest-export-stale.db").writeText("stale snapshot")
-        File(context.cacheDir, "roadconquest-export-stale.db-wal").writeText("stale sidecar")
+        AccountClient.endpointOverrideForTests = "https://example.com"
+        AccountStore.clear(context)
+
         val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
         try {
             val activity = controller.get()
             val control = activity.findViewById<Button>(R.id.deleteDeviceDataButton)
-            val manual = activity.findViewById<Switch>(R.id.manualOnlySwitch)
-            assertTrue("Local deletion works without an account service", control.isEnabled)
-            assertTrue(manual.isEnabled)
-            val before = repository.getSummary().trackPointCount
-            control.performClick()
-            org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-                .getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
-            org.robolectric.Shadows.shadowOf(Looper.getMainLooper()).idle()
-            assertEquals(before, repository.getSummary().trackPointCount)
-            assertFalse(Prefs.isManualOnly(context))
-
-            control.performClick()
-            org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-                .getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-            val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5)
-            do {
-                org.robolectric.Shadows.shadowOf(Looper.getMainLooper()).idle()
-                if (control.isEnabled) break
-                Thread.sleep(10)
-            } while (System.nanoTime() < deadline)
-            assertTrue("Deletion finishes", control.isEnabled)
-            assertTrue("Tracking mode can be changed again after deletion", manual.isEnabled)
-            assertEquals(0L, repository.getSummary().trackPointCount)
-            assertTrue(Prefs.isManualOnly(context))
-            assertFalse(Prefs.isTrackingPaused(context))
-            assertFalse(Prefs.isDeviceDataDeletionPending(context))
-            assertFalse(Prefs.isDriveVerificationEnabled(context))
-            assertTrue(context.cacheDir.listFiles().orEmpty().none {
-                it.name.startsWith("roadconquest-export-")
-            })
-        } finally { controller.pause().stop().destroy() }
+            assertEquals("Delete all data", control.text.toString())
+            assertFalse("Full deletion requires a signed-in account so the password can be verified", control.isEnabled)
+        } finally {
+            controller.pause().stop().destroy()
+        }
     }
 
     @Test fun confirmedDeviceDeletionFinishesAfterSettingsCloses() {

@@ -92,6 +92,11 @@ class ProgressionRepositoryTest {
             time = 1_000L
         }
         assertTrue(progression.recordBaselineCandidate(fix))
+        progression.startingLocation()!!.let {
+            assertEquals(39.7, it.latitude, 0.0)
+            assertEquals(-75.1, it.longitude, 0.0)
+            assertEquals(1_000L, it.recordedAt)
+        }
         val candidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
         val baseline = listOf(
             PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States", visitedAt = 1_000L, latitude = 39.7, longitude = -75.1),
@@ -109,6 +114,11 @@ class ProgressionRepositoryTest {
         assertEquals(listOf("United States"), progression.visitedPlaces(PlaceKind.COUNTRY).map { it.displayName })
         assertEquals(listOf("New Jersey"), progression.visitedPlaces(PlaceKind.STATE).map { it.displayName })
         assertEquals(listOf("Glassboro"), progression.visitedPlaces(PlaceKind.TOWN).map { it.displayName })
+        progression.startingLocation()!!.let {
+            assertEquals(39.7, it.latitude, 0.0)
+            assertEquals(-75.1, it.longitude, 0.0)
+            assertEquals(1_000L, it.recordedAt)
+        }
 
         val nextTown = baseline.take(2) + PlaceDiscovery(
             PlaceKind.TOWN, "us|new jersey|pitman", "Pitman", "New Jersey", "United States",
@@ -256,6 +266,11 @@ class ProgressionRepositoryTest {
         )
         assertEquals(100L, progression.snapshot().balance)
         assertEquals(1L, progression.snapshot().towns)
+        progression.startingLocation()!!.let {
+            assertEquals(startFix.latitude, it.latitude, 0.0)
+            assertEquals(startFix.longitude, it.longitude, 0.0)
+            assertEquals(startFix.time, it.recordedAt)
+        }
     }
 
     @Test fun unresolvedBaselineSurvivesRestartWithoutDroppingQueuedVisits() {
