@@ -32,7 +32,7 @@ import org.robolectric.shadows.ShadowAlertDialog
 class AppearanceTest {
     @Before fun setup() {
         val app = RuntimeEnvironment.getApplication()
-        app.getSharedPreferences("roadfog_preferences", 0).edit().clear().commit()
+        app.getSharedPreferences("roadconquest_preferences", 0).edit().clear().commit()
     }
 
     @Test fun lightAndDarkResolveMatchingColorsAndSystemFollowsThePhone() {
@@ -109,7 +109,7 @@ class AppearanceTest {
 
     @Test fun unknownPreferencesFallBackAndAppKeepsItsUpgradeIdentity() {
         val app = RuntimeEnvironment.getApplication()
-        app.getSharedPreferences("roadfog_preferences", 0).edit().putString("ui_theme", "bad").putString("map_mode", "bad").commit()
+        app.getSharedPreferences("roadconquest_preferences", 0).edit().putString("ui_theme", "bad").putString("map_mode", "bad").commit()
         assertEquals(UiTheme.SYSTEM, Prefs.uiTheme(app))
         assertEquals(MapMode.STREETS, Prefs.mapMode(app))
         assertEquals("Road Conquest", app.getString(R.string.app_name))
