@@ -13,15 +13,15 @@ val placeOverlayConfigUrl = providers.gradleProperty("ROADCONQUEST_PLACE_OVERLAY
 )
 
 android {
-    namespace = "com.roadfog.app"
+    namespace = "com.roadconquest.app"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.roadfog.app"
+        applicationId = "com.roadconquest.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 33
-        versionName = "1.0-beta.7"
+        versionCode = 34
+        versionName = "1.0-beta.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["timeout_msec"] = "120000"
         val escapedAccountApiUrl = accountApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
