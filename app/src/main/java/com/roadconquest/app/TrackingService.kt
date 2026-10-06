@@ -53,6 +53,8 @@ class TrackingService : Service(), LocationListener {
     // Accessed only on the matching executor; rebuilt from persistent deadlines after every run.
     private var deferredRetry: ScheduledFuture<*>? = null
     private val backlogContinuationScheduled = AtomicBoolean(false)
+    // Coalesce duplicate provider/mode callbacks while a final Location-off flush is queued.
+    private val finalMatchingFlushScheduled = AtomicBoolean(false)
     private var lastObserved: Location? = null
     private var lastAccepted: Location? = null
     private var lastExplored: Location? = null
@@ -68,7 +70,11 @@ class TrackingService : Service(), LocationListener {
     private val providerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
-            if (locationManager.isLocationEnabled) requestLocations()
+            if (locationManager.isLocationEnabled) {
+                requestLocations()
+            } else {
+                queueFinalMatchingFlush()
+            }
             refreshForegroundNotification()
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
         }
@@ -272,26 +278,49 @@ class TrackingService : Service(), LocationListener {
     override fun onProviderDisabled(provider: String) {
         if (ready) {
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
-            // No more fixes may arrive while Android Location is off. Give any unresolved
-            // corner/end-of-drive intervals an immediate final pass instead of waiting for
-            // their ordinary retry deadline. A single provider handoff does not need this.
-            if (!locationManager.isLocationEnabled) {
-                // Serialize finalization behind any match already in flight. That in-flight
-                // request may itself defer an ambiguous corner; clearing deadlines here on the
-                // main thread would race with it and could still leave a five-minute hole.
-                runCatching {
-                    matchingExecutor.execute {
-                        if (ready && !locationManager.isLocationEnabled) {
-                            repository.makePendingMatchingEligibleNow()
-                            maybeRunMatching(force = true)
-                        }
-                    }
-                }
-            }
+            // No more fixes may arrive while Android Location is off. Flush any queued
+            // accepted fixes first, then give unresolved corner/end-of-drive intervals a final
+            // matcher pass. A single provider handoff does not need this.
+            if (!locationManager.isLocationEnabled) queueFinalMatchingFlush()
         }
         if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
             requestLocations()
         }
+    }
+
+    /**
+     * Android can deliver the Location-mode/provider callback immediately after a final GPS
+     * fix while that fix is still queued on storageExecutor. Serialize through storage first,
+     * then through matching, so the final repair pass cannot miss the last approach/exit point
+     * or race a matcher that is about to defer the same corner again.
+     */
+    private fun queueFinalMatchingFlush() {
+        if (!ready || locationManager.isLocationEnabled ||
+            !finalMatchingFlushScheduled.compareAndSet(false, true)
+        ) return
+
+        val storageSubmitted = runCatching {
+            storageExecutor.execute {
+                if (!ready || locationManager.isLocationEnabled) {
+                    finalMatchingFlushScheduled.set(false)
+                } else {
+                    val matchingSubmitted = runCatching {
+                        matchingExecutor.execute {
+                            try {
+                                if (ready && !locationManager.isLocationEnabled) {
+                                    repository.makePendingMatchingEligibleNow()
+                                    maybeRunMatching(force = true)
+                                }
+                            } finally {
+                                finalMatchingFlushScheduled.set(false)
+                            }
+                        }
+                    }.isSuccess
+                    if (!matchingSubmitted) finalMatchingFlushScheduled.set(false)
+                }
+            }
+        }.isSuccess
+        if (!storageSubmitted) finalMatchingFlushScheduled.set(false)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
