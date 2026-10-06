@@ -291,9 +291,6 @@ class AccountActivity : Activity() {
         if (busy) return
         val session = AccountStore.load(this) ?: return
         val fields = dialogFields()
-        fields.addView(TextView(this).apply {
-            text = "Permanently delete your cloud account, all sessions and all leaderboard data. This cannot be undone. Exported files and data on other devices must be deleted separately."
-        })
         val password = passwordField()
         val error = TextView(this)
         fields.addView(password); fields.addView(error)
