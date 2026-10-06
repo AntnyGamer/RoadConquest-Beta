@@ -136,7 +136,7 @@ The implementation is included, but **disabled by default** (`LEADERBOARDS_ENABL
 No uploaded total can enter a ranking. There is no endpoint accepting mileage, road IDs, local
 matching results, saved-history imports, or client road names as scores.
 
-The Android upload switch is separate from profile visibility. New account creation enables it after an explicit signup disclosure; existing installs are not silently opted in by an update. It collects
+The Android upload switch is separate from profile visibility and defaults off. Account creation does not enable it; the user must explicitly opt in from Settings. It collects
 only live non-mock GPS fixes with measured speed, binds each exact evidence string to a SHA-256
 Play Integrity request hash, and submits batches under a server-issued run/nonce/sequence.
 A small final batch is attempted on a normal tracking stop. Missing networks, killed processes,

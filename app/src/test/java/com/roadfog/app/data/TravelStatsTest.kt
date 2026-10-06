@@ -104,4 +104,15 @@ class TravelStatsTest {
             repo.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)).starts.size - 1)
     }
 
+    @Test fun dateLineRoadsUseWrappedBoundsAndNearbyFragmentsStillGroup() {
+        repo.upsertRoads(listOf(
+            MatchedRoad("Date Line Road", "[[179.9990,0],[179.9998,0]]", 1, 2, 1.0),
+            MatchedRoad("Date Line Road", "[[-179.9998,0],[-179.9990,0]]", 3, 4, 1.0),
+            MatchedRoad("Crossing Road", "[[179.9998,0],[-179.9998,0]]", 5, 6, 1.0)
+        ))
+        assertEquals(2L, repo.getSummary().roadsUnlockedCount)
+        assertTrue(repo.getRoadsInBounds(1.0, 180.0, -1.0, 179.5).any { it.name == "Crossing Road" })
+        assertTrue(repo.getRoadsInBounds(1.0, -179.5, -1.0, -180.0).any { it.name == "Crossing Road" })
+    }
+
 }

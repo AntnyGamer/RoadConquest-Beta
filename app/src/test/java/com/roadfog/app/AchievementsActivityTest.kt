@@ -2,10 +2,12 @@ package com.roadfog.app
 
 import android.os.Looper
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.roadfog.app.data.AppDatabase
+import com.roadfog.app.achievements.AchievementCategory
 import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.data.DataSummary
 import com.roadfog.app.data.TrackingRepository
@@ -32,42 +34,41 @@ class AchievementsActivityTest {
         TrackingRepository(RuntimeEnvironment.getApplication()).clearHistory()
     }
 
-    @Test fun rendersAllAchievementProgressBarsWithOriginalMilestonesFirst() {
+    @Test fun categoryButtonsFilterAchievementsAndKeepAdsSeparateFromExtra() {
         val controller = Robolectric.buildActivity(AchievementsActivity::class.java).create().start().resume()
         try {
             val activity = controller.get()
             val list = activity.findViewById<LinearLayout>(R.id.achievementsList)
+            val all = Achievements.progress(DataSummary(0, 0, null, null))
+            val categories = listOf(
+                Triple(AchievementCategory.ROADS, R.id.achievementRoadsButton, 3),
+                Triple(AchievementCategory.DISTANCE, R.id.achievementDistanceButton, 3),
+                Triple(AchievementCategory.PLACES, R.id.achievementPlacesButton, 9),
+                Triple(AchievementCategory.ADS, R.id.achievementAdsButton, 5),
+                Triple(AchievementCategory.EXTRA, R.id.achievementExtraButton, 2)
+            )
             val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5)
             do {
                 Shadows.shadowOf(Looper.getMainLooper()).idle()
-                if (list.childCount == Achievements.progress(DataSummary(0, 0, null, null)).size) break
+                if (list.childCount == 3) break
                 Thread.sleep(10)
             } while (System.nanoTime() < deadline)
-
-            val expectedCount = Achievements.progress(DataSummary(0, 0, null, null)).size
-            assertEquals(expectedCount, list.childCount)
-            val expected = listOf(
-                "Newbie Explorer", "Casual Explorer", "Road Conquerer",
-                "Beginner Driver", "Average Driver", "Expert Driver"
-            )
-            val titles = ArrayList<String>(expected.size)
-            var progressBars = 0
-            for (index in 0 until list.childCount) {
-                val card = list.getChildAt(index) as ViewGroup
-                val title = (card.getChildAt(0) as TextView).text.toString()
-                expected.firstOrNull { title.endsWith(it) }?.let(titles::add)
-                for (child in 0 until card.childCount) {
-                    if (card.getChildAt(child) is ProgressBar) {
-                        progressBars++
-                        val bar = card.getChildAt(child) as ProgressBar
-                        assertTrue(bar.progress in 0..bar.max)
-                    }
+            for ((category, buttonId, expectedCount) in categories) {
+                activity.findViewById<Button>(buttonId).performClick()
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                assertEquals(expectedCount, list.childCount)
+                assertEquals(expectedCount, all.count { it.category == category })
+                assertTrue(!activity.findViewById<Button>(buttonId).isEnabled)
+                var bars = 0
+                for (index in 0 until list.childCount) {
+                    val card = list.getChildAt(index) as ViewGroup
+                    for (child in 0 until card.childCount) if (card.getChildAt(child) is ProgressBar) bars++
                 }
+                assertEquals(expectedCount, bars)
             }
-            assertEquals(expected, titles)
-            assertEquals(expectedCount, progressBars)
         } finally {
             controller.pause().stop().destroy()
         }
     }
+
 }

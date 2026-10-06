@@ -11,10 +11,19 @@ data class AchievementMetrics(
     val lowestBatteryPercent: Int = 101
 )
 
+enum class AchievementCategory(val label: String) {
+    ROADS("Roads"),
+    DISTANCE("Distance"),
+    PLACES("Places"),
+    ADS("Ads"),
+    EXTRA("Extra")
+}
+
 data class AchievementProgress(
     val id: String,
     val title: String,
     val description: String,
+    val category: AchievementCategory,
     val progress: Double,
     val goal: Double,
     val unit: String,
@@ -36,31 +45,31 @@ object Achievements {
         val battery5 = if (metrics.lowestBatteryPercent <= 5) 1.0 else 0.0
         val battery1 = if (metrics.lowestBatteryPercent <= 1) 1.0 else 0.0
         return listOf(
-            AchievementProgress("roads_10", "Newbie Explorer", "Unlock 10 roads", roads, 10.0, "roads", 100),
-            AchievementProgress("roads_100", "Casual Explorer", "Unlock 100 roads", roads, 100.0, "roads", 350),
-            AchievementProgress("roads_1000", "Road Conquerer", "Unlock 1,000 roads", roads, 1000.0, "roads", 1_500),
-            AchievementProgress("miles_10", "Beginner Driver", "Travel 10 miles", miles, 10.0, "mi", 100),
-            AchievementProgress("miles_100", "Average Driver", "Travel 100 miles", miles, 100.0, "mi", 400),
-            AchievementProgress("miles_1000", "Expert Driver", "Travel 1,000 miles", miles, 1000.0, "mi", 2_000),
+            AchievementProgress("roads_10", "Newbie Explorer", "Unlock 10 roads", AchievementCategory.ROADS, roads, 10.0, "roads", 100),
+            AchievementProgress("roads_100", "Casual Explorer", "Unlock 100 roads", AchievementCategory.ROADS, roads, 100.0, "roads", 350),
+            AchievementProgress("roads_1000", "Road Conquerer", "Unlock 1,000 roads", AchievementCategory.ROADS, roads, 1000.0, "roads", 1_500),
+            AchievementProgress("miles_10", "Beginner Driver", "Travel 10 miles", AchievementCategory.DISTANCE, miles, 10.0, "mi", 100),
+            AchievementProgress("miles_100", "Average Driver", "Travel 100 miles", AchievementCategory.DISTANCE, miles, 100.0, "mi", 400),
+            AchievementProgress("miles_1000", "Expert Driver", "Travel 1,000 miles", AchievementCategory.DISTANCE, miles, 1000.0, "mi", 2_000),
 
-            AchievementProgress("towns_5", "Town Hopper", "Visit 5 different towns", metrics.towns.toDouble(), 5.0, "towns", 250),
-            AchievementProgress("towns_25", "Local Explorer", "Visit 25 different towns", metrics.towns.toDouble(), 25.0, "towns", 600),
-            AchievementProgress("towns_100", "Town Collector", "Visit 100 different towns", metrics.towns.toDouble(), 100.0, "towns", 1_800),
-            AchievementProgress("states_3", "State Hopper", "Visit 3 different states or regions", metrics.states.toDouble(), 3.0, "states", 500),
-            AchievementProgress("states_10", "State Explorer", "Visit 10 different states or regions", metrics.states.toDouble(), 10.0, "states", 1_200),
-            AchievementProgress("states_25", "State Collector", "Visit 25 different states or regions", metrics.states.toDouble(), 25.0, "states", 2_500),
-            AchievementProgress("countries_2", "Border Crosser", "Visit 2 different countries", metrics.countries.toDouble(), 2.0, "countries", 750),
-            AchievementProgress("countries_5", "World Traveler", "Visit 5 different countries", metrics.countries.toDouble(), 5.0, "countries", 1_800),
-            AchievementProgress("countries_10", "Globe Conquerer", "Visit 10 different countries", metrics.countries.toDouble(), 10.0, "countries", 4_000),
+            AchievementProgress("towns_5", "Town Hopper", "Visit 5 different towns", AchievementCategory.PLACES, metrics.towns.toDouble(), 5.0, "towns", 250),
+            AchievementProgress("towns_25", "Local Explorer", "Visit 25 different towns", AchievementCategory.PLACES, metrics.towns.toDouble(), 25.0, "towns", 600),
+            AchievementProgress("towns_100", "Town Collector", "Visit 100 different towns", AchievementCategory.PLACES, metrics.towns.toDouble(), 100.0, "towns", 1_800),
+            AchievementProgress("states_3", "State Hopper", "Visit 3 different states or regions", AchievementCategory.PLACES, metrics.states.toDouble(), 3.0, "states", 500),
+            AchievementProgress("states_10", "State Explorer", "Visit 10 different states or regions", AchievementCategory.PLACES, metrics.states.toDouble(), 10.0, "states", 1_200),
+            AchievementProgress("states_25", "State Collector", "Visit 25 different states or regions", AchievementCategory.PLACES, metrics.states.toDouble(), 25.0, "states", 2_500),
+            AchievementProgress("countries_2", "Border Crosser", "Visit 2 different countries", AchievementCategory.PLACES, metrics.countries.toDouble(), 2.0, "countries", 750),
+            AchievementProgress("countries_5", "World Traveler", "Visit 5 different countries", AchievementCategory.PLACES, metrics.countries.toDouble(), 5.0, "countries", 1_800),
+            AchievementProgress("countries_10", "Globe Conquerer", "Visit 10 different countries", AchievementCategory.PLACES, metrics.countries.toDouble(), 10.0, "countries", 4_000),
 
-            AchievementProgress("battery_5", "Running on Fumes", "Use RoadConquest with 5% battery or less", battery5, 1.0, "complete", 300),
-            AchievementProgress("battery_1", "Last Percent", "Use RoadConquest with 1% battery or less", battery1, 1.0, "complete", 1_000),
+            AchievementProgress("battery_5", "Running on Fumes", "Use RoadConquest with 5% battery or less", AchievementCategory.EXTRA, battery5, 1.0, "complete", 300),
+            AchievementProgress("battery_1", "Last Percent", "Use RoadConquest with 1% battery or less", AchievementCategory.EXTRA, battery1, 1.0, "complete", 1_000),
 
-            AchievementProgress("ads_5", "Ad Starter", "Watch 5 ads", metrics.adsWatched.toDouble(), 5.0, "ads", 100),
-            AchievementProgress("ads_10", "Ad Regular", "Watch 10 ads", metrics.adsWatched.toDouble(), 10.0, "ads", 200),
-            AchievementProgress("ads_25", "Ad Supporter", "Watch 25 ads", metrics.adsWatched.toDouble(), 25.0, "ads", 500),
-            AchievementProgress("ads_50", "Ad Veteran", "Watch 50 ads", metrics.adsWatched.toDouble(), 50.0, "ads", 1_000),
-            AchievementProgress("ads_100", "Ad Legend", "Watch 100 ads", metrics.adsWatched.toDouble(), 100.0, "ads", 2_500)
+            AchievementProgress("ads_5", "Ad Starter", "Watch 5 ads", AchievementCategory.ADS, metrics.adsWatched.toDouble(), 5.0, "ads", 100),
+            AchievementProgress("ads_10", "Ad Regular", "Watch 10 ads", AchievementCategory.ADS, metrics.adsWatched.toDouble(), 10.0, "ads", 200),
+            AchievementProgress("ads_25", "Ad Supporter", "Watch 25 ads", AchievementCategory.ADS, metrics.adsWatched.toDouble(), 25.0, "ads", 500),
+            AchievementProgress("ads_50", "Ad Veteran", "Watch 50 ads", AchievementCategory.ADS, metrics.adsWatched.toDouble(), 50.0, "ads", 1_000),
+            AchievementProgress("ads_100", "Ad Legend", "Watch 100 ads", AchievementCategory.ADS, metrics.adsWatched.toDouble(), 100.0, "ads", 2_500)
         )
     }
 

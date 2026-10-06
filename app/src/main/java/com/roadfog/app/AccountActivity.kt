@@ -3,7 +3,6 @@ package com.roadfog.app
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
-import android.content.Intent
 import android.os.Bundle
 import android.text.method.PasswordTransformationMethod
 import android.view.View
@@ -20,11 +19,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.account.AccountClient
 import com.roadfog.app.account.AccountStore
-import com.roadfog.app.progression.ProgressionManager
-import com.roadfog.app.data.TrackingRepository
+import com.roadfog.app.data.LocalDataReset
 import com.roadfog.app.util.Appearance
 import com.roadfog.app.util.ForegroundSession
-import com.roadfog.app.util.Prefs
 import java.util.concurrent.Executors
 
 class AccountActivity : Activity() {
@@ -42,7 +39,6 @@ class AccountActivity : Activity() {
     private lateinit var logoutButton: Button
     private lateinit var changeUsernameButton: Button
     private lateinit var deleteAccountButton: Button
-    private lateinit var deleteDeviceDataButton: Button
     private var rendering = false
     private var busy = false
 
@@ -77,14 +73,12 @@ class AccountActivity : Activity() {
         logoutButton = findViewById(R.id.accountLogoutButton)
         changeUsernameButton = findViewById(R.id.accountChangeUsernameButton)
         deleteAccountButton = findViewById(R.id.accountDeleteButton)
-        deleteDeviceDataButton = findViewById(R.id.accountDeleteDeviceDataButton)
 
         loginButton.setOnClickListener { authenticate(signup = false) }
         signupButton.setOnClickListener { authenticate(signup = true) }
         logoutButton.setOnClickListener { logout() }
         changeUsernameButton.setOnClickListener { showUsernameDialog() }
         deleteAccountButton.setOnClickListener { showDeleteAccountDialog() }
-        deleteDeviceDataButton.setOnClickListener { showDeleteDeviceDataDialog() }
         leaderboardSwitch.setOnCheckedChangeListener { _, visible ->
             if (!rendering) updateLeaderboardPrivacy(visible)
         }
@@ -150,7 +144,6 @@ class AccountActivity : Activity() {
                             account.leaderboardVisible
                         )
                         AccountStore.save(this, session)
-                        if (signup) Prefs.setDriveVerificationEnabled(this, true)
                         passwordInput.text.clear()
                         confirmPasswordInput.text.clear()
                         statusText.text = "Signed in."
@@ -335,11 +328,8 @@ class AccountActivity : Activity() {
                             }
                         }
                         if (removeLocal) {
-                            stopForDataDeletion()
-                            TrackingRepository(applicationContext).clearHistory()
-                            ProgressionManager.resetLocalProgression(applicationContext)
-                            Prefs.setTrackingPaused(applicationContext, false)
-                            notifyDataDeleted()
+                            LocalDataReset.stopTracking(applicationContext)
+                            LocalDataReset.clearStoppedData(applicationContext)
                         }
                     }
                     runOnUiThread {
@@ -348,7 +338,7 @@ class AccountActivity : Activity() {
                         render(AccountStore.load(this))
                         statusText.text = result.fold(
                             { if (removeLocal) "Account and saved device data deleted. Tracking is off." else "Account deleted. Saved device history was kept." },
-                            { if (accountDeleted) "Account deleted. Device data could not be cleared; use Delete data on this device to retry."
+                            { if (accountDeleted) "Account deleted. Device data could not be cleared; use Settings → Data and privacy to retry."
                               else it.message ?: "Could not delete account. Your saved data is unchanged." }
                         )
                     }
@@ -358,54 +348,12 @@ class AccountActivity : Activity() {
         dialog.show()
     }
 
-    private fun showDeleteDeviceDataDialog() {
-        if (busy) return
-        AlertDialog.Builder(this).setTitle("Delete device data?")
-            .setMessage("Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone and stop tracking. Your cloud account and leaderboard scores stay. Exported files must be deleted separately. This cannot be undone.")
-            .setNegativeButton("Cancel", null).setPositiveButton("Delete device data") { _, _ ->
-                stopForDataDeletion()
-                setBusy(true)
-                statusText.text = "Deleting device data…"
-                executor.execute {
-                    val result = runCatching {
-                        TrackingRepository(applicationContext).clearHistory()
-                        ProgressionManager.resetLocalProgression(applicationContext)
-                        Prefs.setTrackingPaused(applicationContext, false)
-                        notifyDataDeleted()
-                    }
-                    runOnUiThread {
-                        if (isDestroyed) return@runOnUiThread
-                        setBusy(false)
-                        statusText.text = result.fold({ "Saved device data deleted. Tracking is off." },
-                            { "Could not delete device data. Tracking is off; try again." })
-                    }
-                }
-            }.show()
-    }
-
-    private fun stopForDataDeletion() {
-        Prefs.setManualOnly(applicationContext, true)
-        Prefs.setTrackingPaused(applicationContext, true)
-        runOnUiThread { stopService(Intent(applicationContext, TrackingService::class.java)) }
-    }
-
-    private fun notifyDataDeleted() {
-        for (action in listOf(
-            TrackingService.ACTION_STATS_UPDATED,
-            TrackingService.ACTION_ROADS_UPDATED,
-            TrackingService.ACTION_EXPLORATION_UPDATED
-        )) {
-            applicationContext.sendBroadcast(Intent(action).setPackage(packageName))
-        }
-    }
-
     private fun setBusy(value: Boolean) {
         busy = value
         val configured = AccountClient.isConfigured()
         logoutButton.isEnabled = !value
         changeUsernameButton.isEnabled = !value && configured
         deleteAccountButton.isEnabled = !value && configured
-        deleteDeviceDataButton.isEnabled = !value
         leaderboardSwitch.isEnabled = !value && configured
         setAuthEnabled(!value && configured)
     }

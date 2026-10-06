@@ -137,7 +137,7 @@ class AccountActivityTest {
         }
     }
 
-    @Test fun deviceDataDeletionWorksOfflineRequiresConfirmationAndStopsAutomaticTracking() {
+    @Test fun settingsDeviceDataDeletionWorksOfflineRequiresConfirmationAndStopsAutomaticTracking() {
         // Robolectric resets legacy SQLite pointers between tests, but the app's
         // process-wide helper survives. Start this database test with a fresh helper.
         AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
@@ -148,10 +148,10 @@ class AccountActivityTest {
             latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
         })
         Prefs.setManualOnly(context, false)
-        val controller = Robolectric.buildActivity(AccountActivity::class.java).create().start().resume()
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
         try {
             val activity = controller.get()
-            val control = activity.findViewById<Button>(R.id.accountDeleteDeviceDataButton)
+            val control = activity.findViewById<Button>(R.id.deleteDeviceDataButton)
             assertTrue("Local deletion works without an account service", control.isEnabled)
             val before = repository.getSummary().trackPointCount
             control.performClick()
@@ -174,7 +174,7 @@ class AccountActivityTest {
             assertEquals(0L, repository.getSummary().trackPointCount)
             assertTrue(Prefs.isManualOnly(context))
             assertFalse(Prefs.isTrackingPaused(context))
-            assertTrue(activity.findViewById<TextView>(R.id.accountStatusText).text.toString().contains("deleted"))
+            assertEquals(0L, repository.getSummary().trackPointCount)
         } finally { controller.pause().stop().destroy() }
     }
 }

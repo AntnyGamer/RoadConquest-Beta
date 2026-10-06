@@ -4,12 +4,14 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.roadfog.app.achievements.AchievementCategory
 import com.roadfog.app.achievements.AchievementProgress
 import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.data.TrackingRepository
@@ -22,6 +24,9 @@ import kotlin.math.roundToInt
 
 class AchievementsActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
+    private var achievements: List<AchievementProgress> = emptyList()
+    private var selectedCategory = AchievementCategory.ROADS
+    private val categoryButtons = linkedMapOf<AchievementCategory, Button>()
 
     private companion object { const val PROGRESS_MAX = 1000 }
 
@@ -55,6 +60,22 @@ class AchievementsActivity : Activity() {
         val text = findViewById<TextView>(R.id.achievementsText)
         val points = findViewById<TextView>(R.id.achievementPointsText)
         val list = findViewById<LinearLayout>(R.id.achievementsList)
+        categoryButtons.putAll(
+            linkedMapOf(
+                AchievementCategory.ROADS to findViewById(R.id.achievementRoadsButton),
+                AchievementCategory.DISTANCE to findViewById(R.id.achievementDistanceButton),
+                AchievementCategory.PLACES to findViewById(R.id.achievementPlacesButton),
+                AchievementCategory.ADS to findViewById(R.id.achievementAdsButton),
+                AchievementCategory.EXTRA to findViewById(R.id.achievementExtraButton)
+            )
+        )
+        categoryButtons.forEach { (category, button) ->
+            button.setOnClickListener {
+                selectedCategory = category
+                renderCategory(list)
+            }
+        }
+        updateCategoryButtons()
         executor.execute {
             val result = runCatching {
                 val summary = TrackingRepository(this).getSummary()
@@ -67,16 +88,31 @@ class AchievementsActivity : Activity() {
                     onSuccess = { (progression, achievements) ->
                         points.text = String.format(Locale.getDefault(), "⚔ %,d points", progression.balance)
                         text.visibility = android.view.View.GONE
-                        list.removeAllViews()
-                        achievements.forEach { addAchievement(list, it) }
+                        this.achievements = achievements
+                        renderCategory(list)
                     },
                     onFailure = {
+                        achievements = emptyList()
                         list.removeAllViews()
                         text.visibility = android.view.View.VISIBLE
                         text.text = "Achievements are temporarily unavailable."
                     }
                 )
             }
+        }
+    }
+
+    private fun renderCategory(container: LinearLayout) {
+        container.removeAllViews()
+        achievements.asSequence()
+            .filter { it.category == selectedCategory }
+            .forEach { addAchievement(container, it) }
+        updateCategoryButtons()
+    }
+
+    private fun updateCategoryButtons() {
+        categoryButtons.forEach { (category, button) ->
+            button.isEnabled = category != selectedCategory
         }
     }
 

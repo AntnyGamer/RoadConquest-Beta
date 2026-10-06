@@ -31,11 +31,11 @@ Its internal Android version code is 33.
 - Choose Streets, Minimal, Night or Satellite maps, and a Light, Dark or phone-controlled appearance.
 - Use the map overlay button to highlight explored countries in blue, states/regions in purple, or towns in green. Only one overlay type is active at a time; tap a highlighted area for population and area when available.
 - Tap an unlocked road for its name, saved length, first-unlocked time, last-driven time and times driven.
-- Track road, mileage, place, low-battery and rewarded-ad achievements with progress bars and point rewards.
+- Browse achievements by Roads, Distance, Places, Ads and Extra categories. Battery challenges live under Extra; ad milestones have their own Ads category.
   Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
 - Use automatic tracking or control it manually. Stop tracking from the foreground notification.
 - Export driving history, road geometry, explored places, place discoveries, point awards,
-  purchases and progression counters from Settings.
+  purchases and progression counters from Settings. Device-data deletion also lives under Settings → Data and privacy.
 - Create an optional account, change your username, manage leaderboard visibility or delete your
   account. Device history can also be deleted while offline.
 
@@ -65,8 +65,8 @@ the production Play Integrity credentials and a pinned private road matcher/cata
 are configured, the leaderboard reports verification as unavailable and does not rank local totals.
 Competitive roads count distinct OSM way sections, rather than whole named streets.
 
-Leaderboard visibility and live GPS sharing are separate settings. New accounts enable both after
-the signup disclosure. Users can hide their profile or stop sharing live evidence from Settings.
+Leaderboard visibility and live GPS sharing are separate settings. New accounts can be visible on
+leaderboards, but verified-drive GPS sharing remains off until the user explicitly enables it in Settings.
 Deleting an account revokes its sessions and removes its cloud competitive data; the default
 deletion option also clears history on this phone. Other devices and exported files are separate.
 

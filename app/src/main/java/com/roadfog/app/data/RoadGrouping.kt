@@ -110,14 +110,9 @@ internal object RoadGrouping {
             second.maxLatitude + latitudePad < first.minLatitude
         ) return false
 
-        val latitude = (
-            max(first.minLatitude, second.minLatitude) +
-                min(first.maxLatitude, second.maxLatitude)
-            ) / 2.0
-        val longitudePad = JOIN_TOLERANCE_M /
-            (METERS_PER_DEGREE * cos(Math.toRadians(latitude)).coerceAtLeast(0.01))
-        return first.maxLongitude + longitudePad >= second.minLongitude &&
-            second.maxLongitude + longitudePad >= first.minLongitude
+        // Raw min/max longitude is not safe at ±180°. Exact endpoint-to-polyline
+        // distance below already normalizes longitude on the globe.
+        return true
     }
 
     private fun parseCoordinates(json: String): DoubleArray? {

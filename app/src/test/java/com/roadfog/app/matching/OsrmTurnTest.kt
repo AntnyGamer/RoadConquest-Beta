@@ -200,4 +200,20 @@ class OsrmTurnTest {
         assertEquals(junction.toString(), coordinates.getJSONArray(2).toString())
         assertEquals(d.toString(), coordinates.getJSONArray(3).toString())
     }
+    @Test fun dateLineCrossingUsesTheShortGeographicDistance() {
+        val west = coord(179.999, 0.0)
+        val east = coord(-179.999, 0.0)
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, west), trace(0, 1, east)),
+                    matching(leg("Date Line Road", west, east))
+                ),
+                points(west, east)
+            )
+        )
+        assertEquals(1, result.roads.size)
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
+    }
+
 }

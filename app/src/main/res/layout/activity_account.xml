@@ -105,7 +105,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="Usernames are unique regardless of capitalization. Passwords must be 8-128 characters. New accounts are visible on leaderboards and verified-drive sharing is enabled by default; both can be turned off in Settings."
+                android:text="Usernames are unique regardless of capitalization. Passwords must be 8-128 characters. New accounts are visible on leaderboards by default. Verified-drive sharing stays off unless you enable it in Settings."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="13sp" />
 
@@ -176,19 +176,5 @@
                 android:layout_height="wrap_content"
                 android:text="Delete account" />
         </LinearLayout>
-
-        <Button
-            android:id="@+id/accountDeleteDeviceDataButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="Delete data on this device" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Deletes local trips, mileage, roads and explored places. Your cloud account and leaderboard scores stay."
-            android:textColor="?attr/rcTextSecondary"
-            android:textSize="13sp" />
     </LinearLayout>
 </ScrollView>

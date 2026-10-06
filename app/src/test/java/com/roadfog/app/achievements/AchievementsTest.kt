@@ -28,6 +28,11 @@ class AchievementsTest {
             progress.take(6).map { it.title }
         )
         assertTrue(progress.size > 6)
+        assertEquals(AchievementCategory.ROADS, progress.first { it.id == "roads_10" }.category)
+        assertEquals(AchievementCategory.DISTANCE, progress.first { it.id == "miles_10" }.category)
+        assertEquals(AchievementCategory.PLACES, progress.first { it.id == "towns_5" }.category)
+        assertEquals(AchievementCategory.ADS, progress.first { it.id == "ads_5" }.category)
+        assertEquals(AchievementCategory.EXTRA, progress.first { it.id == "battery_5" }.category)
         assertTrue(progress.first { it.id == "roads_10" }.unlocked)
         assertTrue(progress.first { it.id == "roads_100" }.unlocked)
         assertFalse(progress.first { it.id == "roads_1000" }.unlocked)
