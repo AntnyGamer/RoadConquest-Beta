@@ -140,6 +140,9 @@ class ProgressionRepositoryTest {
         tracking.clearHistory()
 
         ProgressionManager.sync(context, staleSummary)
+        // MainActivity performs announcement calculation after progression sync. That second
+        // stale-summary consumer must also be unable to recreate preference-backed progress.
+        assertTrue(Achievements.newlyUnlocked(context, staleSummary).isEmpty())
         assertEquals(0L, ProgressionRepository(context).snapshot().balance)
         assertEquals(0L, ProgressionRepository(context).snapshot().rewardedRoads)
         assertEquals(
