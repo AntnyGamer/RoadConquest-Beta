@@ -40,6 +40,13 @@ class TrackingService : Service(), LocationListener {
     private val matcher = OsrmMatcher(BuildConfig.OSRM_API_URL)
     private val matchingExecutor = Executors.newSingleThreadScheduledExecutor()
     private val storageExecutor = Executors.newSingleThreadExecutor()
+    private val highAccuracyLocationRequest by lazy(LazyThreadSafetyMode.NONE) {
+        LocationRequest.Builder(LOCATION_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(LOCATION_MIN_UPDATE_INTERVAL_MS)
+            .setMinUpdateDistanceMeters(LOCATION_MIN_DISTANCE_M)
+            .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
+            .build()
+    }
     private val matchingInFlight = AtomicBoolean(false)
     private val matchingRerunRequested = AtomicBoolean(false)
     private val delayedMatchScheduled = AtomicBoolean(false)
@@ -230,7 +237,7 @@ class TrackingService : Service(), LocationListener {
 
         // Save one recent anchor before the first confirmed driving point so the beginning
         // of a drive is not lost merely because driving speed could only be confirmed later.
-        val toSave = mutableListOf<Location>()
+        val toSave = ArrayList<Location>(2)
         if (lastAccepted == null && previous != null &&
             previous.hasAccuracy() && previous.accuracy <= MAX_ACCURACY_M &&
             elapsedFromPrevious in 1..MAX_START_ANCHOR_AGE_MS
@@ -299,12 +306,7 @@ class TrackingService : Service(), LocationListener {
     private fun registerProvider(provider: String): Boolean {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return false
         return try {
-            val request = LocationRequest.Builder(LOCATION_INTERVAL_MS)
-                .setMinUpdateIntervalMillis(LOCATION_MIN_UPDATE_INTERVAL_MS)
-                .setMinUpdateDistanceMeters(LOCATION_MIN_DISTANCE_M)
-                .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
-                .build()
-            locationManager.requestLocationUpdates(provider, request, mainExecutor, this)
+            locationManager.requestLocationUpdates(provider, highAccuracyLocationRequest, mainExecutor, this)
             true
         } catch (_: SecurityException) {
             false
@@ -568,7 +570,7 @@ class TrackingService : Service(), LocationListener {
         val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle(if (locationEnabled) "RoadConquest is tracking" else "RoadConquest is ready")
+            .setContentTitle(if (locationEnabled) "Road Conquest is tracking" else "Road Conquest is ready")
             .setContentText(
                 if (locationEnabled) "Your driven roads are being saved locally"
                 else "Waiting for Android Location to be turned on"
@@ -587,7 +589,7 @@ class TrackingService : Service(), LocationListener {
                 "Drive tracking",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Required while RoadConquest records your driving location"
+                description = "Required while Road Conquest records your driving location"
             }
         )
     }
