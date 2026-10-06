@@ -57,6 +57,11 @@ class ProgressionRepository(context: Context) {
     private val dbHelper = AppDatabase.get(context.applicationContext)
     private val historyGeneration = synchronized(dbHelper.historyLock) { dbHelper.historyGeneration }
 
+    fun isHistoryGenerationCurrent(expected: Long): Boolean =
+        synchronized(dbHelper.historyLock) {
+            historyGeneration == dbHelper.historyGeneration && expected == dbHelper.historyGeneration
+        }
+
     fun syncRoadRewards(
         roadsUnlocked: Long,
         expectedHistoryGeneration: Long? = null
