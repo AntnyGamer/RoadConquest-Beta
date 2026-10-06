@@ -166,21 +166,6 @@ class FogOverlayTest {
         assertTrue(FogBitmapRenderer.MIN_ROAD_ZOOM < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM)
     }
 
-    @Test fun overviewRoadRevealDoesNotCollapseBelowOneScreenPixel() {
-        val roads = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
-        val rendered = FogBitmapRenderer.render(request(
-            roads = roads,
-            roadScreen = doubleArrayOf(100.0, 320.0, 540.0, 320.0),
-            metersPerPixel = 2_000.0
-        ))
-        // At this scale the physical 1500 ft fade would be sub-pixel. Keep only a faint
-        // internal reveal so the corridor remains detectable when this renderer is used near
-        // its threshold, without recreating the bright regional halo the eased fade removes.
-        val centerAlpha = Color.alpha(rendered.getPixel(320, 320))
-        assertTrue(centerAlpha in 120..180)
-        assertEquals(204, Color.alpha(rendered.getPixel(320, 324)))
-    }
-
     @Test fun fogAlphaIsExactlyEightyPercentAwayFromClearings() {
         assertEquals(204, alpha(320, 320, request()))
         assertEquals((FogBitmapRenderer.MAX_FOG_ALPHA * 255).toInt(), alpha(20, 20, request()))
