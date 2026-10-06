@@ -1,20 +1,26 @@
-# RoadConquest 1.0 Beta 7
+# Road Conquest 1.0 Beta 8
 
-- Make the zero-point starting place use the first good live/current location fix after a fresh install or device-data reset. Cached fixes from before the new location request cannot become the baseline, and the starting town/state/country still awards zero discovery points.
-- Retry failed zero-point reverse geocoding quickly instead of blocking fresh place discovery for about an hour, and combine several geocoder results from the same coordinate to fill missing country/state/town fields more reliably.
-- Show a truthful foreground-notification waiting state while Android Location is off, then switch back to tracking text when Location returns.
-- Keep automatic tracking armed when Android Location is off, including after reboot and when switching Manual -> Always. The first good fix after Location is turned back on can immediately establish the fresh starting place and resume tracking.
-- Reject mock-location fixes from local driving history so they cannot add blue roads or mileage.
-- Prevent stale pre-reset background work from restoring roads/progression rewards, place candidates, achievements, ad progress, battery progress, or purchases after device data has been deleted.
-- Prevent stale pre-reset summaries from restoring the separate achievement progress cache after deletion.
-- Keep exported town/state/country discovery totals aligned with in-app progression: the zero-point baseline remains in visited_places.csv for history/overlays but does not inflate discovery counts.
-- Read multi-query progression snapshots under the shared history lock so concurrent reset/reward activity cannot briefly produce mixed UI totals.
-- Make local progression reset self-contained, including achievement preference/history state, so a fresh profile cannot inherit old maximum-road progress or announcement state.
-- Keep exported town/state/country discovery totals aligned with the app: the zero-point baseline remains in `visited_places.csv` for history/overlays but does not inflate discovery counts in metadata.
-- Count Account, Achievements, Garage & Shop, and Leaderboards as RoadConquest foreground screens so internal navigation cannot be mistaken for leaving and reopening the app.
-- Remove the unnecessary full saved-road regroup on the first summary of each app process; current road groups are maintained transactionally as roads are stored.
-- Flush successful partial place-overlay download batches immediately even when a later boundary request fails, and enforce the Nominatim request throttle across all overlay clients in the process.
-- Restrict direct external launching of MainActivity; launcher aliases remain the exported app entry points.
-- Retain the Beta 6 road-matching, fog, progression, account, overlay, and migration-removal behavior unless changed above.
+- Use the public display name **Road Conquest** and Android application ID `com.roadconquest.app` for the Play release.
+- Show the exact `versionName` and `versionCode` in **Settings → About**.
+- Build and publish a signed Android App Bundle (AAB) for Google Play while retaining the signed APK for direct installs.
+- Reuse the immutable high-accuracy location request and avoid a recurring accepted-fix list resize without changing GPS cadence, filtering, matching, or accuracy.
+- Avoid reparsing account endpoint configuration several times during one Settings refresh.
+- Organize achievements into separate **Road Conquest**, **Mileage**, **Exploration**, **Ad Rewards**, and **Bonus** categories with category buttons. Ad achievements have their own Ad Rewards category; battery achievements are under Bonus.
+- Move **Delete data on this device** into **Settings → Data and privacy** and centralize the local reset path.
+- Keep the explored-place overlay system: countries render blue, states/regions purple, and towns green; only one category can be enabled at once, overlays stay anchored to the map, sit below fog, and can be tapped for population and area when available.
+- Keep verified-drive precise GPS sharing opt-in instead of enabling it automatically when an account is created.
+- Harden device-data deletion so tracking/verified uploads stay stopped while deletion is pending, confirmed deletion work can finish if Settings closes, and interrupted cleanup is retried safely on the next launch.
+- Preserve place candidates seen while the exact zero-point starting location is still resolving, without awarding discovery points before the baseline finishes.
+- Keep the zero-point baseline tied to a fresh live/current fix and prevent stale or mock fixes from becoming progression evidence.
+- Avoid inventing short road connections across multi-minute moving GPS outages; longer reconnection now requires stationary evidence such as a red-light/parking anchor.
+- Keep pending road rendering efficient by querying unmatched evidence plus nearby context rather than scanning all historical points in the viewport.
+- Improve International Date Line handling for road bounds, viewport queries, grouping, local matching, and sparse place-candidate coordinates.
+- Prevent older cached location fixes from replacing a newer live car-marker position.
+- Harden rapid fog zoom/rotation fallback behavior, especially on Android 12, while retaining the full-world fallback that prevents white map gaps.
+- Prevent stale pre-reset background work, achievement state, progression writes, overlays, exports, purchases, and verified-drive work from recreating deleted device data.
+- Clean up interrupted private export snapshots and keep export snapshot lifecycle serialized.
+- Keep account/session clearing and privacy-related state changes durable across abrupt process death.
+- Keep CI from treating an already-published version as a release failure; existing release tags are never overwritten or retargeted.
+- Retain the existing Beta 7 account security, leaderboard verification, native map rendering, road matching, overlay, and no-migration behavior unless changed above.
 
-Android version code is 33. Android 12 or newer is required.
+Android version code is 34. Android 12 or newer is required.
