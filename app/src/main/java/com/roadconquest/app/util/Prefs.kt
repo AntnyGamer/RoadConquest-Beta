@@ -5,7 +5,7 @@ import com.roadconquest.app.map.MapMode
 import com.roadconquest.app.map.PlaceOverlayMode
 
 object Prefs {
-    private const val FILE = "roadfog_preferences"
+    private const val FILE = "roadconquest_preferences"
     private const val KEY_MANUAL_ONLY = "manual_only"
     private const val KEY_EVER_STARTED = "ever_started"
     private const val KEY_BACKGROUND_PROMPT_SHOWN = "background_prompt_shown"
