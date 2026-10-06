@@ -159,7 +159,8 @@ class ProgressionRepository(context: Context) {
                 PLACE_CANDIDATE_CELL_M
         ).toLong()
         val latitude = Math.toDegrees(atan(sinh((y + 0.5) * PLACE_CANDIDATE_CELL_M / radius)))
-        val cellLongitude = Math.toDegrees((x + 0.5) * PLACE_CANDIDATE_CELL_M / radius)
+        val rawCellLongitude = Math.toDegrees((x + 0.5) * PLACE_CANDIDATE_CELL_M / radius)
+        val cellLongitude = ((rawCellLongitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         db.insertWithOnConflict(
             "place_candidates",
             null,
