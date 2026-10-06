@@ -252,8 +252,6 @@ class ProgressionRepository(context: Context) {
         if (!hasKnownPlace) return emptyList()
 
         val result = ArrayList<PendingPlaceCandidate>(limit)
-        if (baseline != null && baseline.second <= nowMillis) result += baseline.first
-        if (result.size >= limit) return result
         db.query(
             "place_candidates",
             arrayOf("cell_x", "cell_y", "latitude", "longitude", "first_seen_at", "attempts"),
