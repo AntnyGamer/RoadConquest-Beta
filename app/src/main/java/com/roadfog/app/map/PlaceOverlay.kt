@@ -167,9 +167,16 @@ class PlaceOverlayClient(
                     throw IOException("Place overlay config is unavailable")
                 }
                 connection.inputStream.bufferedReader().use { reader ->
-                    val line = reader.readLine()?.trim().orEmpty()
-                    if (line.length > 2_048) throw IOException("Place overlay config is invalid")
-                    line.trimEnd('/')
+                    val builder = StringBuilder()
+                    while (true) {
+                        val next = reader.read()
+                        if (next < 0 || next == '\n'.code || next == '\r'.code) break
+                        if (builder.length >= MAX_CONFIG_LENGTH) {
+                            throw IOException("Place overlay config is invalid")
+                        }
+                        builder.append(next.toChar())
+                    }
+                    builder.toString().trim().trimEnd('/')
                 }
             } finally {
                 connection.disconnect()
@@ -226,6 +233,7 @@ class PlaceOverlayClient(
     companion object {
         private val rateLock = Any()
         private var lastRequestElapsed = Long.MIN_VALUE
+        private const val MAX_CONFIG_LENGTH = 2_048
         private const val DEFAULT_ENDPOINT = "https://nominatim.openstreetmap.org"
         private const val EARTH_RADIUS_M = 6_371_008.8
 
