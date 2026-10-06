@@ -4,6 +4,7 @@ import com.roadfog.app.data.PlaceDiscovery
 import com.roadfog.app.data.PlaceKind
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,6 +12,7 @@ import java.io.IOException
 import java.io.StringReader
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -52,6 +54,34 @@ class PlaceOverlayTest {
                 StringReader("x".repeat(2_049))
             )
         }
+    }
+
+    @Test fun staleFetchCannotRecreateOverlayCacheAfterDeletion() {
+        val context = RuntimeEnvironment.getApplication()
+        val place = PlaceDiscovery(
+            PlaceKind.TOWN, "us|new jersey|old", "Old Town", "New Jersey", "United States",
+            1L, 40.0, -74.5
+        )
+        PlaceOverlayCache.clear(context)
+        val generation = PlaceOverlayCache.generation()
+        PlaceOverlayCache.clear(context)
+
+        assertFalse(
+            PlaceOverlayCache.write(
+                context,
+                place,
+                PlaceOverlayData(
+                    place.key,
+                    place.displayName,
+                    place.kind,
+                    1_000L,
+                    1.0,
+                    """{"type":"Polygon","coordinates":[[[-75,39],[-74,39],[-74,40],[-75,39]]]}"""
+                ),
+                generation
+            )
+        )
+        assertFalse(PlaceOverlayCache.read(context, place).cached)
     }
 
     @Test fun wrongAdministrativeResultIsRejected() {
