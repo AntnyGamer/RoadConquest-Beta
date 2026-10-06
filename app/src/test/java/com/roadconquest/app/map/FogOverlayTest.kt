@@ -173,10 +173,11 @@ class FogOverlayTest {
             roadScreen = doubleArrayOf(100.0, 320.0, 540.0, 320.0),
             metersPerPixel = 2_000.0
         ))
-        // At this scale the physical 1500 ft fade would be sub-pixel. The overview
-        // minimum should still cut fog opacity substantially without pretending the whole
-        // 1500 ft corridor is fully clear at continent-scale zoom.
-        assertTrue(Color.alpha(rendered.getPixel(320, 320)) < 120)
+        // At this scale the physical 1500 ft fade would be sub-pixel. Keep only a faint
+        // internal reveal so the corridor remains detectable when this renderer is used near
+        // its threshold, without recreating the bright regional halo the eased fade removes.
+        val centerAlpha = Color.alpha(rendered.getPixel(320, 320))
+        assertTrue(centerAlpha in 120..180)
         assertEquals(204, Color.alpha(rendered.getPixel(320, 324)))
     }
 
