@@ -344,22 +344,6 @@
                 android:text="Privacy policy" />
 
             <Button
-                android:id="@+id/accountDeletionWebButton"
-                style="@style/RoadConquest.SettingsAction"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Delete cloud account on web" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="5dp"
-                android:text="This is the browser alternative to Account → Delete account. It deletes the cloud account and leaderboard data, but not this phone’s local driving history."
-                android:textColor="?attr/rcTextSecondary"
-                android:textSize="12sp" />
-
-            <Button
                 android:id="@+id/exportButton"
                 style="@style/RoadConquest.SettingsAction"
                 android:layout_width="match_parent"
@@ -373,13 +357,13 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Delete data on this device" />
+                android:text="Delete all data" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="7dp"
-                android:text="Deletes local trips, mileage, roads, explored places, points, purchases and cosmetics. Your cloud account and leaderboard scores stay."
+                android:text="Permanently deletes your cloud account plus this phone’s trips, mileage, roads, explored places, points, purchases and cosmetics. You must be signed in and confirm your current password."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="12sp" />
 
