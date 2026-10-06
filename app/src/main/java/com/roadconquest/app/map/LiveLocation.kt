@@ -1,4 +1,4 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
 /** Monotonic expiry survives style changes without making an old fix fresh again. */
 class LiveLocation {

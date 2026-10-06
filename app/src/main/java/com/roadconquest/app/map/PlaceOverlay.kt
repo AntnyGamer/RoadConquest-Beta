@@ -1,11 +1,11 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
-import com.roadfog.app.BuildConfig
-import com.roadfog.app.data.PlaceDiscovery
-import com.roadfog.app.data.PlaceKind
+import com.roadconquest.app.BuildConfig
+import com.roadconquest.app.data.PlaceDiscovery
+import com.roadconquest.app.data.PlaceKind
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File

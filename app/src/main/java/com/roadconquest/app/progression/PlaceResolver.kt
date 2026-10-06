@@ -1,10 +1,10 @@
-package com.roadfog.app.progression
+package com.roadconquest.app.progression
 
 import android.content.Context
 import android.location.Geocoder
-import com.roadfog.app.data.PendingPlaceCandidate
-import com.roadfog.app.data.PlaceDiscovery
-import com.roadfog.app.data.PlaceKind
+import com.roadconquest.app.data.PendingPlaceCandidate
+import com.roadconquest.app.data.PlaceDiscovery
+import com.roadconquest.app.data.PlaceKind
 import java.io.IOException
 import java.util.Locale
 

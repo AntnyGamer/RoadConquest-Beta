@@ -1,10 +1,10 @@
-package com.roadfog.app.util
+package com.roadconquest.app.util
 
 import android.content.Context
 import android.content.res.Configuration
 import android.util.TypedValue
 import androidx.annotation.AttrRes
-import com.roadfog.app.R
+import com.roadconquest.app.R
 
 enum class UiTheme(val label: String) { SYSTEM("Use phone setting"), LIGHT("Light"), DARK("Dark") }
 

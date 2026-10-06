@@ -1,4 +1,4 @@
-package com.roadfog.app.progression
+package com.roadconquest.app.progression
 
 import android.content.ComponentName
 import android.content.Context
@@ -9,8 +9,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import com.roadfog.app.data.ProgressionRepository
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.data.ProgressionRepository
+import com.roadconquest.app.util.Prefs
 
 enum class CarStyle(val id: String, val label: String) {
     CLASSIC("classic", "Classic"),

@@ -1,4 +1,4 @@
-package com.roadfog.app.util
+package com.roadconquest.app.util
 
 /** Counts all app screens so shade dismissals, internal navigation and recreation are not app reopens. */
 class ForegroundSession {

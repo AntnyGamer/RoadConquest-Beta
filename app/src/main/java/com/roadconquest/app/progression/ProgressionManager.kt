@@ -1,13 +1,13 @@
-package com.roadfog.app.progression
+package com.roadconquest.app.progression
 
 import android.content.Context
 import android.os.BatteryManager
-import com.roadfog.app.achievements.AchievementMetrics
-import com.roadfog.app.achievements.Achievements
-import com.roadfog.app.data.DataSummary
-import com.roadfog.app.data.ProgressionRepository
-import com.roadfog.app.data.ProgressionSnapshot
-import com.roadfog.app.map.PlaceOverlayCache
+import com.roadconquest.app.achievements.AchievementMetrics
+import com.roadconquest.app.achievements.Achievements
+import com.roadconquest.app.data.DataSummary
+import com.roadconquest.app.data.ProgressionRepository
+import com.roadconquest.app.data.ProgressionSnapshot
+import com.roadconquest.app.map.PlaceOverlayCache
 
 object ProgressionManager {
     fun sync(context: Context, summary: DataSummary): ProgressionSnapshot {
@@ -70,7 +70,7 @@ object ProgressionManager {
         ProgressionRepository(context).clearProgression()
         Achievements.reset(context)
         PlaceOverlayCache.clear(context)
-        com.roadfog.app.util.Prefs.resetCosmetics(context)
+        com.roadconquest.app.util.Prefs.resetCosmetics(context)
         LauncherIcon.apply(context, false)
     }
 

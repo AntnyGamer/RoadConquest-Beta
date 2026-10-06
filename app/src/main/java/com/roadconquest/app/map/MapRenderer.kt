@@ -1,4 +1,4 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -10,11 +10,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
-import com.roadfog.app.progression.Cosmetics
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.data.ProgressionRepository
-import com.roadfog.app.data.PlaceKind
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.progression.Cosmetics
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.data.ProgressionRepository
+import com.roadconquest.app.data.PlaceKind
+import com.roadconquest.app.util.Prefs
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -196,7 +196,7 @@ class MapRenderer(
             if (destroyed || generation != overlayGeneration ||
                 cacheGeneration != PlaceOverlayCache.generation()) return@execute
             val loaded = ArrayList<PlaceOverlayData>(places.size)
-            val missing = ArrayList<com.roadfog.app.data.PlaceDiscovery>()
+            val missing = ArrayList<com.roadconquest.app.data.PlaceDiscovery>()
             for (place in places) {
                 val cached = PlaceOverlayCache.read(context, place)
                 if (!cached.cached) missing += place
@@ -512,16 +512,16 @@ class MapRenderer(
 
     private fun postPlaceOverlay(
         generation: Int,
-        kind: com.roadfog.app.data.PlaceKind,
+        kind: com.roadconquest.app.data.PlaceKind,
         data: List<PlaceOverlayData>
     ) {
         val snapshot = data.toList()
         mainHandler.post {
             if (destroyed || generation != overlayGeneration || overlayMode.kind != kind) return@post
             val mode = when (kind) {
-                com.roadfog.app.data.PlaceKind.COUNTRY -> PlaceOverlayMode.COUNTRY
-                com.roadfog.app.data.PlaceKind.STATE -> PlaceOverlayMode.STATE
-                com.roadfog.app.data.PlaceKind.TOWN -> PlaceOverlayMode.TOWN
+                com.roadconquest.app.data.PlaceKind.COUNTRY -> PlaceOverlayMode.COUNTRY
+                com.roadconquest.app.data.PlaceKind.STATE -> PlaceOverlayMode.STATE
+                com.roadconquest.app.data.PlaceKind.TOWN -> PlaceOverlayMode.TOWN
             }
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)
                 ?.setGeoJson(overlayFeatureCollection(snapshot))

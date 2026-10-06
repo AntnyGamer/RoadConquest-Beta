@@ -1,4 +1,4 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
 enum class MapMode(val label: String, val styleAsset: String) {
     STREETS("Streets", "styles/liberty.json"),
