@@ -39,11 +39,31 @@
             android:textSize="17sp"
             android:textStyle="bold" />
 
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:horizontalScrollBarEnabled="false">
+
+            <LinearLayout
+                android:id="@+id/achievementCategoryButtons"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/achievementRoadsButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Roads" />
+                <Button android:id="@+id/achievementDistanceButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Distance" />
+                <Button android:id="@+id/achievementPlacesButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Places" />
+                <Button android:id="@+id/achievementAdsButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Ads" />
+                <Button android:id="@+id/achievementExtraButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Extra" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
         <TextView
             android:id="@+id/achievementsText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
             android:paddingBottom="20dp"
             android:text="Loading achievements…"
             android:textColor="?attr/rcTextPrimary"
