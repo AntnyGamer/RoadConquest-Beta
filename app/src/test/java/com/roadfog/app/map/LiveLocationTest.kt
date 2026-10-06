@@ -47,4 +47,18 @@ class LiveLocationTest {
         live.update(40.0, -74.0, -90.0, 185_000L, 0L)
         assertEquals(270.0, live.current(185_000L)!!.bearing, 0.0)
     }
+
+    @Test fun olderCachedFixCannotReplaceANewerLiveFix() {
+        val live = LiveLocation()
+        assertTrue(live.update(40.0, -74.0, 90.0, 100_000L, 0L))
+        assertFalse(live.update(39.0, -75.0, 180.0, 101_000L, 50_000L))
+        val current = requireNotNull(live.current(101_000L))
+        assertEquals(40.0, current.latitude, 0.0)
+        assertEquals(-74.0, current.longitude, 0.0)
+
+        // Once the original fix has actually expired, a newer still-valid cached fix can replace it.
+        assertTrue(live.update(39.0, -75.0, 180.0, 161_000L, 55_000L))
+        assertEquals(39.0, requireNotNull(live.current(161_000L)).latitude, 0.0)
+    }
+
 }

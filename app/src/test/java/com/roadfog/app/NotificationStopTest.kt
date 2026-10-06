@@ -122,4 +122,40 @@ class NotificationStopTest {
             assertFalse(Shadows.shadowOf(service).isStoppedBySelf)
         } finally { controller.destroy() }
     }
+
+    @Test fun pausedTrackingDoesNotAutoResumeWhileDeviceDeletionIsPending() {
+        val app = RuntimeEnvironment.getApplication()
+        Prefs.setTrackingPaused(app, true)
+        Prefs.setManualOnly(app, true)
+        assertTrue("Manual notification stops still resume on app reopen", Prefs.shouldResumePausedTracking(app))
+
+        Prefs.setDeviceDataDeletionPending(app, true)
+        assertFalse(Prefs.shouldResumePausedTracking(app))
+
+        Prefs.setDeviceDataDeletionPending(app, false)
+        assertTrue(Prefs.shouldResumePausedTracking(app))
+    }
+
+
+    @Test fun pendingDeletionBlocksServiceAndBootEvenBeforeOtherStopFlagsPersist() {
+        val app = RuntimeEnvironment.getApplication()
+        Prefs.setManualOnly(app, false)
+        Prefs.setTrackingPaused(app, false)
+        Prefs.markEverStarted(app)
+        Prefs.setDeviceDataDeletionPending(app, true)
+
+        val stopped = Robolectric.buildService(TrackingService::class.java).create()
+        try {
+            assertTrue(Shadows.shadowOf(stopped.get()).isStoppedBySelf)
+            assertNull(Shadows.shadowOf(stopped.get()).lastForegroundNotification)
+            assertEquals(Service.START_NOT_STICKY, stopped.get().onStartCommand(Intent(), 0, 1))
+        } finally {
+            stopped.destroy()
+        }
+
+        BootReceiver().onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertNull(Shadows.shadowOf(app).nextStartedService)
+        Prefs.setDeviceDataDeletionPending(app, false)
+    }
+
 }

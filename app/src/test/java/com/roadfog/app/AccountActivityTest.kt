@@ -13,6 +13,7 @@ import com.roadfog.app.account.AccountClient
 import com.roadfog.app.account.AccountStore
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.data.AppDatabase
+import com.roadfog.app.data.LocalDataReset
 import com.roadfog.app.util.Prefs
 import org.junit.Assert.*
 import org.junit.Before
@@ -24,6 +25,10 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.SQLiteMode
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
@@ -148,11 +153,16 @@ class AccountActivityTest {
             latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
         })
         Prefs.setManualOnly(context, false)
+        Prefs.setDriveVerificationEnabled(context, true)
+        File(context.cacheDir, "roadconquest-export-stale.db").writeText("stale snapshot")
+        File(context.cacheDir, "roadconquest-export-stale.db-wal").writeText("stale sidecar")
         val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
         try {
             val activity = controller.get()
             val control = activity.findViewById<Button>(R.id.deleteDeviceDataButton)
+            val manual = activity.findViewById<Switch>(R.id.manualOnlySwitch)
             assertTrue("Local deletion works without an account service", control.isEnabled)
+            assertTrue(manual.isEnabled)
             val before = repository.getSummary().trackPointCount
             control.performClick()
             org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
@@ -171,10 +181,89 @@ class AccountActivityTest {
                 Thread.sleep(10)
             } while (System.nanoTime() < deadline)
             assertTrue("Deletion finishes", control.isEnabled)
+            assertTrue("Tracking mode can be changed again after deletion", manual.isEnabled)
             assertEquals(0L, repository.getSummary().trackPointCount)
             assertTrue(Prefs.isManualOnly(context))
             assertFalse(Prefs.isTrackingPaused(context))
-            assertEquals(0L, repository.getSummary().trackPointCount)
+            assertFalse(Prefs.isDeviceDataDeletionPending(context))
+            assertFalse(Prefs.isDriveVerificationEnabled(context))
+            assertTrue(context.cacheDir.listFiles().orEmpty().none {
+                it.name.startsWith("roadconquest-export-")
+            })
         } finally { controller.pause().stop().destroy() }
     }
+
+    @Test fun confirmedDeviceDeletionFinishesAfterSettingsCloses() {
+        AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
+            .set(null, null)
+        val context = RuntimeEnvironment.getApplication()
+        val repository = TrackingRepository(context)
+        repository.insertLocation(Location("gps").apply {
+            latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
+        })
+        Prefs.setManualOnly(context, false)
+        Prefs.setDriveVerificationEnabled(context, true)
+
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
+        val activity = controller.get()
+        val executor = SettingsActivity::class.java.getDeclaredField("dataExecutor").let { field ->
+            field.isAccessible = true
+            field.get(activity) as ExecutorService
+        }
+        val blockerStarted = CountDownLatch(1)
+        val releaseBlocker = CountDownLatch(1)
+        executor.execute {
+            blockerStarted.countDown()
+            releaseBlocker.await(5, TimeUnit.SECONDS)
+        }
+        assertTrue(blockerStarted.await(5, TimeUnit.SECONDS))
+
+        // Queue the same authorized deletion work the Settings confirmation uses, but do
+        // it directly so this test measures executor teardown rather than Robolectric dialog timing.
+        LocalDataReset.stopTracking(context)
+        executor.execute { LocalDataReset.clearStoppedData(context) }
+
+        // Close Settings while the authorized deletion is deliberately queued behind work.
+        // Graceful executor shutdown must keep that queued deletion alive.
+        controller.pause().stop().destroy()
+        releaseBlocker.countDown()
+
+        assertTrue(
+            "Queued deletion finishes during graceful Settings teardown",
+            executor.awaitTermination(5, TimeUnit.SECONDS)
+        )
+        assertEquals(0L, repository.getSummary().trackPointCount)
+        assertTrue(Prefs.isManualOnly(context))
+        assertFalse(Prefs.isTrackingPaused(context))
+        assertFalse(Prefs.isDeviceDataDeletionPending(context))
+        assertFalse(Prefs.isDriveVerificationEnabled(context))
+    }
+
+
+    @Test fun deviceDeletionMarkerIsDurableBeforeCleanupAndBlocksResume() {
+        AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
+            .set(null, null)
+        val context = RuntimeEnvironment.getApplication()
+        TrackingRepository(context).insertLocation(Location("gps").apply {
+            latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
+        })
+        Prefs.setManualOnly(context, false)
+        Prefs.setTrackingPaused(context, false)
+        Prefs.setDriveVerificationEnabled(context, true)
+
+        LocalDataReset.stopTracking(context)
+
+        assertTrue(Prefs.isDeviceDataDeletionPending(context))
+        assertTrue(Prefs.isManualOnly(context))
+        assertTrue(Prefs.isTrackingPaused(context))
+        assertFalse(Prefs.shouldResumePausedTracking(context))
+        assertFalse(Prefs.isDriveVerificationEnabled(context))
+
+        LocalDataReset.clearStoppedData(context)
+        assertFalse(Prefs.isDeviceDataDeletionPending(context))
+        assertFalse(Prefs.isTrackingPaused(context))
+        assertTrue(Prefs.isManualOnly(context))
+        assertEquals(0L, TrackingRepository(context).getSummary().trackPointCount)
+    }
+
 }

@@ -68,7 +68,9 @@ class TrackingService : Service(), LocationListener {
     }
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != Intent.ACTION_BATTERY_CHANGED) return
+            if (intent?.action != Intent.ACTION_BATTERY_CHANGED || !ready ||
+                Prefs.isTrackingPaused(this@TrackingService)
+            ) return
             val level = intent.getIntExtra("level", -1)
             val scale = intent.getIntExtra("scale", -1)
             if (level < 0 || scale <= 0) return
@@ -87,7 +89,7 @@ class TrackingService : Service(), LocationListener {
         verifiedDriving = VerifiedDriving(this)
         locationManager = getSystemService(LocationManager::class.java)
         createNotificationChannel()
-        if (Prefs.isTrackingPaused(this) ||
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) {
             stopSelf()
@@ -129,7 +131,7 @@ class TrackingService : Service(), LocationListener {
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
             return START_NOT_STICKY
         }
-        if (Prefs.isTrackingPaused(this)) {
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) {
             ready = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()

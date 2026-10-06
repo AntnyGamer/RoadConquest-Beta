@@ -11,7 +11,9 @@ import com.roadfog.app.util.Prefs
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        if (Prefs.isTrackingPaused(context) || Prefs.isManualOnly(context) || !Prefs.hasEverStarted(context)) return
+        if (Prefs.isDeviceDataDeletionPending(context) || Prefs.isTrackingPaused(context) ||
+            Prefs.isManualOnly(context) || !Prefs.hasEverStarted(context)
+        ) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) return
 

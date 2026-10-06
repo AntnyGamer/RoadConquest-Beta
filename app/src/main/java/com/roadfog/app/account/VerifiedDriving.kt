@@ -126,8 +126,11 @@ class VerifiedDriving(context: Context) {
             if (System.currentTimeMillis() - JSONObject(pendingEvidence!!).getJSONArray("fixes").getJSONObject(0).getLong("time") > 120_000L) {
                 reset(); return
             }
+            // Finish the exact previously-committed evidence first, then continue with this
+            // live fix. If this fix was already the old batch's last point, the timestamp
+            // de-duplication below drops it; if it arrived while the retry was pending, it is
+            // preserved instead of creating an avoidable hole in verified mileage.
             submit(session.token)
-            return
         }
         val point = JSONObject().put("lat", location.latitude).put("lon", location.longitude)
             .put("accuracy", location.accuracy.toDouble()).put("speed", location.speed.toDouble())

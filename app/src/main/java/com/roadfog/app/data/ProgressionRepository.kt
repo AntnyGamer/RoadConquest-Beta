@@ -144,14 +144,13 @@ class ProgressionRepository(context: Context) {
      */
     fun recordPlaceCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
         if (!isCurrentHistory()) return@synchronized false
-        if (location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0) return@synchronized false
-        val db = dbHelper.writableDatabase
-        // Reward-bearing discoveries must never race ahead of the exact zero-point baseline.
-        if (db.rawQuery(
-                "SELECT 1 FROM place_candidates WHERE cell_x = ? AND cell_y = ? LIMIT 1",
-                arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString())
-            ).use { it.moveToFirst() }
+        if (location.isMock || !location.latitude.isFinite() || !location.longitude.isFinite() ||
+            location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0
         ) return@synchronized false
+        val db = dbHelper.writableDatabase
+        // Keep discoveries observed while the exact zero-point baseline is still resolving.
+        // pendingPlaceCandidates() gates them behind the baseline, so they cannot earn points
+        // early, but a short visit is not lost merely because reverse geocoding took minutes.
         val radius = 6_378_137.0
         val longitude = ((location.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         val x = floor(radius * Math.toRadians(longitude) / PLACE_CANDIDATE_CELL_M).toLong()
@@ -160,7 +159,8 @@ class ProgressionRepository(context: Context) {
                 PLACE_CANDIDATE_CELL_M
         ).toLong()
         val latitude = Math.toDegrees(atan(sinh((y + 0.5) * PLACE_CANDIDATE_CELL_M / radius)))
-        val cellLongitude = Math.toDegrees((x + 0.5) * PLACE_CANDIDATE_CELL_M / radius)
+        val rawCellLongitude = Math.toDegrees((x + 0.5) * PLACE_CANDIDATE_CELL_M / radius)
+        val cellLongitude = ((rawCellLongitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         db.insertWithOnConflict(
             "place_candidates",
             null,
@@ -183,13 +183,20 @@ class ProgressionRepository(context: Context) {
      */
     fun recordBaselineCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
         if (!isCurrentHistory()) return@synchronized false
-        if (!location.latitude.isFinite() || !location.longitude.isFinite() ||
+        if (location.isMock || !location.latitude.isFinite() || !location.longitude.isFinite() ||
             location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0
         ) return@synchronized false
         val db = dbHelper.writableDatabase
         if (db.rawQuery("SELECT 1 FROM visited_places LIMIT 1", null).use { it.moveToFirst() }) {
             return@synchronized false
         }
+        // The first exact live fix is authoritative even across service/activity restarts.
+        // Never replace an unresolved sentinel or discard visits queued behind it.
+        if (db.rawQuery(
+                "SELECT 1 FROM place_candidates WHERE cell_x = ? AND cell_y = ? LIMIT 1",
+                arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString())
+            ).use { it.moveToFirst() }
+        ) return@synchronized false
         // Anything queued before the first live/current fix predates the new profile.
         db.delete(
             "place_candidates",
@@ -220,9 +227,9 @@ class ProgressionRepository(context: Context) {
         require(limit in 1..50)
         val db = dbHelper.readableDatabase
 
-        // A partially-resolved zero-point baseline stays retryable. Until at least one baseline
-        // place is known it blocks ordinary candidates entirely; after that, it is simply given
-        // first priority whenever its retry deadline arrives.
+        // Before the first live baseline exists, stale/sparse candidates cannot become the
+        // starting place. Once the sentinel exists, it is an ordering barrier: ordinary
+        // candidates can be recorded but remain hidden until zero-point resolution completes.
         val hasKnownPlace = db.rawQuery(
             "SELECT 1 FROM visited_places LIMIT 1",
             null
@@ -249,13 +256,12 @@ class ProgressionRepository(context: Context) {
                 cursor.getInt(5)
             ) to cursor.getLong(6)
         }
-        if (!hasKnownPlace) {
-            return baseline?.takeIf { it.second <= nowMillis }?.let { listOf(it.first) }.orEmpty()
+        if (baseline != null) {
+            return baseline.takeIf { it.second <= nowMillis }?.let { listOf(it.first) }.orEmpty()
         }
+        if (!hasKnownPlace) return emptyList()
 
         val result = ArrayList<PendingPlaceCandidate>(limit)
-        if (baseline != null && baseline.second <= nowMillis) result += baseline.first
-        if (result.size >= limit) return result
         db.query(
             "place_candidates",
             arrayOf("cell_x", "cell_y", "latitude", "longitude", "first_seen_at", "attempts"),
@@ -268,7 +274,7 @@ class ProgressionRepository(context: Context) {
             null,
             null,
             "attempts ASC, next_attempt_ms ASC, first_seen_at ASC, cell_x ASC, cell_y ASC",
-            (limit - result.size).toString()
+            limit.toString()
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 result += PendingPlaceCandidate(

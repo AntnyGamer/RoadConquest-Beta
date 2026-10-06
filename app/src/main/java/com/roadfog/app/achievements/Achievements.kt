@@ -2,6 +2,7 @@ package com.roadfog.app.achievements
 
 import android.content.Context
 import com.roadfog.app.data.DataSummary
+import com.roadfog.app.data.ProgressionRepository
 
 data class AchievementMetrics(
     val towns: Long = 0L,
@@ -38,6 +39,7 @@ object Achievements {
     private const val KEY_ANNOUNCED = "announced_ids"
     private const val KEY_MAX_ROADS = "max_roads_seen"
     private const val METERS_PER_MILE = 1609.344
+    private val stateLock = Any()
 
     fun progress(summary: DataSummary, metrics: AchievementMetrics = AchievementMetrics()): List<AchievementProgress> {
         val miles = summary.distanceMeters / METERS_PER_MILE
@@ -77,37 +79,49 @@ object Achievements {
         context: Context,
         summary: DataSummary,
         metrics: AchievementMetrics = AchievementMetrics()
-    ): List<AchievementProgress> {
+    ): List<AchievementProgress> = synchronized(stateLock) {
+        // A UI/background summary can outlive a device-data reset. Never let that stale
+        // snapshot recreate the separate achievement preference cache after DB history moved on.
+        if (!isCurrentSummary(context, summary)) return@synchronized progress(summary, metrics)
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val highestRoads = maxOf(summary.roadsUnlockedCount, prefs.getLong(KEY_MAX_ROADS, 0L))
-        if (highestRoads > prefs.getLong(KEY_MAX_ROADS, 0L)) {
+        val savedMax = prefs.getLong(KEY_MAX_ROADS, 0L)
+        val highestRoads = maxOf(summary.roadsUnlockedCount, savedMax)
+        if (highestRoads > savedMax) {
             prefs.edit().putLong(KEY_MAX_ROADS, highestRoads).apply()
         }
-        return progress(summary.copy(roadsUnlockedCount = highestRoads), metrics)
+        progress(summary.copy(roadsUnlockedCount = highestRoads), metrics)
     }
 
-    fun reset(context: Context) {
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    fun reset(context: Context) = synchronized(stateLock) {
+        // Explicit device-data deletion must be durable before it returns.
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().clear().commit()
+        Unit
     }
 
     fun newlyUnlocked(
         context: Context,
         summary: DataSummary,
         metrics: AchievementMetrics = AchievementMetrics()
-    ): List<AchievementProgress> {
+    ): List<AchievementProgress> = synchronized(stateLock) {
+        if (!isCurrentSummary(context, summary)) return@synchronized emptyList()
         val current = progress(context, summary, metrics).filter { it.unlocked }
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val announced = prefs.getStringSet(KEY_ANNOUNCED, emptySet()).orEmpty().toMutableSet()
         if (!prefs.getBoolean(KEY_INITIALIZED, false)) {
             announced += current.map { it.id }
             prefs.edit().putBoolean(KEY_INITIALIZED, true).putStringSet(KEY_ANNOUNCED, announced).apply()
-            return emptyList()
+            return@synchronized emptyList()
         }
         val fresh = current.filter { it.id !in announced }
         if (fresh.isNotEmpty()) {
             announced += fresh.map { it.id }
             prefs.edit().putStringSet(KEY_ANNOUNCED, announced).apply()
         }
-        return fresh
+        fresh
     }
+
+    private fun isCurrentSummary(context: Context, summary: DataSummary): Boolean =
+        summary.historyGeneration < 0L ||
+            ProgressionRepository(context).isHistoryGenerationCurrent(summary.historyGeneration)
 }

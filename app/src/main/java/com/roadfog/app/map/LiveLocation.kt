@@ -11,7 +11,11 @@ class LiveLocation {
             ageMillis !in 0 until MAX_AGE_MS
         ) return false
         val heading = if (bearing.isFinite()) ((bearing % 360.0) + 360.0) % 360.0 else 0.0
-        fix = Fix(latitude, longitude, heading, now + MAX_AGE_MS - ageMillis)
+        val expiresAt = now + MAX_AGE_MS - ageMillis
+        // A still-valid cached fix must never move the car backward over a newer live fix.
+        // Equal source times may replace each other (for example a better simultaneous provider).
+        if (fix?.let { expiresAt < it.expiresAt } == true) return false
+        fix = Fix(latitude, longitude, heading, expiresAt)
         return true
     }
 

@@ -59,6 +59,7 @@ object PlaceOverlayCache {
     private const val DIRECTORY = "place-overlays-v2"
     private const val NEGATIVE_CACHE_MS = 24L * 60L * 60L * 1000L
     private val generation = AtomicLong()
+    private val mutationLock = Any()
 
     fun generation(): Long = generation.get()
 
@@ -94,9 +95,15 @@ object PlaceOverlayCache {
         }
     }
 
-    fun write(context: Context, place: PlaceDiscovery, data: PlaceOverlayData?) {
+    fun write(
+        context: Context,
+        place: PlaceDiscovery,
+        data: PlaceOverlayData?,
+        expectedGeneration: Long? = null
+    ): Boolean = synchronized(mutationLock) {
+        if (expectedGeneration != null && generation.get() != expectedGeneration) return@synchronized false
         val directory = File(context.applicationContext.filesDir, DIRECTORY)
-        if (!directory.exists() && !directory.mkdirs()) return
+        if (!directory.exists() && !directory.mkdirs()) return@synchronized false
         val json = JSONObject()
             .put("found", data != null)
             .put("fetched_at", System.currentTimeMillis())
@@ -107,12 +114,13 @@ object PlaceOverlayCache {
                 .put("area_sq_km", data.areaSquareKilometers)
                 .put("geometry", JSONObject(data.geometryJson))
         }
-        runCatching { file(context, place).writeText(json.toString()) }
+        runCatching { file(context, place).writeText(json.toString()) }.isSuccess
     }
 
-    fun clear(context: Context) {
+    fun clear(context: Context) = synchronized(mutationLock) {
         generation.incrementAndGet()
         File(context.applicationContext.filesDir, DIRECTORY).deleteRecursively()
+        Unit
     }
 
     private fun file(context: Context, place: PlaceDiscovery): File {

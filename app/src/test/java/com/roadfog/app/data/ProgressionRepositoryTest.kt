@@ -26,6 +26,11 @@ class ProgressionRepositoryTest {
     }
 
     @Test fun resetLocalProgressionAlsoClearsAchievementPreferenceState() {
+        com.roadfog.app.util.Prefs.setCarStyle(context, "sport")
+        com.roadfog.app.util.Prefs.setCarColor(context, "red")
+        com.roadfog.app.util.Prefs.setRoadColor(context, "gold")
+        com.roadfog.app.util.Prefs.setGoldUiEnabled(context, true)
+        com.roadfog.app.util.Prefs.setPlaceOverlayMode(context, com.roadfog.app.map.PlaceOverlayMode.TOWN)
         Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 100))
         assertTrue(
             Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
@@ -38,6 +43,11 @@ class ProgressionRepositoryTest {
             Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
                 .first { it.id == "roads_10" }.unlocked
         )
+        assertEquals("classic", com.roadfog.app.util.Prefs.carStyle(context))
+        assertEquals("blue", com.roadfog.app.util.Prefs.carColor(context))
+        assertEquals("blue", com.roadfog.app.util.Prefs.roadColor(context))
+        assertFalse(com.roadfog.app.util.Prefs.isGoldUiEnabled(context))
+        assertEquals(com.roadfog.app.map.PlaceOverlayMode.NONE, com.roadfog.app.util.Prefs.placeOverlayMode(context))
     }
 
     @Test fun roadAndAchievementPointsAreIdempotentAndNeverRetract() {
@@ -140,6 +150,9 @@ class ProgressionRepositoryTest {
         tracking.clearHistory()
 
         ProgressionManager.sync(context, staleSummary)
+        // MainActivity performs announcement calculation after progression sync. That second
+        // stale-summary consumer must also be unable to recreate preference-backed progress.
+        assertTrue(Achievements.newlyUnlocked(context, staleSummary).isEmpty())
         assertEquals(0L, ProgressionRepository(context).snapshot().balance)
         assertEquals(0L, ProgressionRepository(context).snapshot().rewardedRoads)
         assertEquals(
@@ -225,8 +238,8 @@ class ProgressionRepositoryTest {
             assertEquals(0L, it.countries)
         }
 
-        // Pre-baseline candidates are discarded; only a candidate observed after the baseline
-        // completes can earn discovery credit.
+        // The ordinary candidate from before the first live baseline is deliberately removed:
+        // it cannot define or inherit the zero-point starting location.
         assertTrue(progression.pendingPlaceCandidates(nowMillis = 4_000L).isEmpty())
         later.time = 5_000L
         assertTrue(progression.recordPlaceCandidate(later))
@@ -243,6 +256,53 @@ class ProgressionRepositoryTest {
         )
         assertEquals(100L, progression.snapshot().balance)
         assertEquals(1L, progression.snapshot().towns)
+    }
+
+    @Test fun unresolvedBaselineSurvivesRestartWithoutDroppingQueuedVisits() {
+        val progression = ProgressionRepository(context)
+        val first = android.location.Location("gps").apply {
+            latitude = 39.7
+            longitude = -75.1
+            accuracy = 5f
+            time = 1_000L
+        }
+        val later = android.location.Location("gps").apply {
+            latitude = 40.0
+            longitude = -75.0
+            accuracy = 5f
+            time = 2_000L
+        }
+        val restartFix = android.location.Location("gps").apply {
+            latitude = 39.8
+            longitude = -75.2
+            accuracy = 5f
+            time = 3_000L
+        }
+
+        assertTrue(progression.recordBaselineCandidate(first))
+        assertTrue(progression.recordPlaceCandidate(later))
+        assertFalse("A restart must not replace the first exact baseline", progression.recordBaselineCandidate(restartFix))
+
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
+        assertEquals(Long.MIN_VALUE, baseline.cellX)
+        assertEquals(first.latitude, baseline.latitude, 0.0)
+        assertEquals(first.longitude, baseline.longitude, 0.0)
+        progression.resolveCandidate(
+            baseline,
+            listOf(
+                PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States",
+                    visitedAt = baseline.visitedAt, latitude = baseline.latitude, longitude = baseline.longitude),
+                PlaceDiscovery(PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude),
+                PlaceDiscovery(PlaceKind.TOWN, "us|new jersey|start", "Start", "New Jersey", "United States",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude)
+            )
+        )
+
+        val queued = progression.pendingPlaceCandidates(nowMillis = 5_000L).single()
+        assertEquals(later.time, queued.visitedAt)
+        assertEquals(later.latitude, queued.latitude, 0.01)
+        assertEquals(later.longitude, queued.longitude, 0.01)
     }
 
     @Test fun batteryAchievementsAwardAtFiveAndOnePercentOnlyOnce() {
@@ -325,7 +385,13 @@ class ProgressionRepositoryTest {
             accuracy = 5f
             time = 2_000L
         }
-        assertFalse(progression.recordPlaceCandidate(later))
+        assertTrue(progression.recordPlaceCandidate(later))
+        // The queued reward candidate exists but the baseline sentinel is the only candidate
+        // allowed to leave the repository while zero-point resolution is incomplete.
+        assertEquals(
+            Long.MIN_VALUE,
+            progression.pendingPlaceCandidates(nowMillis = 2_000L).single().cellX
+        )
 
         var candidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
         val partial = listOf(
@@ -346,9 +412,74 @@ class ProgressionRepositoryTest {
             .first { it.cellX == Long.MIN_VALUE }
         progression.resolveCandidate(candidate, partial)
 
-        assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).none { it.cellX == Long.MIN_VALUE })
-        assertTrue(progression.recordPlaceCandidate(later))
-        assertEquals(0L, progression.snapshot().balance)
+        val released = progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE)
+        assertTrue(released.none { it.cellX == Long.MIN_VALUE })
+        assertEquals(1, released.size)
+        assertEquals(later.time, released.single().visitedAt)
+        assertEquals(
+            1,
+            progression.resolveCandidate(
+                released.single(),
+                listOf(
+                    PlaceDiscovery(
+                        PlaceKind.TOWN, "us|pennsylvania|queued", "Queued Town",
+                        "Pennsylvania", "United States", released.single().visitedAt,
+                        released.single().latitude, released.single().longitude
+                    )
+                )
+            )
+        )
+        assertEquals(100L, progression.snapshot().balance)
+        assertEquals(1L, progression.snapshot().towns)
+    }
+
+    @Test fun mockLocationCannotQueuePlaceProgression() {
+        val progression = ProgressionRepository(context)
+        val mock = android.location.Location("gps").apply {
+            latitude = 40.0
+            longitude = -75.0
+            accuracy = 5f
+            time = 2_000L
+            isMock = true
+        }
+        assertFalse(progression.recordPlaceCandidate(mock))
+        assertFalse(progression.recordBaselineCandidate(mock))
+        assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).isEmpty())
+    }
+
+
+    @Test fun placeCandidateCellCenterStaysInsideLongitudeRangeAtDateLine() {
+        val progression = ProgressionRepository(context)
+        val start = android.location.Location("gps").apply {
+            latitude = 0.0
+            longitude = 0.0
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(start))
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+        progression.resolveCandidate(
+            baseline,
+            listOf(
+                PlaceDiscovery(PlaceKind.COUNTRY, "xx", "Example Country",
+                    visitedAt = baseline.visitedAt, latitude = baseline.latitude, longitude = baseline.longitude),
+                PlaceDiscovery(PlaceKind.STATE, "xx|region", "Example Region", "Example Country", "Example Country",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude),
+                PlaceDiscovery(PlaceKind.TOWN, "xx|region|start", "Start", "Example Region", "Example Country",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude)
+            )
+        )
+
+        val nearDateLine = android.location.Location("gps").apply {
+            latitude = 0.0
+            longitude = 179.9999
+            accuracy = 5f
+            time = 3_000L
+        }
+        assertTrue(progression.recordPlaceCandidate(nearDateLine))
+        val candidate = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
+        assertTrue(candidate.longitude in -180.0..180.0)
+        assertTrue(kotlin.math.abs(kotlin.math.abs(candidate.longitude) - 180.0) < 0.05)
     }
 
 }

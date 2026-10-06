@@ -12,6 +12,7 @@ object Prefs {
     private const val KEY_FOG_ENABLED = "fog_enabled"
     private const val KEY_TRACKING_PAUSED = "tracking_paused_until_open"
     private const val KEY_ACCOUNT_PROMPT_SHOWN = "account_prompt_shown"
+    private const val KEY_DEVICE_DATA_DELETION_PENDING = "device_data_deletion_pending"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -47,10 +48,21 @@ object Prefs {
     fun isManualOnly(context: Context): Boolean = prefs(context).getBoolean(KEY_MANUAL_ONLY, false)
 
     fun setManualOnly(context: Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_MANUAL_ONLY, value).apply()
+        // Tracking-mode changes must survive an abrupt process death.
+        prefs(context).edit().putBoolean(KEY_MANUAL_ONLY, value).commit()
     }
 
     fun isTrackingPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_TRACKING_PAUSED, false)
+
+    fun isDeviceDataDeletionPending(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DEVICE_DATA_DELETION_PENDING, false)
+
+    fun setDeviceDataDeletionPending(context: Context, pending: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DEVICE_DATA_DELETION_PENDING, pending).commit()
+    }
+
+    fun shouldResumePausedTracking(context: Context): Boolean =
+        isTrackingPaused(context) && !isDeviceDataDeletionPending(context)
 
     fun setTrackingPaused(context: Context, paused: Boolean) {
         // Persist before stopping the service so a process restart cannot undo the stop.
@@ -66,8 +78,9 @@ object Prefs {
     fun isDriveVerificationEnabled(context: Context): Boolean = prefs(context).getBoolean("verify_drives", false)
 
     fun setDriveVerificationEnabled(context: Context, enabled: Boolean) {
+        // Precise-GPS sharing consent is security-sensitive; persist the opt-in/out before returning.
         prefs(context).edit().putBoolean("verify_drives", enabled)
-            .putLong("verification_consent_version", driveVerificationConsentVersion(context) + 1L).apply()
+            .putLong("verification_consent_version", driveVerificationConsentVersion(context) + 1L).commit()
     }
 
     fun driveVerificationConsentVersion(context: Context): Long = prefs(context).getLong("verification_consent_version", 0L)
@@ -106,11 +119,13 @@ object Prefs {
     }
 
     fun resetCosmetics(context: Context) {
+        // Device-data deletion promises these local selections are gone when it returns.
         prefs(context).edit()
             .remove("car_style")
             .remove("car_color")
             .remove("road_color")
             .remove("gold_ui_enabled")
-            .apply()
+            .putString("place_overlay_mode", PlaceOverlayMode.NONE.name)
+            .commit()
     }
 }

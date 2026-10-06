@@ -88,6 +88,7 @@ class SettingsActivity : Activity() {
         deleteDeviceDataButton = findViewById(R.id.deleteDeviceDataButton)
 
         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+        manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
         manualOnlySwitch.setOnCheckedChangeListener { _, checked ->
             Prefs.setManualOnly(this, checked)
             if (checked) {
@@ -164,13 +165,17 @@ class SettingsActivity : Activity() {
             recreate()
             return
         }
-        if (enteredForeground && Prefs.isTrackingPaused(this)) {
+        if (enteredForeground && Prefs.shouldResumePausedTracking(this)) {
             Prefs.setTrackingPaused(this, false)
             startAutomaticTrackingIfPossible()
         }
         enteredForeground = false
-        // Account settings can switch to manual tracking after deleting device history.
-        if (::manualOnlySwitch.isInitialized) manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+        // Account settings can switch to manual tracking after deleting device history,
+        // but never while an interrupted deletion is still pending.
+        if (::manualOnlySwitch.isInitialized) {
+            manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+            manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
+        }
         if (::repository.isInitialized) refreshSummary()
         if (::accountSummaryText.isInitialized) refreshAccountControls()
     }
@@ -226,7 +231,7 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Delete device data?")
             .setMessage(
-                "Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone and stop tracking. " +
+                "Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone, stop tracking, and turn off verified-drive GPS sharing. " +
                     "Your cloud account and leaderboard scores stay. Exported files must be deleted separately. This cannot be undone."
             )
             .setNegativeButton("Cancel", null)
@@ -234,6 +239,8 @@ class SettingsActivity : Activity() {
                 LocalDataReset.stopTracking(applicationContext)
                 deletingDeviceData = true
                 deleteDeviceDataButton.isEnabled = false
+                manualOnlySwitch.isChecked = true
+                manualOnlySwitch.isEnabled = false
                 dataExecutor.execute {
                     val result = runCatching { LocalDataReset.clearStoppedData(applicationContext) }
                     runOnUiThread {
@@ -241,9 +248,10 @@ class SettingsActivity : Activity() {
                         deletingDeviceData = false
                         deleteDeviceDataButton.isEnabled = true
                         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+                        manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
                         result.fold(
                             onSuccess = {
-                                Toast.makeText(this, "Saved device data deleted. Tracking is off.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this, "Saved device data deleted. Tracking and verified-drive sharing are off.", Toast.LENGTH_SHORT).show()
                             },
                             onFailure = {
                                 Toast.makeText(this, "Could not delete device data. Tracking is off; try again.", Toast.LENGTH_LONG).show()
@@ -400,7 +408,8 @@ class SettingsActivity : Activity() {
     }
 
     private fun startAutomaticTrackingIfPossible() {
-        if (Prefs.isTrackingPaused(this) || TrackingService.isRunning ||
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
+            TrackingService.isRunning ||
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) return
 
@@ -452,8 +461,12 @@ class SettingsActivity : Activity() {
     override fun onDestroy() {
         summaryGeneration++
         summaryExecutor.shutdownNow()
-        accountExecutor.shutdownNow()
-        dataExecutor.shutdownNow()
+        // Confirmed account/privacy writes must finish even if Settings closes immediately.
+        // UI callbacks already ignore a destroyed Activity.
+        accountExecutor.shutdown()
+        // A confirmed privacy deletion must finish even if the Settings screen closes.
+        // UI callbacks already ignore a destroyed Activity.
+        dataExecutor.shutdown()
         super.onDestroy()
     }
 

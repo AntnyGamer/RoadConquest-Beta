@@ -31,8 +31,10 @@ import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.data.RoadRecord
 import com.roadfog.app.data.ProgressionRepository
+import com.roadfog.app.data.LocalDataReset
 import com.roadfog.app.account.AccountOnboarding
 import com.roadfog.app.achievements.Achievements
+import com.roadfog.app.export.DataExporter
 import com.roadfog.app.map.MapRenderer
 import com.roadfog.app.map.PlaceOverlayInfo
 import com.roadfog.app.map.PlaceOverlayMode
@@ -194,6 +196,20 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         repository = TrackingRepository(this)
+        // Recover a privacy deletion interrupted by process death before doing ordinary
+        // startup cleanup. The persisted pending marker also keeps tracking from auto-resuming.
+        summaryExecutor.execute {
+            val cleanup = runCatching {
+                if (Prefs.isDeviceDataDeletionPending(applicationContext)) {
+                    LocalDataReset.clearStoppedData(applicationContext)
+                } else {
+                    DataExporter.clearTemporarySnapshots(applicationContext)
+                }
+            }
+            cleanup.exceptionOrNull()?.let {
+                Log.w("RoadConquest", "Could not finish startup data cleanup", it)
+            }
+        }
         startAfterPermissionGrant = savedInstanceState?.getBoolean(STATE_START_AFTER_PERMISSION) ?: false
         locationManager = getSystemService(LocationManager::class.java)
         mapView = findViewById(R.id.mapView)
@@ -270,7 +286,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // Closing the notification shade only resumes an already-started activity.
-        val resumeStoppedTracking = enteredForeground && Prefs.isTrackingPaused(this)
+        val resumeStoppedTracking = enteredForeground && Prefs.shouldResumePausedTracking(this)
         enteredForeground = false
         if (appliedTheme != Prefs.uiTheme(this) || appliedGoldUi != Prefs.isGoldUiEnabled(this)) {
             if (resumeStoppedTracking) {
@@ -288,7 +304,9 @@ class MainActivity : Activity() {
         renderer?.setPlaceOverlayMode(Prefs.placeOverlayMode(this))
         if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
         renderer?.refreshCosmetics()
-        ProgressionManager.recordBatteryFromSystem(this)
+        if (!Prefs.isDeviceDataDeletionPending(this)) {
+            ProgressionManager.recordBatteryFromSystem(this)
+        }
         // Road updates can finish while this activity is stopped and its receiver is
         // unregistered. A mere pause/resume keeps the receiver registered and can reuse cache.
         renderer?.resumeViewport(refreshRoadsAfterStop)
@@ -316,10 +334,17 @@ class MainActivity : Activity() {
 
     private fun captureStartingPlace(location: Location) {
         discoveryExecutor.execute {
-            val recorded = runCatching {
+            val result = runCatching {
                 ProgressionRepository(applicationContext).recordBaselineCandidate(location)
-            }.getOrDefault(false)
-            if (!recorded) return@execute
+            }
+            if (result.isFailure) {
+                Log.e("RoadConquest", "Could not save starting place location", result.exceptionOrNull())
+                runOnUiThread {
+                    if (!isDestroyed) baselinePreviewCapturedForRegistration = false
+                }
+                return@execute
+            }
+            if (!result.getOrThrow()) return@execute
 
             val added = runCatching {
                 ProgressionManager.resolvePendingPlaces(applicationContext, 6)
@@ -433,6 +458,10 @@ class MainActivity : Activity() {
     }
 
     private fun handleEnableButton() {
+        if (Prefs.isDeviceDataDeletionPending(this)) {
+            Toast.makeText(this, "Finishing device data deletion…", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (Prefs.isTrackingPaused(this)) {
             Prefs.setTrackingPaused(this, false)
             startTrackingIfPossible(requestIfMissing = true)
@@ -449,7 +478,7 @@ class MainActivity : Activity() {
     }
 
     private fun startTrackingIfPossible(requestIfMissing: Boolean) {
-        if (Prefs.isTrackingPaused(this)) return
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) return
         if (!hasLocationPermission()) {
             if (requestIfMissing) {
                 startAfterPermissionGrant = true
@@ -534,10 +563,13 @@ class MainActivity : Activity() {
     private fun refreshControls() {
         statsHandler.removeCallbacks(statsRefresh)
         statsRefreshScheduled = false
-        if (Prefs.isTrackingPaused(this) || !hasLocationPermission() || !locationManager.isLocationEnabled) renderer?.clearCurrentLocation()
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
+            !hasLocationPermission() || !locationManager.isLocationEnabled
+        ) renderer?.clearCurrentLocation()
         val manualOnly = Prefs.isManualOnly(this)
         val active = TrackingService.isRunning
         statusText.text = when {
+            Prefs.isDeviceDataDeletionPending(this) -> "Finishing device data deletion…"
             Prefs.isTrackingPaused(this) -> getString(R.string.tracking_paused)
             !hasLocationPermission() && hasApproximateLocationPermission() -> "Precise location required"
             !hasLocationPermission() -> "Location permission required"
@@ -551,12 +583,21 @@ class MainActivity : Activity() {
             if (generation != summaryGeneration) return@execute
             val result = runCatching {
                 val summary = repository.getSummary()
-                val progression = ProgressionManager.sync(this, summary)
-                val unlocked = Achievements.newlyUnlocked(
-                    this,
-                    summary,
-                    ProgressionManager.metrics(progression)
-                )
+                val deleting = Prefs.isDeviceDataDeletionPending(this)
+                val progression = if (deleting) {
+                    ProgressionRepository(this).snapshot()
+                } else {
+                    ProgressionManager.sync(this, summary)
+                }
+                val unlocked = if (deleting) {
+                    emptyList()
+                } else {
+                    Achievements.newlyUnlocked(
+                        this,
+                        summary,
+                        ProgressionManager.metrics(progression)
+                    )
+                }
                 Triple(summary, progression, unlocked)
             }
             runOnUiThread {
@@ -590,7 +631,10 @@ class MainActivity : Activity() {
             }
         }
 
-        if (Prefs.isTrackingPaused(this)) {
+        if (Prefs.isDeviceDataDeletionPending(this)) {
+            enableButton.text = "Deleting device data…"
+            enableButton.isEnabled = false
+        } else if (Prefs.isTrackingPaused(this)) {
             enableButton.text = getString(R.string.resume_tracking)
             enableButton.isEnabled = true
         } else if (!manualOnly) {
@@ -831,7 +875,7 @@ class MainActivity : Activity() {
     }
 
     private fun showFreshCachedLocation() {
-        if (Prefs.isTrackingPaused(this)) return
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) return
         if (!hasLocationPermission() || !::locationManager.isInitialized || !locationManager.isLocationEnabled) return
         val providers = buildList {
             LocationProviders.preferred(locationManager)?.let(::add)
@@ -869,7 +913,9 @@ class MainActivity : Activity() {
     }
 
     private fun startPreviewLocation() {
-        if (Prefs.isTrackingPaused(this) || !resumed || !hasLocationPermission() || TrackingService.isRunning || !locationManager.isLocationEnabled) return
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) || !resumed ||
+            !hasLocationPermission() || TrackingService.isRunning || !locationManager.isLocationEnabled
+        ) return
         stopPreviewLocation()
         baselinePreviewCapturedForRegistration = false
         baselinePreviewRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()

@@ -65,10 +65,11 @@ object AccountStore {
 
     @Synchronized
     fun clear(context: Context) {
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
-        // Verification consent is account-scoped. Losing, expiring or explicitly clearing the
-        // session must never let a future account inherit precise GPS upload consent.
+        // Disable precise-GPS sharing first, then durably remove the local bearer session.
+        // Both changes must survive an abrupt process death immediately after logout/deletion.
         Prefs.setDriveVerificationEnabled(context, false)
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().clear().commit()
     }
 
     @Synchronized
