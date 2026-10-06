@@ -452,7 +452,9 @@ class SettingsActivity : Activity() {
     override fun onDestroy() {
         summaryGeneration++
         summaryExecutor.shutdownNow()
-        accountExecutor.shutdownNow()
+        // Confirmed account/privacy writes must finish even if Settings closes immediately.
+        // UI callbacks already ignore a destroyed Activity.
+        accountExecutor.shutdown()
         // A confirmed privacy deletion must finish even if the Settings screen closes.
         // UI callbacks already ignore a destroyed Activity.
         dataExecutor.shutdown()
