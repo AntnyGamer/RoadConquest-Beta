@@ -1,7 +1,7 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.location.Location
-import com.roadfog.app.data.TrackingRepository
+import com.roadconquest.app.data.TrackingRepository
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
@@ -62,7 +62,7 @@ class MatchingRetryTest {
                 accuracy = 5f; time = 1_000_000L + index * 3_000L
             }) }
             field(service, "repository").set(service, repo)
-            field(service, "matcher").set(service, com.roadfog.app.matching.OsrmMatcher(server.url("/").toString().trimEnd('/')))
+            field(service, "matcher").set(service, com.roadconquest.app.matching.OsrmMatcher(server.url("/").toString().trimEnd('/')))
             field(service, "ready").setBoolean(service, true)
             val executor = field(service, "matchingExecutor").get(service) as ScheduledExecutorService
             val run = TrackingService::class.java.getDeclaredMethod("maybeRunMatching", Boolean::class.javaPrimitiveType)

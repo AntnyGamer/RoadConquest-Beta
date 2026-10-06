@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.Manifest
 import android.content.BroadcastReceiver
@@ -8,7 +8,7 @@ import android.location.LocationManager
 import android.os.Handler
 import android.widget.Button
 import android.widget.TextView
-import com.roadfog.app.data.TrackingRepository
+import com.roadconquest.app.data.TrackingRepository
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

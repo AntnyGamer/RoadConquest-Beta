@@ -1,11 +1,11 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.location.LocationManager
 import android.location.Location
-import com.roadfog.app.util.LocationProviders
+import com.roadconquest.app.util.LocationProviders
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

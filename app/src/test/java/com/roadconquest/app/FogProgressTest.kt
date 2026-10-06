@@ -1,12 +1,12 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.location.Location
 import android.os.SystemClock
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.account.VerifiedDriving
-import com.roadfog.app.map.OverlayRoads
-import com.roadfog.app.matching.OsrmMatcher
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.account.VerifiedDriving
+import com.roadconquest.app.map.OverlayRoads
+import com.roadconquest.app.matching.OsrmMatcher
+import com.roadconquest.app.util.Prefs
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*

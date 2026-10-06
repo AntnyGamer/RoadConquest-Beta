@@ -1,8 +1,8 @@
-package com.roadfog.app.account
+package com.roadconquest.app.account
 
 import android.location.Location
 import android.os.SystemClock
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.util.Prefs
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before

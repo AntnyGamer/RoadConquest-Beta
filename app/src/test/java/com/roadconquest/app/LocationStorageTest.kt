@@ -1,9 +1,9 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.location.Location
 import android.os.SystemClock
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.account.VerifiedDriving
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.account.VerifiedDriving
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

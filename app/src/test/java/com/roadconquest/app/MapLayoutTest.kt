@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.content.Context
 import android.view.Gravity

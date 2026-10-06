@@ -1,6 +1,6 @@
-package com.roadfog.app.achievements
+package com.roadconquest.app.achievements
 
-import com.roadfog.app.data.DataSummary
+import com.roadconquest.app.data.DataSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
