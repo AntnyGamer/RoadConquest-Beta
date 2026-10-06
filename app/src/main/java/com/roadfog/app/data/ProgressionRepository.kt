@@ -336,6 +336,7 @@ class ProgressionRepository(context: Context) {
     /** Future rewarded-ad SDK callbacks should call this only after a completed view is confirmed. */
     fun recordCompletedAd(): Long = synchronized(dbHelper.historyLock) {
         val db = dbHelper.writableDatabase
+        if (!isCurrentHistory()) return@synchronized counter(db, COUNTER_ADS_WATCHED)
         val next = counter(db, COUNTER_ADS_WATCHED) + 1L
         putCounter(db, COUNTER_ADS_WATCHED, next)
         next
@@ -344,6 +345,7 @@ class ProgressionRepository(context: Context) {
     fun purchase(itemId: String, cost: Long): PurchaseResult {
         require(itemId.isNotBlank() && cost >= 0L)
         return synchronized(dbHelper.historyLock) {
+            check(isCurrentHistory()) { "Progress reset during purchase" }
             val db = dbHelper.writableDatabase
             db.beginTransaction()
             try {
