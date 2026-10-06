@@ -12,9 +12,12 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import android.text.InputType
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -86,6 +89,7 @@ class SettingsActivity : Activity() {
         accountSummaryText = findViewById(R.id.accountSummaryText)
         leaderboardPrivacySwitch = findViewById(R.id.leaderboardPrivacySwitch)
         deleteDeviceDataButton = findViewById(R.id.deleteDeviceDataButton)
+        deleteDeviceDataButton.isEnabled = false
         findViewById<TextView>(R.id.appVersionText).text =
             getString(R.string.app_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
 
@@ -129,7 +133,6 @@ class SettingsActivity : Activity() {
         }
 
         findViewById<Button>(R.id.privacyPolicyButton).setOnClickListener { openAccountPage("/privacy") }
-        findViewById<Button>(R.id.accountDeletionWebButton).setOnClickListener { openAccountPage("/delete-account") }
 
         findViewById<Button>(R.id.githubButton).setOnClickListener {
             val url = getString(R.string.github_repository_url)
@@ -245,40 +248,104 @@ class SettingsActivity : Activity() {
 
     private fun showDeleteDeviceDataDialog() {
         if (deletingDeviceData) return
-        AlertDialog.Builder(this)
-            .setTitle("Delete device data?")
+        val session = AccountStore.load(this)
+        if (session == null || !AccountClient.isConfigured()) {
+            Toast.makeText(
+                this,
+                "Sign in to your Road Conquest account before deleting all data.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val density = resources.displayMetrics.density
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * density).toInt(), 0, (24 * density).toInt(), 0)
+        }
+        val password = EditText(this).apply {
+            hint = "Current password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSingleLine = true
+            maxEms = 32
+            saveEnabled = false
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
+            setAutofillHints(View.AUTOFILL_HINT_PASSWORD)
+            contentDescription = "Current password for delete all data"
+        }
+        val error = TextView(this)
+        fields.addView(password)
+        fields.addView(error)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Delete all data?")
             .setMessage(
-                "Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone, stop tracking, and turn off verified-drive GPS sharing. " +
-                    "Your cloud account and leaderboard scores stay. Exported files must be deleted separately. This cannot be undone."
+                "This permanently deletes your Road Conquest cloud account and all saved data on this phone, including trips, mileage, roads, explored places, points, purchases and cosmetics. Tracking stops and verified-drive sharing turns off. Exported files must be deleted separately. This cannot be undone."
             )
+            .setView(fields)
             .setNegativeButton("Cancel", null)
-            .setPositiveButton("Delete device data") { _, _ ->
-                LocalDataReset.stopTracking(applicationContext)
+            .setPositiveButton("Delete all data", null)
+            .create()
+
+        dialog.setOnDismissListener { password.text.clear() }
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val currentPassword = password.text.toString()
+                if (currentPassword.isEmpty()) {
+                    error.text = "Enter your current password to delete all data."
+                    return@setOnClickListener
+                }
+
+                dialog.dismiss()
                 deletingDeviceData = true
                 deleteDeviceDataButton.isEnabled = false
-                manualOnlySwitch.isChecked = true
-                manualOnlySwitch.isEnabled = false
                 dataExecutor.execute {
-                    val result = runCatching { LocalDataReset.clearStoppedData(applicationContext) }
+                    var accountDeleted = false
+                    val result = runCatching {
+                        // The server verifies the current password before deleting the cloud
+                        // account. Local data is untouched if password confirmation fails.
+                        AccountClient.deleteAccount(session.token, currentPassword)
+                        accountDeleted = true
+                        synchronized(AccountStore) {
+                            if (AccountStore.load(applicationContext)?.token == session.token) {
+                                AccountStore.clear(applicationContext)
+                            }
+                        }
+                        LocalDataReset.stopTracking(applicationContext)
+                        LocalDataReset.clearStoppedData(applicationContext)
+                    }
                     runOnUiThread {
                         if (isDestroyed) return@runOnUiThread
                         deletingDeviceData = false
-                        deleteDeviceDataButton.isEnabled = true
                         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
                         manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
+                        deleteDeviceDataButton.isEnabled =
+                            AccountStore.load(this) != null && AccountClient.isConfigured() &&
+                                !Prefs.isDeviceDataDeletionPending(this)
                         result.fold(
                             onSuccess = {
-                                Toast.makeText(this, "Saved device data deleted. Tracking and verified-drive sharing are off.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    this,
+                                    "Account and all saved Road Conquest data deleted. Tracking is off.",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             },
-                            onFailure = {
-                                Toast.makeText(this, "Could not delete device data. Tracking is off; try again.", Toast.LENGTH_LONG).show()
+                            onFailure = { failure ->
+                                val message = if (accountDeleted) {
+                                    "Account deleted. Device cleanup will finish automatically when Road Conquest opens again."
+                                } else {
+                                    failure.message ?: "Could not confirm your password. No data was deleted."
+                                }
+                                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                             }
                         )
                         refreshSummary()
+                        refreshAccountControls()
                     }
                 }
             }
-            .show()
+        }
+        dialog.show()
     }
 
     private fun setupAppearance() {
@@ -356,6 +423,9 @@ class SettingsActivity : Activity() {
         }
         leaderboardPrivacySwitch.isChecked = session?.leaderboardVisible == true
         leaderboardPrivacySwitch.isEnabled = session != null && accountConfigured
+        deleteDeviceDataButton.isEnabled =
+            session != null && accountConfigured && !deletingDeviceData &&
+                !Prefs.isDeviceDataDeletionPending(this)
         renderingAccountPrivacy = false
 
         if (session == null || !accountConfigured) return
@@ -385,6 +455,7 @@ class SettingsActivity : Activity() {
                             accountSummaryText.text = "Session expired. Open Account / sign in."
                             leaderboardPrivacySwitch.isChecked = false
                             leaderboardPrivacySwitch.isEnabled = false
+                            deleteDeviceDataButton.isEnabled = false
                             renderingAccountPrivacy = false
                         }
                     }
