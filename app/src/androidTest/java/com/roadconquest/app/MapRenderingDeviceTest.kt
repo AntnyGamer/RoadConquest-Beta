@@ -29,6 +29,7 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
@@ -192,7 +193,7 @@ class MapRenderingDeviceTest {
                         }
                     }
                 }
-                for ((zoom, bearing) in listOf(9.0 to 0.0, 11.0 to 60.0)) {
+                for ((zoom, bearing) in listOf(8.0 to 0.0, 9.0 to 30.0, 11.0 to 60.0)) {
                     move(LatLng(0.0, 0.0), zoom, bearing)
                     awaitPixels("Blue road pixels remain visible above fog at zoom $zoom") { bitmap ->
                         val point = map.projection.toScreenLocation(LatLng(0.0, 0.0))
@@ -321,11 +322,20 @@ class MapRenderingDeviceTest {
                 assertTrue(map.style!!.getLayer("roadconquest-country-overlays-fill") is FillLayer)
                 assertTrue(map.style!!.getLayer("roadconquest-state-overlays-fill") is FillLayer)
                 assertTrue(map.style!!.getLayer("roadconquest-town-overlays-fill") is FillLayer)
+                assertTrue(map.style!!.getLayer("roadconquest-country-overlays-outline") is LineLayer)
+                assertTrue(map.style!!.getLayer("roadconquest-state-overlays-outline") is LineLayer)
+                assertTrue(map.style!!.getLayer("roadconquest-town-overlays-outline") is LineLayer)
+                assertTrue(map.style!!.getSource("roadconquest-country-overlay-boundaries") is GeoJsonSource)
+                assertTrue(map.style!!.getSource("roadconquest-state-overlay-boundaries") is GeoJsonSource)
+                assertTrue(map.style!!.getSource("roadconquest-town-overlay-boundaries") is GeoJsonSource)
                 val ids = map.style!!.layers.map { it.id }
-                assertTrue(ids.indexOf("roadconquest-country-overlays-fill") < ids.indexOf("roadconquest-state-overlays-fill"))
-                assertTrue(ids.indexOf("roadconquest-state-overlays-fill") < ids.indexOf("roadconquest-town-overlays-fill"))
-                assertTrue(ids.indexOf("roadconquest-town-overlays-fill") < ids.indexOf("roadconquest-world-fog-raster"))
-                assertTrue(ids.indexOf("roadconquest-town-overlays-fill") < ids.indexOf("roadconquest-fog-raster"))
+                assertTrue(ids.indexOf("roadconquest-country-overlays-fill") < ids.indexOf("roadconquest-country-overlays-outline"))
+                assertTrue(ids.indexOf("roadconquest-country-overlays-outline") < ids.indexOf("roadconquest-state-overlays-fill"))
+                assertTrue(ids.indexOf("roadconquest-state-overlays-fill") < ids.indexOf("roadconquest-state-overlays-outline"))
+                assertTrue(ids.indexOf("roadconquest-state-overlays-outline") < ids.indexOf("roadconquest-town-overlays-fill"))
+                assertTrue(ids.indexOf("roadconquest-town-overlays-fill") < ids.indexOf("roadconquest-town-overlays-outline"))
+                assertTrue(ids.indexOf("roadconquest-town-overlays-outline") < ids.indexOf("roadconquest-world-fog-raster"))
+                assertTrue(ids.indexOf("roadconquest-town-overlays-outline") < ids.indexOf("roadconquest-fog-raster"))
             }
         }
     }
