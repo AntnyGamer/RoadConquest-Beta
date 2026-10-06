@@ -20,7 +20,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.account.AccountClient
 import com.roadfog.app.account.AccountStore
-import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.progression.ProgressionManager
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.util.Appearance
