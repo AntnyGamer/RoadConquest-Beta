@@ -81,6 +81,32 @@ class AppearanceTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+    @Test fun privacyAndDeletionPagesOpenFromSettings() {
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
+        try {
+            val activity = controller.get()
+            activity.findViewById<Button>(R.id.privacyPolicyButton).performClick()
+            assertTrue(shadowOf(activity).nextStartedActivity.data.toString().endsWith("/privacy"))
+            activity.findViewById<Button>(R.id.accountDeletionWebButton).performClick()
+            assertTrue(shadowOf(activity).nextStartedActivity.data.toString().endsWith("/delete-account"))
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun locationDisclosureAppearsBeforeFirstLocationPermissionFlow() {
+        val app = RuntimeEnvironment.getApplication()
+        Prefs.setAccountPromptShown(app, true)
+        Prefs.setManualOnly(app, true)
+        assertFalse(Prefs.isLocationDisclosureShown(app))
+        val controller = Robolectric.buildActivity(MainActivity::class.java).create().start().resume()
+        try {
+            val dialog = ShadowAlertDialog.getLatestAlertDialog()
+            assertEquals("Location use", dialog.findViewById<android.widget.TextView>(android.R.id.alertTitle)?.text?.toString())
+            assertTrue(dialog.findViewById<android.widget.TextView>(android.R.id.message)?.text?.toString()?.contains("background") == true)
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick()
+            assertTrue(Prefs.isLocationDisclosureShown(app))
+        } finally { controller.pause().stop().destroy() }
+    }
+
     @Test fun settingsUsesGroupedModernCards() {
         val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
         try {
