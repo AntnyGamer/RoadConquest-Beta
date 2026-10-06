@@ -35,7 +35,8 @@ Its internal Android version code is 33.
   Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
 - Use automatic tracking or control it manually. Stop tracking from the foreground notification.
 - Export driving history, road geometry, explored places, place discoveries, point awards,
-  purchases and progression counters from Settings. Device-data deletion also lives under Settings → Data and privacy.
+  purchases and progression counters from Settings. Device-data deletion also lives under Settings → Data and privacy,
+  stops tracking, turns off verified-drive GPS sharing, and removes private interrupted-export snapshots.
 - Create an optional account, change your username, manage leaderboard visibility or delete your
   account. Device history can also be deleted while offline.
 
@@ -68,7 +69,9 @@ Competitive roads count distinct OSM way sections, rather than whole named stree
 Leaderboard visibility and live GPS sharing are separate settings. New accounts can be visible on
 leaderboards, but verified-drive GPS sharing remains off until the user explicitly enables it in Settings.
 Deleting an account revokes its sessions and removes its cloud competitive data; the default
-deletion option also clears history on this phone. Other devices and exported files are separate.
+deletion option also clears history on this phone. Deleting device data also disables verified-drive
+GPS sharing before tracking shuts down, so queued evidence is not submitted afterward. Other devices
+and user-saved exported files are separate.
 
 Moving GPS gaps longer than 30 seconds start a new matching interval; nearby stationary pauses can
 still reconnect without inventing a route across a location outage.
@@ -101,7 +104,8 @@ from Git.
 
 GitHub Actions runs account/database tests, Android unit tests, debug and release lint, and native
 map integration tests on Android 12, 15 and 17. The release job publishes the verified APK only after
-all required jobs pass. It also attaches the exact account-function bundle produced by the tested
+all required jobs pass and only when that version tag does not already exist; ordinary commits at an
+already-published version are verified without retargeting or overwriting the release. It also attaches the exact account-function bundle produced by the tested
 backend job, so the deployable server artifact for that release is preserved alongside the APK. It verifies the permanent signing-certificate digest and includes the source
 ZIP and checksums. Configure these repository secrets from the private signing backup:
 
