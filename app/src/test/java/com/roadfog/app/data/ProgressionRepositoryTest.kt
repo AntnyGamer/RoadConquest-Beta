@@ -225,8 +225,12 @@ class ProgressionRepositoryTest {
             assertEquals(0L, it.countries)
         }
 
-        // Once the exact baseline exists, an ordinary later place can earn discovery credit.
-        val next = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
+        // Pre-baseline candidates are discarded; only a candidate observed after the baseline
+        // completes can earn discovery credit.
+        assertTrue(progression.pendingPlaceCandidates(nowMillis = 4_000L).isEmpty())
+        later.time = 5_000L
+        assertTrue(progression.recordPlaceCandidate(later))
+        val next = progression.pendingPlaceCandidates(nowMillis = 6_000L).single()
         assertEquals(
             1,
             progression.resolveCandidate(
@@ -303,6 +307,47 @@ class ProgressionRepositoryTest {
         )
         assertEquals(listOf("Glassboro"), progression.visitedPlaces(PlaceKind.TOWN).map { it.displayName })
         assertEquals(0L, progression.snapshot().towns)
+        assertEquals(0L, progression.snapshot().balance)
+    }
+
+    @Test fun partialBaselineTemporarilyBlocksRewardCandidatesThenReleasesAfterRepeatedPartialResults() {
+        val progression = ProgressionRepository(context)
+        val start = android.location.Location("gps").apply {
+            latitude = 39.7
+            longitude = -75.1
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(start))
+        val later = android.location.Location("gps").apply {
+            latitude = 40.0
+            longitude = -75.0
+            accuracy = 5f
+            time = 2_000L
+        }
+        assertFalse(progression.recordPlaceCandidate(later))
+
+        var candidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+        val partial = listOf(
+            PlaceDiscovery(
+                PlaceKind.COUNTRY, "us", "United States",
+                visitedAt = candidate.visitedAt, latitude = candidate.latitude, longitude = candidate.longitude
+            ),
+            PlaceDiscovery(
+                PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States",
+                candidate.visitedAt, candidate.latitude, candidate.longitude
+            )
+        )
+        progression.resolveCandidate(candidate, partial)
+        candidate = progression.pendingPlaceCandidates(nowMillis = System.currentTimeMillis() + 61_000L)
+            .first { it.cellX == Long.MIN_VALUE }
+        progression.resolveCandidate(candidate, partial)
+        candidate = progression.pendingPlaceCandidates(nowMillis = System.currentTimeMillis() + 3 * 60_000L)
+            .first { it.cellX == Long.MIN_VALUE }
+        progression.resolveCandidate(candidate, partial)
+
+        assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).none { it.cellX == Long.MIN_VALUE })
+        assertTrue(progression.recordPlaceCandidate(later))
         assertEquals(0L, progression.snapshot().balance)
     }
 
