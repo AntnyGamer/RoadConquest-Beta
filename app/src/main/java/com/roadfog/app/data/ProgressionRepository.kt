@@ -421,7 +421,7 @@ class ProgressionRepository(context: Context) {
         val purchases = linkedSetOf<String>()
         db.query("progression_purchases", arrayOf("item_id"), null, null, null, null, "purchased_at ASC")
             .use { cursor -> while (cursor.moveToNext()) purchases += cursor.getString(0) }
-        return ProgressionSnapshot(
+        ProgressionSnapshot(
             balance = (earned - spent).coerceAtLeast(0L),
             lifetimeEarned = earned,
             pointsSpent = spent,
