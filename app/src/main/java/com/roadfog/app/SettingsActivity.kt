@@ -21,6 +21,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.account.AccountClient
 import com.roadfog.app.account.AccountStore
+import com.roadfog.app.data.LocalDataReset
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.export.DataExporter
 import com.roadfog.app.util.Prefs
@@ -57,9 +58,12 @@ class SettingsActivity : Activity() {
     private lateinit var summaryText: TextView
     private lateinit var accountSummaryText: TextView
     private lateinit var leaderboardPrivacySwitch: Switch
+    private lateinit var deleteDeviceDataButton: Button
     private var renderingAccountPrivacy = false
+    private var deletingDeviceData = false
     private val summaryExecutor = Executors.newSingleThreadExecutor()
     private val accountExecutor = Executors.newSingleThreadExecutor()
+    private val dataExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var summaryGeneration = 0
     private var appliedGoldUi = false
 
@@ -81,6 +85,7 @@ class SettingsActivity : Activity() {
         summaryText = findViewById(R.id.dataSummaryText)
         accountSummaryText = findViewById(R.id.accountSummaryText)
         leaderboardPrivacySwitch = findViewById(R.id.leaderboardPrivacySwitch)
+        deleteDeviceDataButton = findViewById(R.id.deleteDeviceDataButton)
 
         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
         manualOnlySwitch.setOnCheckedChangeListener { _, checked ->
@@ -135,6 +140,8 @@ class SettingsActivity : Activity() {
             AlertDialog.Builder(this).setTitle("Licenses and map credits").setMessage(credits)
                 .setPositiveButton("Close", null).show()
         }
+
+        deleteDeviceDataButton.setOnClickListener { showDeleteDeviceDataDialog() }
 
         findViewById<Button>(R.id.exportButton).setOnClickListener {
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -212,6 +219,41 @@ class SettingsActivity : Activity() {
 
     private fun openBatteryOptimizationSettings() {
         SystemSettingsNavigator.open(this, SystemSettingsNavigator.Destination.BATTERY)
+    }
+
+    private fun showDeleteDeviceDataDialog() {
+        if (deletingDeviceData) return
+        AlertDialog.Builder(this)
+            .setTitle("Delete device data?")
+            .setMessage(
+                "Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone and stop tracking. " +
+                    "Your cloud account and leaderboard scores stay. Exported files must be deleted separately. This cannot be undone."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete device data") { _, _ ->
+                LocalDataReset.stopTracking(applicationContext)
+                deletingDeviceData = true
+                deleteDeviceDataButton.isEnabled = false
+                dataExecutor.execute {
+                    val result = runCatching { LocalDataReset.clearStoppedData(applicationContext) }
+                    runOnUiThread {
+                        if (isDestroyed) return@runOnUiThread
+                        deletingDeviceData = false
+                        deleteDeviceDataButton.isEnabled = true
+                        manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+                        result.fold(
+                            onSuccess = {
+                                Toast.makeText(this, "Saved device data deleted. Tracking is off.", Toast.LENGTH_SHORT).show()
+                            },
+                            onFailure = {
+                                Toast.makeText(this, "Could not delete device data. Tracking is off; try again.", Toast.LENGTH_LONG).show()
+                            }
+                        )
+                        refreshSummary()
+                    }
+                }
+            }
+            .show()
     }
 
     private fun setupAppearance() {
@@ -411,6 +453,7 @@ class SettingsActivity : Activity() {
         summaryGeneration++
         summaryExecutor.shutdownNow()
         accountExecutor.shutdownNow()
+        dataExecutor.shutdownNow()
         super.onDestroy()
     }
 

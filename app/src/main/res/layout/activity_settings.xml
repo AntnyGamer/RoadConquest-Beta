@@ -344,6 +344,22 @@
                 android:layout_marginTop="12dp"
                 android:text="Export my data (.zip)" />
 
+            <Button
+                android:id="@+id/deleteDeviceDataButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Delete data on this device" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:text="Deletes local trips, mileage, roads, explored places, points, purchases and cosmetics. Your cloud account and leaderboard scores stay."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="12sp" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
