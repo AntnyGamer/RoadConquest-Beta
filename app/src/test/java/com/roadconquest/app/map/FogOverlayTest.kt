@@ -37,21 +37,23 @@ class FogOverlayTest {
     private fun alpha(x: Int, y: Int, request: FogBitmapRenderer.Request): Int =
         Color.alpha(FogBitmapRenderer.render(request).getPixel(x, y))
 
-    @Test fun roadFadeIsContinuousAndReachesMaximumAt1500Feet() {
+    @Test fun roadFadeKeepsClearCoreButAvoidsARegionalGlow() {
         val roads = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
         val screen = doubleArrayOf(-200.0, 300.0, 900.0, 300.0)
         val rendered = FogBitmapRenderer.render(request(roads, screen, 6.0 * 0.3048))
 
         assertEquals(0, Color.alpha(rendered.getPixel(320, 305))) // 30 feet: fully clear.
         assertEquals(0, Color.alpha(rendered.getPixel(320, 307))) // 42 feet: same clear core.
-        assertTrue(Color.alpha(rendered.getPixel(320, 315)) in 3..9) // Fade has begun at 90 feet.
-        assertTrue(Color.alpha(rendered.getPixel(320, 437)) in 105..112)
+        assertTrue(Color.alpha(rendered.getPixel(320, 315)) in 8..24) // Fade starts after 50 feet.
+        assertTrue(Color.alpha(rendered.getPixel(320, 350)) in 82..102) // ~300 feet.
+        assertTrue(Color.alpha(rendered.getPixel(320, 425)) in 154..172) // ~750 feet.
+        assertTrue(Color.alpha(rendered.getPixel(320, 500)) in 186..198) // ~1200 feet.
         assertTrue(Color.alpha(rendered.getPixel(320, 525)) < 204)
         assertEquals(204, Color.alpha(rendered.getPixel(320, 551)))
 
         val samples = (310..545).map { Color.alpha(rendered.getPixel(320, it)) }
-        assertTrue(samples.zipWithNext().all { (a, b) -> b >= a && b - a <= 3 })
-        assertTrue(samples.distinct().size > 150)
+        assertTrue(samples.zipWithNext().all { (a, b) -> b >= a && b - a <= 5 })
+        assertTrue(samples.distinct().size > 100)
     }
 
     @Test fun liveLocationClearingUsesPhysicalMetersAndFogCanRemainOpaqueElsewhere() {
@@ -62,7 +64,7 @@ class FogOverlayTest {
         ))
         assertEquals(0, Color.alpha(rendered.getPixel(305, 300)))
         assertTrue(Color.alpha(rendered.getPixel(320, 300)) > 0)
-        assertTrue(Color.alpha(rendered.getPixel(430, 300)) in 108..118)
+        assertTrue(Color.alpha(rendered.getPixel(430, 300)) in 160..180)
         assertEquals(204, Color.alpha(rendered.getPixel(600, 300)))
         assertEquals(204, Color.alpha(rendered.getPixel(20, 20)))
     }
@@ -94,7 +96,7 @@ class FogOverlayTest {
         assertEquals(0, Color.alpha(rendered.getPixel(300, 300)))
         assertEquals(0, Color.alpha(rendered.getPixel(305, 300)))
         assertTrue(Color.alpha(rendered.getPixel(320, 300)) > 0)
-        assertTrue(Color.alpha(rendered.getPixel(430, 300)) in 108..118)
+        assertTrue(Color.alpha(rendered.getPixel(430, 300)) in 160..180)
         assertEquals(204, Color.alpha(rendered.getPixel(600, 300)))
     }
 
@@ -157,10 +159,11 @@ class FogOverlayTest {
     }
 
     @Test fun wideZoomFogUsesSmallerUploadBitmaps() {
-        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(7.9))
-        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(8.0))
+        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(8.9))
+        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(9.0))
         assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(11.9))
         assertEquals(768, FogBitmapRenderer.bitmapDimensionForZoom(12.0))
+        assertTrue(FogBitmapRenderer.MIN_ROAD_ZOOM < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM)
     }
 
     @Test fun overviewRoadRevealDoesNotCollapseBelowOneScreenPixel() {
