@@ -1,8 +1,6 @@
 package com.roadconquest.app
 
 import android.view.View
-import android.app.AlertDialog
-import android.os.Looper
 import android.location.Location
 import android.view.WindowManager
 import android.widget.Button
@@ -25,7 +23,6 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.SQLiteMode
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
