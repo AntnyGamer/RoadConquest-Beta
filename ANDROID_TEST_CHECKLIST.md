@@ -51,7 +51,8 @@ This checklist is for final device-level validation on supported Android 12+ pho
 3. Verify town/state/country achievement progress reflects the discovery counts.
 4. At 5% battery while RoadConquest is open or tracking, verify **Running on Fumes** unlocks once.
    At 1%, verify **Last Percent** unlocks once. Ordinary battery levels must not affect progression.
-5. Confirm ad achievements display 5/10/25/50/100 goals but cannot advance in this release because no ad
+5. Confirm achievement category buttons show **Roads**, **Distance**, **Places**, **Ads**, and **Extra**. Battery achievements belong to Extra; ad milestones belong only to Ads.
+6. Confirm ad achievements display 5/10/25/50/100 goals but cannot advance in this release because no ad
    provider is bundled yet.
 
 ## Export
@@ -73,7 +74,7 @@ If all of the above pass on the target Android device and firmware, that provide
 - Change a username using the current password; verify the new name in Account settings and
   after signing in again, with scores and privacy preserved. A taken name or wrong password
   must leave the original account unchanged.
-- Cancel both deletion confirmations and verify that all data remains.
+- Cancel both deletion confirmations and verify that all data remains. The device-data control is under **Settings → Data and privacy**.
 - Delete an account with the current password; verify that all old sessions stop working.
   The default local-history option clears trips, mileage, roads, explored places, points, purchases and cosmetics.
 - Delete device data while offline and signed out. Tracking stops, history and fog reveals
