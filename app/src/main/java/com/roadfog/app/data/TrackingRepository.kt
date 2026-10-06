@@ -609,16 +609,10 @@ class TrackingRepository(context: Context) {
             while (cursor.moveToNext()) {
                 val point = cursor.toTrackPoint()
                 val before = previous
-                var continuous = false
-                if (before != null && before.id + 1 == point.id && (!before.matched || !point.matched) &&
-                    before.accuracyMeters in 0f..50f && point.accuracyMeters in 0f..50f) {
-                    val gap = point.timestampMillis - before.timestampMillis
-                    val distance = MATCH_DISTANCE_RESULT.get()
-                    Location.distanceBetween(before.latitude, before.longitude, point.latitude, point.longitude, distance)
-                    continuous = gap in 1..MAX_STOP_GAP_MS && distance[0].isFinite() &&
-                        distance[0] <= gap / 1000.0 * MAX_MATCH_SPEED_MPS &&
-                        (gap <= MATCH_CLUSTER_GAP_MS || distance[0] <= MAX_STOP_GAP_DISTANCE_M)
-                }
+                val continuous = before != null && before.id + 1 == point.id &&
+                    (!before.matched || !point.matched) &&
+                    before.accuracyMeters in 0f..50f && point.accuracyMeters in 0f..50f &&
+                    isMatchingContinuation(before, point, MATCH_CLUSTER_GAP_MS)
                 if (continuous) {
                     if (coordinates.length() == 0) add(requireNotNull(before))
                     add(point)
@@ -998,8 +992,10 @@ class TrackingRepository(context: Context) {
         if (!distance[0].isFinite() || distance[0] > gap / 1_000f * MAX_MATCH_SPEED_MPS) return false
         if (gap <= ordinaryGapMs) return true
         if (distance[0] > MAX_STOP_GAP_DISTANCE_M) return false
-        return gap <= MAX_STOP_GAP_MS ||
-            older.speedMps < STOP_GAP_SPEED_MPS || newer.speedMps < STOP_GAP_SPEED_MPS
+        // Beyond the normal GPS window, proximity alone is not proof of continuity: a moving
+        // car can disappear and later return near the same point. Real traffic-light/parking
+        // pauses supply a low-speed anchor, which is the evidence needed for a longer join.
+        return older.speedMps < STOP_GAP_SPEED_MPS || newer.speedMps < STOP_GAP_SPEED_MPS
     }
 
     companion object {
@@ -1032,7 +1028,6 @@ class TrackingRepository(context: Context) {
 
         private const val MATCH_CLUSTER_GAP_MS = 30_000L
         private const val MATCH_ANCHOR_MAX_GAP_MS = 30_000L
-        private const val MAX_STOP_GAP_MS = 5 * 60_000L
         private const val MAX_STOP_CONTINUATION_MS = 15 * 60_000L
         private const val MAX_STOP_GAP_DISTANCE_M = 120f
         private const val STOP_GAP_SPEED_MPS = 2.2f
