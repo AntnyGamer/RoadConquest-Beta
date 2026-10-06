@@ -26,6 +26,11 @@ class ProgressionRepositoryTest {
     }
 
     @Test fun resetLocalProgressionAlsoClearsAchievementPreferenceState() {
+        com.roadfog.app.util.Prefs.setCarStyle(context, "sport")
+        com.roadfog.app.util.Prefs.setCarColor(context, "red")
+        com.roadfog.app.util.Prefs.setRoadColor(context, "gold")
+        com.roadfog.app.util.Prefs.setGoldUiEnabled(context, true)
+        com.roadfog.app.util.Prefs.setPlaceOverlayMode(context, com.roadfog.app.map.PlaceOverlayMode.TOWN)
         Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 100))
         assertTrue(
             Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
@@ -38,6 +43,11 @@ class ProgressionRepositoryTest {
             Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
                 .first { it.id == "roads_10" }.unlocked
         )
+        assertEquals("classic", com.roadfog.app.util.Prefs.carStyle(context))
+        assertEquals("blue", com.roadfog.app.util.Prefs.carColor(context))
+        assertEquals("blue", com.roadfog.app.util.Prefs.roadColor(context))
+        assertFalse(com.roadfog.app.util.Prefs.isGoldUiEnabled(context))
+        assertEquals(com.roadfog.app.map.PlaceOverlayMode.NONE, com.roadfog.app.util.Prefs.placeOverlayMode(context))
     }
 
     @Test fun roadAndAchievementPointsAreIdempotentAndNeverRetract() {
