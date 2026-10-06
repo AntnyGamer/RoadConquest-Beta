@@ -184,9 +184,6 @@ object DataExporter {
     )
 
     private fun writeProgression(database: SQLiteDatabase, zip: ZipOutputStream): ProgressionExportSummary {
-        var towns = 0L
-        var states = 0L
-        var countries = 0L
         zip.putNextEntry(ZipEntry("visited_places.csv"))
         zip.writer(Charsets.UTF_8).let { writer ->
             writer.write("kind,place_key,display_name,parent_name,country_name,first_visited_utc,latitude,longitude\n")
@@ -197,11 +194,6 @@ object DataExporter {
                 null, null, null, null, "first_visited_at ASC, kind, place_key"
             ).use { cursor ->
                 while (cursor.moveToNext()) {
-                    when (cursor.getString(0)) {
-                        "TOWN" -> towns++
-                        "STATE" -> states++
-                        "COUNTRY" -> countries++
-                    }
                     val fields = listOf(
                         cursor.getString(0), cursor.getString(1), cursor.getString(2),
                         cursor.getString(3), cursor.getString(4),
@@ -215,6 +207,23 @@ object DataExporter {
             writer.flush()
         }
         zip.closeEntry()
+
+        // The zero-point starter places remain in visited_places.csv for overlays/history, but
+        // discovery totals match the app: only places that actually earned a place reward count.
+        val rewardedCounts = mutableMapOf<String, Long>()
+        database.rawQuery(
+            """SELECT v.kind, COUNT(*)
+               FROM visited_places v
+               JOIN progression_rewards r
+                 ON r.reward_key = 'place:' || lower(v.kind) || ':' || v.place_key
+               GROUP BY v.kind""",
+            null
+        ).use { cursor ->
+            while (cursor.moveToNext()) rewardedCounts[cursor.getString(0)] = cursor.getLong(1)
+        }
+        val towns = rewardedCounts["TOWN"] ?: 0L
+        val states = rewardedCounts["STATE"] ?: 0L
+        val countries = rewardedCounts["COUNTRY"] ?: 0L
 
         var pending = 0L
         zip.putNextEntry(ZipEntry("place_candidates.csv"))
