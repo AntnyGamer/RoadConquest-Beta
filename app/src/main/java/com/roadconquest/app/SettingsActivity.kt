@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -267,7 +268,7 @@ class SettingsActivity : Activity() {
             hint = "Current password"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             isSingleLine = true
-            maxEms = 32
+            filters = arrayOf(android.text.InputFilter.LengthFilter(128))
             isSaveEnabled = false
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
             setAutofillHints(View.AUTOFILL_HINT_PASSWORD)
@@ -289,6 +290,7 @@ class SettingsActivity : Activity() {
 
         dialog.setOnDismissListener { password.text.clear() }
         dialog.setOnShowListener {
+            dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val currentPassword = password.text.toString()
                 if (currentPassword.isEmpty()) {
