@@ -337,6 +337,22 @@
                 android:textSize="13sp" />
 
             <Button
+                android:id="@+id/privacyPolicyButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Privacy policy" />
+
+            <Button
+                android:id="@+id/accountDeletionWebButton"
+                style="@style/RoadConquest.SettingsAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Account deletion webpage" />
+
+            <Button
                 android:id="@+id/exportButton"
                 style="@style/RoadConquest.SettingsAction"
                 android:layout_width="match_parent"
