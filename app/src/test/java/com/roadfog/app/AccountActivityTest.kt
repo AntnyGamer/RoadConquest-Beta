@@ -25,6 +25,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.SQLiteMode
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
@@ -184,4 +187,49 @@ class AccountActivityTest {
             })
         } finally { controller.pause().stop().destroy() }
     }
+
+    @Test fun confirmedDeviceDeletionFinishesAfterSettingsCloses() {
+        AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
+            .set(null, null)
+        val context = RuntimeEnvironment.getApplication()
+        val repository = TrackingRepository(context)
+        repository.insertLocation(Location("gps").apply {
+            latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
+        })
+        Prefs.setManualOnly(context, false)
+        Prefs.setDriveVerificationEnabled(context, true)
+
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
+        val activity = controller.get()
+        val executor = SettingsActivity::class.java.getDeclaredField("dataExecutor").let { field ->
+            field.isAccessible = true
+            field.get(activity) as ExecutorService
+        }
+        val blockerStarted = CountDownLatch(1)
+        val releaseBlocker = CountDownLatch(1)
+        executor.execute {
+            blockerStarted.countDown()
+            releaseBlocker.await(5, TimeUnit.SECONDS)
+        }
+        assertTrue(blockerStarted.await(5, TimeUnit.SECONDS))
+
+        activity.findViewById<Button>(R.id.deleteDeviceDataButton).performClick()
+        org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+            .getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+
+        // Close Settings while the authorized deletion is deliberately queued behind work.
+        // Graceful executor shutdown must keep that queued deletion alive.
+        controller.pause().stop().destroy()
+        releaseBlocker.countDown()
+
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (repository.getSummary().trackPointCount != 0L && System.nanoTime() < deadline) {
+            Thread.sleep(10)
+        }
+        assertEquals(0L, repository.getSummary().trackPointCount)
+        assertTrue(Prefs.isManualOnly(context))
+        assertFalse(Prefs.isTrackingPaused(context))
+        assertFalse(Prefs.isDriveVerificationEnabled(context))
+    }
+
 }
