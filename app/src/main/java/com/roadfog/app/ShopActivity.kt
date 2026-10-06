@@ -221,7 +221,10 @@ class ShopActivity : Activity() {
 
     override fun onDestroy() {
         generation++
-        executor.shutdownNow()
+        // A purchase the user already confirmed is a local state mutation and should finish
+        // even if the Garage screen closes immediately afterward. Stale UI callbacks are
+        // rejected by generation/isDestroyed checks.
+        executor.shutdown()
         super.onDestroy()
     }
 }
