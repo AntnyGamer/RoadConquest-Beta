@@ -69,6 +69,8 @@ object AccountClient {
         )
     }
 
+    fun publicPage(path: String): String? = endpoint(path)?.toString()
+
     fun competition(): JSONObject = request("/v1/competition", "GET", null, null)
 
     fun leaderboard(metric: String): JSONObject {
