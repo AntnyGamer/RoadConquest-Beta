@@ -383,6 +383,7 @@ class ProgressionRepositoryTest {
             isMock = true
         }
         assertFalse(progression.recordPlaceCandidate(mock))
+        assertFalse(progression.recordBaselineCandidate(mock))
         assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).isEmpty())
     }
 
