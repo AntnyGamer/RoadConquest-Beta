@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 10
+# Road Conquest 1.0 Beta 11
 
 - Add dedicated thin outline layers for country, state/region, and town overlays so neighboring explored areas remain visually separated while preserving the existing country → state → town → fog stacking order.
 - Keep overlay outlines anchored to geographic boundaries and rebuild line geometry from both Polygon and MultiPolygon boundary rings.
@@ -15,4 +15,4 @@
 - Add a CI gate that verifies 16 KB native-library ZIP alignment and 64-bit ELF LOAD-segment alignment before a Play release can be published.
 - Keep Android 12+ support, API 37 targeting, the permanent `com.roadconquest.app` package ID, accounts, local-data deletion, fog safety fallbacks, and release signing behavior unchanged unless listed above.
 
-Android version code is 36. Android 12 or newer is required.
+Android version code is 37. Android 12 or newer is required.
