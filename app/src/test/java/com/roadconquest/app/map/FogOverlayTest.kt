@@ -1,7 +1,7 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
 import android.graphics.Color
-import com.roadfog.app.data.RoadRecord
+import com.roadconquest.app.data.RoadRecord
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

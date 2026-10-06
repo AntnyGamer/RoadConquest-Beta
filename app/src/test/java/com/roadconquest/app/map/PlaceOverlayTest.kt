@@ -1,7 +1,7 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
-import com.roadfog.app.data.PlaceDiscovery
-import com.roadfog.app.data.PlaceKind
+import com.roadconquest.app.data.PlaceDiscovery
+import com.roadconquest.app.data.PlaceKind
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
