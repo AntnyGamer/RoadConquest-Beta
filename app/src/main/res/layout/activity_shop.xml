@@ -53,7 +53,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:paddingBottom="24dp"
-            android:text="Ad achievements are ready for a future rewarded-ad provider. RoadConquest will only count an ad after the provider confirms a completed view."
+            android:text="Ad achievements are ready for a future rewarded-ad provider. Road Conquest will only count an ad after the provider confirms a completed view."
             android:textColor="?attr/rcTextSecondary"
             android:textSize="12sp" />
     </LinearLayout>

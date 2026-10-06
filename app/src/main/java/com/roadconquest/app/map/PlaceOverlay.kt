@@ -1,0 +1,376 @@
+package com.roadconquest.app.map
+
+import android.content.Context
+import android.net.Uri
+import android.os.SystemClock
+import com.roadconquest.app.BuildConfig
+import com.roadconquest.app.data.PlaceDiscovery
+import com.roadconquest.app.data.PlaceKind
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.io.Reader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
+
+enum class PlaceOverlayMode(val kind: PlaceKind?, val label: String) {
+    NONE(null, "None"),
+    COUNTRY(PlaceKind.COUNTRY, "Countries"),
+    STATE(PlaceKind.STATE, "States and regions"),
+    TOWN(PlaceKind.TOWN, "Towns")
+}
+
+data class PlaceOverlayInfo(
+    val name: String,
+    val kind: PlaceKind,
+    val population: Long?,
+    val areaSquareKilometers: Double
+)
+
+data class PlaceOverlayData(
+    val key: String,
+    val name: String,
+    val kind: PlaceKind,
+    val population: Long?,
+    val areaSquareKilometers: Double,
+    val geometryJson: String
+) {
+    fun featureJson(): JSONObject = JSONObject()
+        .put("type", "Feature")
+        .put("properties", JSONObject()
+            .put("overlay_key", key)
+            .put("overlay_name", name)
+            .put("overlay_kind", kind.name)
+            .put("area_sq_km", areaSquareKilometers)
+            .also { properties -> population?.let { properties.put("population", it) } })
+        .put("geometry", JSONObject(geometryJson))
+}
+
+data class PlaceOverlayCacheResult(val cached: Boolean, val data: PlaceOverlayData?)
+
+object PlaceOverlayCache {
+    private const val DIRECTORY = "place-overlays-v2"
+    private const val NEGATIVE_CACHE_MS = 24L * 60L * 60L * 1000L
+    private val generation = AtomicLong()
+    private val mutationLock = Any()
+
+    fun generation(): Long = generation.get()
+
+    fun read(context: Context, place: PlaceDiscovery): PlaceOverlayCacheResult {
+        val file = file(context, place)
+        if (!file.isFile) return PlaceOverlayCacheResult(false, null)
+        return runCatching {
+            val json = JSONObject(file.readText())
+            if (!json.optBoolean("found", false)) {
+                val fetchedAt = json.optLong("fetched_at", 0L)
+                if (fetchedAt <= 0L || System.currentTimeMillis() - fetchedAt > NEGATIVE_CACHE_MS) {
+                    file.delete()
+                    PlaceOverlayCacheResult(false, null)
+                } else {
+                    PlaceOverlayCacheResult(true, null)
+                }
+            } else {
+                PlaceOverlayCacheResult(
+                    true,
+                    PlaceOverlayData(
+                        key = place.key,
+                        name = json.getString("name"),
+                        kind = PlaceKind.valueOf(json.getString("kind")),
+                        population = if (json.isNull("population")) null else json.getLong("population"),
+                        areaSquareKilometers = json.getDouble("area_sq_km"),
+                        geometryJson = json.getJSONObject("geometry").toString()
+                    )
+                )
+            }
+        }.getOrElse {
+            file.delete()
+            PlaceOverlayCacheResult(false, null)
+        }
+    }
+
+    fun write(
+        context: Context,
+        place: PlaceDiscovery,
+        data: PlaceOverlayData?,
+        expectedGeneration: Long? = null
+    ): Boolean = synchronized(mutationLock) {
+        if (expectedGeneration != null && generation.get() != expectedGeneration) return@synchronized false
+        val directory = File(context.applicationContext.filesDir, DIRECTORY)
+        if (!directory.exists() && !directory.mkdirs()) return@synchronized false
+        val json = JSONObject()
+            .put("found", data != null)
+            .put("fetched_at", System.currentTimeMillis())
+        if (data != null) {
+            json.put("name", data.name)
+                .put("kind", data.kind.name)
+                .put("population", data.population ?: JSONObject.NULL)
+                .put("area_sq_km", data.areaSquareKilometers)
+                .put("geometry", JSONObject(data.geometryJson))
+        }
+        runCatching { file(context, place).writeText(json.toString()) }.isSuccess
+    }
+
+    fun clear(context: Context) = synchronized(mutationLock) {
+        generation.incrementAndGet()
+        File(context.applicationContext.filesDir, DIRECTORY).deleteRecursively()
+        Unit
+    }
+
+    private fun file(context: Context, place: PlaceDiscovery): File {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest("${place.kind.name}|${place.key}".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(Locale.US, it.toInt() and 0xff) }
+        return File(File(context.applicationContext.filesDir, DIRECTORY), "$digest.json")
+    }
+}
+
+class PlaceOverlayClient(
+    private val configUrl: String = BuildConfig.PLACE_OVERLAY_CONFIG_URL
+) {
+    private var resolvedEndpoint: String? = null
+
+    fun fetch(place: PlaceDiscovery): PlaceOverlayData? {
+        val base = resolveEndpoint()
+        throttle()
+        val threshold = when (place.kind) {
+            PlaceKind.COUNTRY -> "0.02"
+            PlaceKind.STATE -> "0.005"
+            PlaceKind.TOWN -> "0.001"
+        }
+        val url = Uri.parse("$base/search").buildUpon()
+            .appendQueryParameter("format", "jsonv2")
+            .appendQueryParameter("q", query(place))
+            .appendQueryParameter("addressdetails", "1")
+            .appendQueryParameter("extratags", "1")
+            .appendQueryParameter("polygon_geojson", "1")
+            .appendQueryParameter("polygon_threshold", threshold)
+            .appendQueryParameter("limit", "8")
+            .build()
+            .toString()
+        val connection = open(url, redirects = false, readTimeoutMs = 12_000)
+        return try {
+            val status = connection.responseCode
+            if (status !in 200..299) throw IOException("Place overlay service returned HTTP $status")
+            parseResponse(place, readLimited(connection))
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun resolveEndpoint(): String {
+        resolvedEndpoint?.let { return it }
+        val url = configUrl.trim()
+        if (!url.startsWith("https://")) throw IOException("Place overlay config must use HTTPS")
+        val value = try {
+            val connection = open(url, redirects = true, readTimeoutMs = 5_000)
+            try {
+                val status = connection.responseCode
+                if (status !in 200..299 || connection.url.protocol != "https") {
+                    throw IOException("Place overlay config is unavailable")
+                }
+                connection.inputStream.bufferedReader().use(::readConfigEndpoint)
+            } finally {
+                connection.disconnect()
+            }
+        } catch (_: IOException) {
+            // Do not make all overlays disappear just because the remote provider config is
+            // temporarily unreachable. The configured file can still override this when online.
+            DEFAULT_ENDPOINT
+        }
+        if (!value.startsWith("https://")) throw IOException("Place overlay service is disabled or invalid")
+        resolvedEndpoint = value
+        return value
+    }
+
+    private fun open(url: String, redirects: Boolean, readTimeoutMs: Int) =
+        (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 8_000
+            readTimeout = readTimeoutMs
+            instanceFollowRedirects = redirects
+            requestMethod = "GET"
+            setRequestProperty(
+                "User-Agent",
+                "RoadConquest/${BuildConfig.VERSION_NAME} (+https://github.com/AntnyGamer/RoadConquest-Beta)"
+            )
+            setRequestProperty("Accept", "application/json, text/plain;q=0.9")
+        }
+
+    private fun throttle() {
+        synchronized(rateLock) {
+            val now = SystemClock.elapsedRealtime()
+            if (lastRequestElapsed != Long.MIN_VALUE) {
+                val delay = 1_100L - (now - lastRequestElapsed)
+                if (delay > 0L) Thread.sleep(delay)
+            }
+            lastRequestElapsed = SystemClock.elapsedRealtime()
+        }
+    }
+
+    private fun readLimited(connection: HttpURLConnection): String {
+        val limit = 8 * 1024 * 1024
+        val builder = StringBuilder()
+        connection.inputStream.bufferedReader().use { reader ->
+            val buffer = CharArray(8_192)
+            while (true) {
+                val count = reader.read(buffer)
+                if (count < 0) break
+                if (builder.length + count > limit) error("Place boundary response is too large")
+                builder.append(buffer, 0, count)
+            }
+        }
+        return builder.toString()
+    }
+
+    companion object {
+        internal fun readConfigEndpoint(reader: Reader): String {
+            val builder = StringBuilder()
+            while (true) {
+                val next = reader.read()
+                if (next < 0 || next == '\n'.code || next == '\r'.code) break
+                if (builder.length >= MAX_CONFIG_LENGTH) {
+                    throw IOException("Place overlay config is invalid")
+                }
+                builder.append(next.toChar())
+            }
+            return builder.toString().trim().trimEnd('/')
+        }
+
+        private val rateLock = Any()
+        private var lastRequestElapsed = Long.MIN_VALUE
+        private const val MAX_CONFIG_LENGTH = 2_048
+        private const val DEFAULT_ENDPOINT = "https://nominatim.openstreetmap.org"
+        private const val EARTH_RADIUS_M = 6_371_008.8
+
+        internal fun parseResponse(place: PlaceDiscovery, body: String): PlaceOverlayData? {
+            val results = runCatching { JSONArray(body) }.getOrNull() ?: return null
+            var best: JSONObject? = null
+            var bestScore = Int.MIN_VALUE
+            for (i in 0 until results.length()) {
+                val candidate = results.optJSONObject(i) ?: continue
+                val geometry = candidate.optJSONObject("geojson") ?: continue
+                if (geometry.optString("type") !in setOf("Polygon", "MultiPolygon")) continue
+                val score = score(place, candidate)
+                if (score > bestScore) {
+                    best = candidate
+                    bestScore = score
+                }
+            }
+            val minimumScore = when (place.kind) {
+                PlaceKind.COUNTRY -> 7
+                PlaceKind.STATE -> 6
+                PlaceKind.TOWN -> 5
+            }
+            val selected = best?.takeIf { bestScore >= minimumScore } ?: return null
+            val geometry = selected.getJSONObject("geojson")
+            val area = areaSquareKilometers(geometry)
+            if (!area.isFinite() || area <= 0.0) return null
+            val extra = selected.optJSONObject("extratags")
+            return PlaceOverlayData(
+                key = place.key,
+                name = place.displayName,
+                kind = place.kind,
+                population = parsePopulation(extra?.optString("population")),
+                areaSquareKilometers = area,
+                geometryJson = geometry.toString()
+            )
+        }
+
+        private fun query(place: PlaceDiscovery): String = when (place.kind) {
+            PlaceKind.COUNTRY -> listOf(place.displayName)
+            PlaceKind.STATE -> listOf(place.displayName, place.countryName)
+            PlaceKind.TOWN -> listOf(place.displayName, place.parentName, place.countryName)
+        }.filter { it.isNotBlank() }.joinToString(", ")
+
+        private fun score(place: PlaceDiscovery, candidate: JSONObject): Int {
+            val address = candidate.optJSONObject("address") ?: JSONObject()
+            val expectedName = canonical(place.displayName)
+            val expectedParent = canonical(place.parentName)
+            val expectedCountry = canonical(place.countryName.ifBlank {
+                if (place.kind == PlaceKind.COUNTRY) place.displayName else ""
+            })
+            val resultName = canonical(candidate.optString("name"))
+            val addressType = canonical(candidate.optString("addresstype"))
+            var score = if (resultName == expectedName) 3 else 0
+            when (place.kind) {
+                PlaceKind.COUNTRY -> {
+                    if (canonical(address.optString("country")) == expectedName) score += 7
+                    if (addressType == "country") score += 4
+                }
+                PlaceKind.STATE -> {
+                    if (canonical(address.optString("state")) == expectedName) score += 7
+                    if (expectedCountry.isNotBlank() &&
+                        canonical(address.optString("country")) == expectedCountry) score += 2
+                    if (addressType in setOf("state", "region", "state_district")) score += 3
+                }
+                PlaceKind.TOWN -> {
+                    val locality = listOf("city", "town", "village", "municipality", "locality")
+                        .any { canonical(address.optString(it)) == expectedName }
+                    if (locality) score += 7
+                    if (expectedParent.isNotBlank() &&
+                        canonical(address.optString("state")) == expectedParent) score += 2
+                    if (expectedCountry.isNotBlank() &&
+                        canonical(address.optString("country")) == expectedCountry) score += 1
+                    if (addressType in setOf("city", "town", "village", "municipality", "locality")) score += 3
+                }
+            }
+            return score
+        }
+
+        private fun parsePopulation(value: String?): Long? {
+            val match = value?.let { Regex("""\d[\d, .]*""").find(it)?.value } ?: return null
+            return match.filter(Char::isDigit).toLongOrNull()?.takeIf { it > 0L }
+        }
+
+        internal fun areaSquareKilometers(geometry: JSONObject): Double {
+            val coordinates = geometry.optJSONArray("coordinates") ?: return 0.0
+            val squareMeters = when (geometry.optString("type")) {
+                "Polygon" -> polygonArea(coordinates)
+                "MultiPolygon" -> {
+                    var total = 0.0
+                    for (i in 0 until coordinates.length()) {
+                        total += polygonArea(coordinates.optJSONArray(i) ?: continue)
+                    }
+                    total
+                }
+                else -> 0.0
+            }
+            return squareMeters / 1_000_000.0
+        }
+
+        private fun polygonArea(rings: JSONArray): Double {
+            if (rings.length() == 0) return 0.0
+            var area = abs(ringArea(rings.optJSONArray(0) ?: return 0.0))
+            for (i in 1 until rings.length()) area -= abs(ringArea(rings.optJSONArray(i) ?: continue))
+            return area.coerceAtLeast(0.0)
+        }
+
+        private fun ringArea(ring: JSONArray): Double {
+            if (ring.length() < 3) return 0.0
+            var sum = 0.0
+            for (i in 0 until ring.length()) {
+                val a = ring.optJSONArray(i) ?: continue
+                val b = ring.optJSONArray((i + 1) % ring.length()) ?: continue
+                val lon1 = Math.toRadians(a.optDouble(0, Double.NaN))
+                val lat1 = Math.toRadians(a.optDouble(1, Double.NaN))
+                val lon2 = Math.toRadians(b.optDouble(0, Double.NaN))
+                val lat2 = Math.toRadians(b.optDouble(1, Double.NaN))
+                if (!lon1.isFinite() || !lat1.isFinite() || !lon2.isFinite() || !lat2.isFinite()) continue
+                var delta = lon2 - lon1
+                while (delta > PI) delta -= 2 * PI
+                while (delta < -PI) delta += 2 * PI
+                sum += delta * (2 + sin(lat1) + sin(lat2))
+            }
+            return sum * EARTH_RADIUS_M * EARTH_RADIUS_M / 2.0
+        }
+
+        private fun canonical(value: String): String =
+            value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+    }
+}

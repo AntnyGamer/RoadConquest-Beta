@@ -1,0 +1,142 @@
+package com.roadconquest.app.account
+
+import com.roadconquest.app.BuildConfig
+import org.json.JSONObject
+import java.net.URI
+import javax.net.ssl.HttpsURLConnection
+
+object AccountClient {
+    @Volatile internal var endpointOverrideForTests: String? = null
+
+    data class Account(
+        val username: String,
+        val token: String?,
+        val leaderboardVisible: Boolean
+    )
+
+    class ApiException(message: String, val status: Int? = null) : Exception(message)
+
+    fun isConfigured(): Boolean = endpoint("/") != null
+
+    fun signup(username: String, password: String): Account =
+        auth("/v1/signup", username, password)
+
+    fun login(username: String, password: String): Account =
+        auth("/v1/login", username, password)
+
+    fun me(token: String): Account {
+        val body = request("/v1/me", "GET", null, token)
+        return Account(
+            body.getString("username"),
+            null,
+            body.optBoolean("leaderboard_visible", false)
+        )
+    }
+
+    fun setLeaderboardVisible(token: String, visible: Boolean): Boolean =
+        request(
+            "/v1/privacy",
+            "PUT",
+            JSONObject().put("leaderboard_visible", visible),
+            token
+        ).getBoolean("leaderboard_visible")
+
+    fun logout(token: String) {
+        request("/v1/logout", "POST", JSONObject(), token)
+    }
+
+    fun changeUsername(token: String, username: String, password: String): Account {
+        val body = request("/v1/username", "PUT",
+            JSONObject().put("username", username).put("password", password), token)
+        return Account(body.getString("username"), null, body.getBoolean("leaderboard_visible"))
+    }
+
+    fun deleteAccount(token: String, password: String) {
+        request("/v1/account", "DELETE", JSONObject().put("password", password), token)
+    }
+
+    private fun auth(path: String, username: String, password: String): Account {
+        val body = request(
+            path,
+            "POST",
+            JSONObject().put("username", username).put("password", password),
+            null
+        )
+        return Account(
+            body.getString("username"),
+            body.getString("token"),
+            body.optBoolean("leaderboard_visible", false)
+        )
+    }
+
+    fun publicPage(path: String): String? = endpoint(path)?.toString()
+
+    fun competition(): JSONObject = request("/v1/competition", "GET", null, null)
+
+    fun leaderboard(metric: String): JSONObject {
+        require(metric == "miles" || metric == "roads")
+        return request("/v1/leaderboard?metric=$metric", "GET", null, null)
+    }
+
+    fun verifiedTotals(token: String): JSONObject = request("/v1/verified/me", "GET", null, token)
+
+    fun startVerifiedDrive(token: String): JSONObject = request("/v1/verified/start", "POST", JSONObject(), token)
+
+    fun submitVerifiedDrive(token: String, evidence: String, integrityToken: String): JSONObject = request(
+        "/v1/verified/batch", "POST",
+        JSONObject().put("evidence", evidence).put("integrity_token", integrityToken), token
+    )
+
+    private fun request(path: String, method: String, body: JSONObject?, token: String?): JSONObject {
+        val url = endpoint(path) ?: throw ApiException("Account service is not configured in this build.")
+        val connection = url.toURL().openConnection() as HttpsURLConnection
+        connection.requestMethod = method
+        connection.instanceFollowRedirects = false
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.setRequestProperty("Accept", "application/json")
+        token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+
+        try {
+            if (body != null) {
+                val bytes = body.toString().toByteArray(Charsets.UTF_8)
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setFixedLengthStreamingMode(bytes.size)
+                connection.outputStream.use { it.write(bytes) }
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val bytes = stream?.use { input ->
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(4096)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (output.size() + count > 64 * 1024) throw ApiException("Account server response was too large.")
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            } ?: ByteArray(0)
+            val json = runCatching { JSONObject(bytes.toString(Charsets.UTF_8)) }.getOrElse {
+                throw ApiException("Account server returned an invalid response.", status)
+            }
+            if (status !in 200..299) {
+                throw ApiException(json.optString("error").ifBlank { "Account request failed." }, status)
+            }
+            return json
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun endpoint(path: String): URI? {
+        val base = (endpointOverrideForTests ?: BuildConfig.ACCOUNT_API_URL).trim().trimEnd('/')
+        if (base.isEmpty()) return null
+        val root = runCatching { URI(base) }.getOrNull() ?: return null
+        if (!root.scheme.equals("https", ignoreCase = true) || root.host.isNullOrBlank() ||
+            root.userInfo != null || root.query != null || root.fragment != null
+        ) return null
+        return URI(base + if (path.startsWith('/')) path else "/$path")
+    }
+}

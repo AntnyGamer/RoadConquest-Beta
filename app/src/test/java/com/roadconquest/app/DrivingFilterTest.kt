@@ -1,0 +1,46 @@
+package com.roadconquest.app
+
+import android.location.Location
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [31, 37], manifest = Config.NONE)
+class DrivingFilterTest {
+    private fun point(latitude: Double, second: Long, speed: Float = 5f) = Location("gps").apply {
+        this.latitude = latitude; longitude = -74.0; accuracy = 5f
+        this.speed = speed; time = 1_000_000L + second * 1_000
+        elapsedRealtimeNanos = second * 1_000_000_000
+    }
+
+    private fun accepts(current: Location, previous: Location): Boolean {
+        val method = TrackingService::class.java.getDeclaredMethod("isUsableDrivingLocation", Location::class.java, Location::class.java)
+        method.isAccessible = true
+        return method.invoke(TrackingService(), current, previous) as Boolean
+    }
+
+    @Test fun reportedDrivingSpeedCannotAuthorizeAnImpossiblePositionJump() {
+        assertFalse(accepts(point(40.1, 13), point(40.0, 10)))
+    }
+
+    @Test fun ordinaryDrivingIsAccepted() {
+        assertTrue(accepts(point(40.0002, 13), point(40.0, 10)))
+    }
+
+    @Test fun stationaryDriftAndOutOfOrderFixesAreRejected() {
+        assertFalse(accepts(point(40.000001, 13, 0f), point(40.0, 10, 0f)))
+        assertFalse(accepts(point(40.0002, 9), point(40.0, 10)))
+    }
+
+    @Test fun mockLocationsCannotUnlockLocalRoads() {
+        assertFalse(accepts(point(40.0002, 13).apply { isMock = true }, point(40.0, 10)))
+        assertFalse(accepts(point(40.0002, 13), point(40.0, 10).apply { isMock = true }))
+    }
+
+    @Test fun nanAccuracyCannotAuthorizeDriving() {
+        assertFalse(accepts(point(40.0002, 13).apply { accuracy = Float.NaN }, point(40.0, 10)))
+    }
+}

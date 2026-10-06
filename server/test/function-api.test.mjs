@@ -30,6 +30,13 @@ test("serverless accounts enforce authentication, privacy, limits and TLS with r
       return { status: response.status, body: await response.json() };
     }
     assert.equal((await call("/health")).status, 200);
+    const privacyPage = await api.fetch(new Request("https://accounts.example/privacy"));
+    assert.equal(privacyPage.status, 200);
+    assert.match(privacyPage.headers.get("Content-Type"), /^text\/html/u);
+    assert.match(await privacyPage.text(), /Road Conquest Privacy Policy/u);
+    const deletionPage = await api.fetch(new Request("https://accounts.example/delete-account"));
+    assert.equal(deletionPage.status, 200);
+    assert.match(await deletionPage.text(), /Delete Road Conquest Account/u);
     assert.equal((await call("/v1/me")).status, 401);
     const credentials = { username: "FunctionDriver", password: "correct horse battery staple" };
     const signup = await call("/v1/signup", "POST", credentials);

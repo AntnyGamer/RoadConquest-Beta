@@ -20,7 +20,7 @@ export function competitionConfig(env) {
   const config = {
     dataset: env.ROAD_DATASET_SHA256, dataVersion: env.OSRM_DATA_VERSION,
     osrmUrl: env.VERIFIED_OSRM_URL, credentialsFile: env.PLAY_SERVICE_ACCOUNT_FILE, credentialsJson: env.PLAY_SERVICE_ACCOUNT_JSON,
-    packageName: "com.roadfog.app", certificates: (env.PLAY_CERTIFICATES || "").split(",").filter(Boolean),
+    packageName: "com.roadconquest.app", certificates: (env.PLAY_CERTIFICATES || "").split(",").filter(Boolean),
     versions: (env.PLAY_VERSION_CODES || "").split(",").filter(Boolean),
     cloudProject: env.PLAY_CLOUD_PROJECT_NUMBER,
     watermarkKey: env.PASSWORD_PEPPER

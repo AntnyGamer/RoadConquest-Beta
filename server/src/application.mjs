@@ -22,6 +22,45 @@ const SESSION_DAYS = 30;
 const JSON_LIMIT = 32 * 1024;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/u;
 
+const PRIVACY_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Road Conquest Privacy Policy</title>
+<style>body{font:16px system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.55}h1,h2{line-height:1.2}code{overflow-wrap:anywhere}</style></head>
+<body><h1>Road Conquest Privacy Policy</h1>
+<p><strong>Effective:</strong> October 6, 2026. <strong>Developer/publisher:</strong> AntnyGamer.</p>
+<p>Road Conquest uses location to record driven roads, reveal visited places, display your live map position, and support automatic tracking when enabled. Precise driving history, explored places, points, purchases, and cosmetics are stored on your device unless you export them.</p>
+<h2>Data sent to services</h2>
+<p>Road matching sends small GPS coordinate batches to the configured OSRM service. Map providers receive requests for areas you view. Android's system geocoder may process coordinates while the app is in the foreground to resolve town, state/region, and country names. If you enable place overlays, discovered place names are sent to the configured boundary service and returned public boundaries are cached locally.</p>
+<p>Optional Road Conquest accounts send your username and password over HTTPS for signup/login; passwords are salted and scrypt-hashed on the server and are not stored in plaintext. Android stores an encrypted session token. If you explicitly enable verified scoring, live non-mock GPS evidence and Google Play Integrity evidence are sent to the Road Conquest account service for server-side road matching and leaderboard credit. Ordinary local driving history is not uploaded for leaderboard scoring.</p>
+<h2>Retention and deletion</h2>
+<p>Local app data remains on your device until you delete device data, uninstall the app, or otherwise clear app storage. Exported files are controlled by you and must be deleted separately. Cloud account data remains until you delete your account. Account deletion removes the account, sessions, leaderboard scores, verified-road records, live runs, and verification receipts associated with that account. Some short-lived anti-abuse and verification records expire automatically.</p>
+<h2>Security and choices</h2>
+<p>Network account traffic uses HTTPS. You can use Road Conquest without an account, hide yourself from leaderboards, leave verified-drive sharing off, use manual tracking, export your data, delete device data, and delete your cloud account.</p>
+<h2>Privacy inquiries</h2>
+<p>For privacy questions, use the Road Conquest project's <a href="https://github.com/AntnyGamer/RoadConquest-Beta/issues">GitHub Issues page</a>. Do not post passwords, precise location history, session tokens, or other sensitive information in a public issue.</p>
+<p><a href="/delete-account">Delete a Road Conquest account</a></p></body></html>`;
+
+const DELETE_ACCOUNT_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delete Road Conquest Account</title>
+<style>body{font:16px system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;line-height:1.5}label,input,button{display:block;width:100%;box-sizing:border-box}input,button{font:inherit;padding:10px;margin:6px 0 16px}button{cursor:pointer}#status{min-height:1.5em}</style></head>
+<body><h1>Delete Road Conquest Account</h1>
+<p>This permanently deletes your Road Conquest cloud account, active sessions, leaderboard scores, verified-road records, live runs, and verification receipts. Data stored only on a phone or in exported files must be deleted separately.</p>
+<form id="deleteForm"><label>Username<input id="username" autocomplete="username" required minlength="3" maxlength="24"></label>
+<label>Password<input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"></label>
+<button type="submit">Delete account permanently</button></form>
+<p id="status" role="status" aria-live="polite"></p><p><a href="/privacy">Privacy policy</a></p>
+<script>
+const form=document.getElementById("deleteForm"),status=document.getElementById("status");
+form.addEventListener("submit",async e=>{e.preventDefault();status.textContent="Deleting…";let token=null,deleted=false;
+try{const username=document.getElementById("username").value,password=document.getElementById("password").value;
+let r=await fetch("/v1/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
+let b=await r.json();if(!r.ok)throw new Error(b.error||"Sign-in failed.");token=b.token;
+r=await fetch("/v1/account",{method:"DELETE",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({password})});
+b=await r.json();if(!r.ok)throw new Error(b.error||"Deletion failed.");deleted=true;token=null;form.reset();status.textContent="Your Road Conquest account has been deleted.";
+}catch(err){status.textContent=err.message||"Deletion failed.";}finally{if(token&&!deleted)fetch("/v1/logout",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:"{}"}).catch(()=>{});}});
+</script></body></html>`;
+
 if (!DATABASE_URL) throw new Error("DATABASE_URL is required");
 if (PEPPER.length < 32) throw new Error("PASSWORD_PEPPER must be at least 32 characters");
 if (process.env.NODE_ENV === "production") {
@@ -92,6 +131,21 @@ async function cleanupExpiredState() {
 // guarantee that an unreferenced background timer survives after a request finishes.
 await cleanupExpiredState();
 setInterval(() => { cleanupExpiredState().catch(() => {}); }, 15 * 60 * 1000).unref();
+
+function sendHtml(res, status, body) {
+  const headers = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer"
+  };
+  if (REQUIRE_HTTPS) headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+  res.writeHead(status, headers);
+  res.end(body);
+}
 
 function send(res, status, body) {
   const data = JSON.stringify(body);
@@ -178,6 +232,9 @@ async function handle(req, res) {
   if (REQUIRE_HTTPS && req.headers["x-forwarded-proto"] !== "https") {
     return send(res, 400, { error: "HTTPS required" });
   }
+
+  if (req.method === "GET" && url.pathname === "/privacy") return sendHtml(res, 200, PRIVACY_HTML);
+  if (req.method === "GET" && url.pathname === "/delete-account") return sendHtml(res, 200, DELETE_ACCOUNT_HTML);
 
   const ip = clientIp(req);
   if (req.method === "GET" && url.pathname === "/v1/competition") {
