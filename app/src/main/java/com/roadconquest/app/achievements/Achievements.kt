@@ -34,7 +34,7 @@ data class AchievementProgress(
 }
 
 object Achievements {
-    private const val PREFS = "roadfog_achievements"
+    private const val PREFS = "roadconquest_achievements"
     private const val KEY_INITIALIZED = "announcements_initialized"
     private const val KEY_ANNOUNCED = "announced_ids"
     private const val KEY_MAX_ROADS = "max_roads_seen"
