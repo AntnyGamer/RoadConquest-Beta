@@ -14,6 +14,9 @@ object ProgressionManager {
         val repository = ProgressionRepository(context)
         var snapshot = repository.snapshot()
         val expectedGeneration = summary.historyGeneration.takeIf { it >= 0L }
+        if (expectedGeneration != null && !repository.isHistoryGenerationCurrent(expectedGeneration)) {
+            return snapshot
+        }
         if (summary.roadsUnlockedCount > snapshot.rewardedRoads) {
             repository.syncRoadRewards(summary.roadsUnlockedCount, expectedGeneration)
             snapshot = repository.snapshot()
