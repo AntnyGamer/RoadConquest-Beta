@@ -86,7 +86,7 @@ jobs:
       - name: Install Android SDK packages
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"'
       - name: Test, lint and build
-        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease --no-daemon --console=plain
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon --console=plain
       - name: Save verification reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -96,11 +96,13 @@ jobs:
             app/build/reports/
             app/build/test-results/
           retention-days: 14
-      - name: Save verified APKs
+      - name: Save verified Android release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-apks
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          path: |
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            app/build/outputs/bundle/release/app-release.aab
           retention-days: 14
   map-integration:
     runs-on: ubuntu-latest
@@ -200,6 +202,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Set up JDK 21 for bundle signing
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Publish this version only after every required check passes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -231,12 +238,14 @@ jobs:
           build_dir="$RUNNER_TEMP/roadconquest-build"
           gh run download "$GITHUB_RUN_ID" -n android-apks -D "$build_dir"
           mapfile -t unsigned_apks < <(find "$build_dir" -type f -name 'app-release-unsigned.apk' -print)
-          if [ "${#unsigned_apks[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one verified release APK artifact, found ${#unsigned_apks[@]}."
-            find "$build_dir" -maxdepth 4 -type f -print
+          mapfile -t app_bundles < <(find "$build_dir" -type f -name 'app-release.aab' -print)
+          if [ "${#unsigned_apks[@]}" -ne 1 ] || [ "${#app_bundles[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one verified release APK and one AAB artifact."
+            find "$build_dir" -maxdepth 6 -type f -print
             exit 1
           fi
           cp "${unsigned_apks[0]}" "$out/RoadConquest-$version-unsigned.apk"
+          cp "${app_bundles[0]}" "$out/RoadConquest-$version.aab"
           git archive --format=zip --prefix="RoadConquest/" HEAD > "$out/RoadConquest-AndroidStudio-$version.zip"
           cp RELEASE_NOTES.md "$out/Release-notes.md"
           function_dir="$RUNNER_TEMP/roadconquest-account-function"
@@ -247,7 +256,7 @@ jobs:
             exit 1
           fi
           cp "${account_bundles[0]}" "$out/RoadConquest-account-function-$version.mjs"
-          # Publish only an installable APK with the permanent signing identity.
+          # Sign the direct-install APK and the Play upload bundle with the permanent upload identity.
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
           printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/roadconquest-release.keystore"
           trap 'rm -f "$RUNNER_TEMP/roadconquest-release.keystore"' EXIT
@@ -258,9 +267,11 @@ jobs:
             --out "$out/RoadConquest-$version.apk" "$out/RoadConquest-$version-unsigned.apk"
           new_cert=$("$signer" verify --print-certs "$out/RoadConquest-$version.apk" | sed -n 's/Signer #1 certificate SHA-256 digest: //p')
           test "$new_cert" = "cd3c4b180b4740a0bff77e37de109be6cab264cd1bd66e0ced05441252ad9ae1"
+          jarsigner -keystore "$RUNNER_TEMP/roadconquest-release.keystore"             -storepass:env SIGNING_STORE_PASSWORD -keypass:env SIGNING_KEY_PASSWORD             -sigalg SHA256withRSA -digestalg SHA-256 "$out/RoadConquest-$version.aab" "$SIGNING_ALIAS"
+          jarsigner -verify -strict "$out/RoadConquest-$version.aab"
           rm "$out/RoadConquest-$version-unsigned.apk"
-          (cd "$out" && sha256sum *.apk *.zip *.mjs > "RoadConquest-$version-SHA256SUMS.txt")
+          (cd "$out" && sha256sum *.apk *.aab *.zip *.mjs > "RoadConquest-$version-SHA256SUMS.txt")
           release_flags=()
           if [[ "$version" == *-beta* ]]; then release_flags+=(--prerelease); fi
-          gh release create "$tag" --target "$GITHUB_SHA" --title "RoadConquest ${version/-beta/ Beta}" "${release_flags[@]}" \
-            --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.zip "$out"/*.mjs "$out"/*SHA256SUMS.txt
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Road Conquest ${version/-beta/ Beta}" "${release_flags[@]}" \
+            --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.aab "$out"/*.zip "$out"/*.mjs "$out"/*SHA256SUMS.txt
