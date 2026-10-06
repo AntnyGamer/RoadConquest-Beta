@@ -245,6 +245,53 @@ class ProgressionRepositoryTest {
         assertEquals(1L, progression.snapshot().towns)
     }
 
+    @Test fun unresolvedBaselineSurvivesRestartWithoutDroppingQueuedVisits() {
+        val progression = ProgressionRepository(context)
+        val first = android.location.Location("gps").apply {
+            latitude = 39.7
+            longitude = -75.1
+            accuracy = 5f
+            time = 1_000L
+        }
+        val later = android.location.Location("gps").apply {
+            latitude = 40.0
+            longitude = -75.0
+            accuracy = 5f
+            time = 2_000L
+        }
+        val restartFix = android.location.Location("gps").apply {
+            latitude = 39.8
+            longitude = -75.2
+            accuracy = 5f
+            time = 3_000L
+        }
+
+        assertTrue(progression.recordBaselineCandidate(first))
+        assertTrue(progression.recordPlaceCandidate(later))
+        assertFalse("A restart must not replace the first exact baseline", progression.recordBaselineCandidate(restartFix))
+
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
+        assertEquals(Long.MIN_VALUE, baseline.cellX)
+        assertEquals(first.latitude, baseline.latitude, 0.0)
+        assertEquals(first.longitude, baseline.longitude, 0.0)
+        progression.resolveCandidate(
+            baseline,
+            listOf(
+                PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States",
+                    visitedAt = baseline.visitedAt, latitude = baseline.latitude, longitude = baseline.longitude),
+                PlaceDiscovery(PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude),
+                PlaceDiscovery(PlaceKind.TOWN, "us|new jersey|start", "Start", "New Jersey", "United States",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude)
+            )
+        )
+
+        val queued = progression.pendingPlaceCandidates(nowMillis = 5_000L).single()
+        assertEquals(later.time, queued.visitedAt)
+        assertEquals(later.latitude, queued.latitude, 0.01)
+        assertEquals(later.longitude, queued.longitude, 0.01)
+    }
+
     @Test fun batteryAchievementsAwardAtFiveAndOnePercentOnlyOnce() {
         assertTrue(ProgressionManager.recordBatteryPercent(context, 5))
         assertEquals(300L, ProgressionRepository(context).snapshot().balance)
