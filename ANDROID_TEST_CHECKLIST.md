@@ -77,6 +77,10 @@ If all of the above pass on the target Android device and firmware, that provide
 - Cancel both deletion confirmations and verify that all data remains. The device-data control is under **Settings → Data and privacy**.
 - Delete an account with the current password; verify that all old sessions stop working.
   The default local-history option clears trips, mileage, roads, explored places, points, purchases and cosmetics.
-- Delete device data while offline and signed out. Tracking stops, history and fog reveals
-  clear, and delayed road matches cannot restore them. The cloud account remains when only
-  device data is deleted. Tracking can be explicitly restarted.
+- Delete device data while offline and signed out. Tracking stops, verified-drive GPS sharing
+  turns off, history and fog reveals clear, and delayed road matches cannot restore them. The
+  cloud account remains when only device data is deleted. Tracking and verified sharing can be
+  explicitly re-enabled later.
+- Interrupt an export (for example by killing the app during export), reopen RoadConquest, then
+  delete device data. Confirm no private `roadconquest-export-*` snapshot remains in app cache;
+  user-saved ZIP exports remain the user's responsibility.
