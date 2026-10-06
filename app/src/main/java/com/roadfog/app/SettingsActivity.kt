@@ -226,7 +226,7 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Delete device data?")
             .setMessage(
-                "Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone and stop tracking. " +
+                "Delete all saved trips, mileage, roads, explored places, points, purchases and local progression on this phone, stop tracking, and turn off verified-drive GPS sharing. " +
                     "Your cloud account and leaderboard scores stay. Exported files must be deleted separately. This cannot be undone."
             )
             .setNegativeButton("Cancel", null)
@@ -243,7 +243,7 @@ class SettingsActivity : Activity() {
                         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
                         result.fold(
                             onSuccess = {
-                                Toast.makeText(this, "Saved device data deleted. Tracking is off.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this, "Saved device data deleted. Tracking and verified-drive sharing are off.", Toast.LENGTH_SHORT).show()
                             },
                             onFailure = {
                                 Toast.makeText(this, "Could not delete device data. Tracking is off; try again.", Toast.LENGTH_LONG).show()
