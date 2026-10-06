@@ -6,6 +6,8 @@
 - Keep automatic tracking armed when Android Location is off, including after reboot and when switching Manual -> Always. The first good fix after Location is turned back on can immediately establish the fresh starting place and resume tracking.
 - Reject mock-location fixes from local driving history so they cannot add blue roads or mileage.
 - Prevent stale pre-reset background work from restoring roads/progression rewards, place candidates, achievements, ad progress, battery progress, or purchases after device data has been deleted.
+- Prevent stale pre-reset summaries from restoring the separate achievement progress cache after deletion.
+- Keep exported town/state/country discovery totals aligned with in-app progression: the zero-point baseline remains in visited_places.csv for history/overlays but does not inflate discovery counts.
 - Read multi-query progression snapshots under the shared history lock so concurrent reset/reward activity cannot briefly produce mixed UI totals.
 - Make local progression reset self-contained, including achievement preference/history state, so a fresh profile cannot inherit old maximum-road progress or announcement state.
 - Keep exported town/state/country discovery totals aligned with the app: the zero-point baseline remains in `visited_places.csv` for history/overlays but does not inflate discovery counts in metadata.
