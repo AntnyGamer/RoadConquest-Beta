@@ -222,10 +222,10 @@ class AccountActivityTest {
         controller.pause().stop().destroy()
         releaseBlocker.countDown()
 
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-        while (repository.getSummary().trackPointCount != 0L && System.nanoTime() < deadline) {
-            Thread.sleep(10)
-        }
+        assertTrue(
+            "Queued deletion finishes during graceful Settings teardown",
+            executor.awaitTermination(5, TimeUnit.SECONDS)
+        )
         assertEquals(0L, repository.getSummary().trackPointCount)
         assertTrue(Prefs.isManualOnly(context))
         assertFalse(Prefs.isTrackingPaused(context))
