@@ -65,6 +65,7 @@ object ProgressionManager {
 
     fun resetLocalProgression(context: Context) {
         ProgressionRepository(context).clearProgression()
+        Achievements.reset(context)
         PlaceOverlayCache.clear(context)
         com.roadfog.app.util.Prefs.resetCosmetics(context)
         com.roadfog.app.util.Prefs.setPlaceOverlayMode(context, com.roadfog.app.map.PlaceOverlayMode.NONE)
