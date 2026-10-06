@@ -54,7 +54,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
-                android:text="Change how RoadConquest looks without affecting saved progress."
+                android:text="Change how Road Conquest looks without affecting saved progress."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="13sp" />
 
@@ -165,7 +165,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="RoadConquest notifications" />
+                android:text="Road Conquest notifications" />
 
             <Button
                 android:id="@+id/batterySettingsButton"
@@ -332,7 +332,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
-                android:text="Export your history and review how RoadConquest handles driving data."
+                android:text="Export your history and review how Road Conquest handles driving data."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="13sp" />
 
@@ -394,6 +394,15 @@
                 android:text="Map and overlay data: OpenStreetMap contributors via OpenFreeMap/OpenMapTiles and Nominatim. Road matching: OSRM."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/appVersionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Version"
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="12sp" />
 
             <Button
                 android:id="@+id/terrainCreditsButton"
