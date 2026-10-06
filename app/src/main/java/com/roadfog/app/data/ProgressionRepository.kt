@@ -217,9 +217,13 @@ class ProgressionRepository(context: Context) {
         require(limit in 1..50)
         val db = dbHelper.readableDatabase
 
-        // The zero-point baseline is an ordering barrier. Ordinary candidates are still
-        // recorded while it resolves, but they remain hidden until the sentinel is complete
-        // (or its bounded partial-resolution retries mark unavailable hierarchy kinds).
+        // Before the first live baseline exists, stale/sparse candidates cannot become the
+        // starting place. Once the sentinel exists, it is an ordering barrier: ordinary
+        // candidates can be recorded but remain hidden until zero-point resolution completes.
+        val hasKnownPlace = db.rawQuery(
+            "SELECT 1 FROM visited_places LIMIT 1",
+            null
+        ).use { it.moveToFirst() }
         val baseline = db.query(
             "place_candidates",
             arrayOf(
@@ -245,6 +249,7 @@ class ProgressionRepository(context: Context) {
         if (baseline != null) {
             return baseline.takeIf { it.second <= nowMillis }?.let { listOf(it.first) }.orEmpty()
         }
+        if (!hasKnownPlace) return emptyList()
 
         val result = ArrayList<PendingPlaceCandidate>(limit)
         if (baseline != null && baseline.second <= nowMillis) result += baseline.first
