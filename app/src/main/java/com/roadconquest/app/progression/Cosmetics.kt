@@ -50,12 +50,12 @@ data class ShopItem(
 
 object ShopCatalog {
     val items: List<ShopItem> = listOf(
-        ShopItem("car_style_classic", "Classic car", "The original RoadConquest car.", 0, CosmeticType.CAR_STYLE, CarStyle.CLASSIC.id),
+        ShopItem("car_style_classic", "Classic car", "The original Road Conquest car.", 0, CosmeticType.CAR_STYLE, CarStyle.CLASSIC.id),
         ShopItem("car_style_sport", "Sport car", "A lower, sleeker map marker.", 600, CosmeticType.CAR_STYLE, CarStyle.SPORT.id),
         ShopItem("car_style_suv", "SUV", "A taller, boxier map marker.", 800, CosmeticType.CAR_STYLE, CarStyle.SUV.id),
         ShopItem("car_style_racer", "Racer", "A sharp performance-style marker.", 1_000, CosmeticType.CAR_STYLE, CarStyle.RACER.id),
 
-        ShopItem("car_color_blue", "Blue car", "RoadConquest blue.", 0, CosmeticType.CAR_COLOR, CarColor.BLUE.id),
+        ShopItem("car_color_blue", "Blue car", "Road Conquest blue.", 0, CosmeticType.CAR_COLOR, CarColor.BLUE.id),
         ShopItem("car_color_red", "Red car", "A bright red car marker.", 250, CosmeticType.CAR_COLOR, CarColor.RED.id),
         ShopItem("car_color_green", "Emerald car", "An emerald green car marker.", 250, CosmeticType.CAR_COLOR, CarColor.GREEN.id),
         ShopItem("car_color_purple", "Purple car", "A vivid purple car marker.", 300, CosmeticType.CAR_COLOR, CarColor.PURPLE.id),
@@ -69,8 +69,8 @@ object ShopCatalog {
         ShopItem("road_color_orange", "Orange roads", "Draw traveled roads in orange.", 400, CosmeticType.ROAD_COLOR, RoadColor.ORANGE.id),
         ShopItem("road_color_gold", "Gold roads", "Draw traveled roads in gold.", 700, CosmeticType.ROAD_COLOR, RoadColor.GOLD.id),
 
-        ShopItem("ui_standard", "Standard UI", "Use the normal RoadConquest palette and launcher icon.", 0, CosmeticType.APP_THEME, "standard"),
-        ShopItem("ui_gold", "Golden RoadConquest", "Gold/cream app UI plus a golden launcher icon.", 3_000, CosmeticType.APP_THEME, "gold")
+        ShopItem("ui_standard", "Standard UI", "Use the normal Road Conquest palette and launcher icon.", 0, CosmeticType.APP_THEME, "standard"),
+        ShopItem("ui_gold", "Golden Road Conquest", "Gold/cream app UI plus a golden launcher icon.", 3_000, CosmeticType.APP_THEME, "gold")
     )
 
     fun find(id: String): ShopItem? = items.firstOrNull { it.id == id }
