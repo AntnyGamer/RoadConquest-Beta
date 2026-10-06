@@ -589,7 +589,7 @@ class MapRenderer(
         // resolving the interval. Confirmed traveled roads remain thicker and nearly opaque,
         // and are drawn from road-snapped geometry only.
         val layer = LineLayer(PENDING_ROUTE_LAYER_ID, PENDING_ROUTE_SOURCE_ID).withProperties(
-            lineColor(Cosmetics.roadColor(context).argb), lineWidth(2f), lineOpacity(0.22f),
+            lineColor(Cosmetics.roadColor(context).argb), lineWidth(3f), lineOpacity(0.60f),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
         layer.setMinZoom(FogBitmapRenderer.MIN_ROAD_ZOOM.toFloat())
