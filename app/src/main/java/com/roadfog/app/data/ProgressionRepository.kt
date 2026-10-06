@@ -182,7 +182,7 @@ class ProgressionRepository(context: Context) {
      */
     fun recordBaselineCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
         if (!isCurrentHistory()) return@synchronized false
-        if (!location.latitude.isFinite() || !location.longitude.isFinite() ||
+        if (location.isMock || !location.latitude.isFinite() || !location.longitude.isFinite() ||
             location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0
         ) return@synchronized false
         val db = dbHelper.writableDatabase
