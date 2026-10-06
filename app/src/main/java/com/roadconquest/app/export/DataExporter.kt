@@ -1,10 +1,10 @@
-package com.roadfog.app.export
+package com.roadconquest.app.export
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import com.roadfog.app.data.DataSummary
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.data.DataSummary
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.util.Prefs
 import org.json.JSONObject
 import java.io.OutputStream
 import java.io.File

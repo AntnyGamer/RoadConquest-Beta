@@ -1,4 +1,4 @@
-package com.roadfog.app.data
+package com.roadconquest.app.data
 
 import org.json.JSONArray
 import java.util.Locale

@@ -1,4 +1,4 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
@@ -13,7 +13,7 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
-import com.roadfog.app.data.RoadRecord
+import com.roadconquest.app.data.RoadRecord
 import kotlin.math.*
 
 /** Parsed off the UI thread. Native batch projection accepts latitude, longitude pairs. */
