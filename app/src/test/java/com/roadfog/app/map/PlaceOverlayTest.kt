@@ -7,6 +7,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.io.StringReader
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -38,6 +40,18 @@ class PlaceOverlayTest {
         assertEquals(331_000_000L, data.population)
         assertTrue(data.areaSquareKilometers > 8_000.0)
         assertEquals("Polygon", JSONObject(data.geometryJson).getString("type"))
+    }
+
+    @Test fun providerConfigReadIsStrictlyBounded() {
+        assertEquals(
+            "https://example.com",
+            PlaceOverlayClient.readConfigEndpoint(StringReader("  https://example.com/  \nignored"))
+        )
+        org.junit.Assert.assertThrows(IOException::class.java) {
+            PlaceOverlayClient.readConfigEndpoint(
+                StringReader("x".repeat(2_049))
+            )
+        }
     }
 
     @Test fun wrongAdministrativeResultIsRejected() {
