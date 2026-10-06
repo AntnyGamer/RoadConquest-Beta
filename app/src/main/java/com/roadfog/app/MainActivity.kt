@@ -456,6 +456,10 @@ class MainActivity : Activity() {
     }
 
     private fun handleEnableButton() {
+        if (Prefs.isDeviceDataDeletionPending(this)) {
+            Toast.makeText(this, "Finishing device data deletion…", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (Prefs.isTrackingPaused(this)) {
             Prefs.setTrackingPaused(this, false)
             startTrackingIfPossible(requestIfMissing = true)
@@ -472,7 +476,7 @@ class MainActivity : Activity() {
     }
 
     private fun startTrackingIfPossible(requestIfMissing: Boolean) {
-        if (Prefs.isTrackingPaused(this)) return
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) return
         if (!hasLocationPermission()) {
             if (requestIfMissing) {
                 startAfterPermissionGrant = true
@@ -561,6 +565,7 @@ class MainActivity : Activity() {
         val manualOnly = Prefs.isManualOnly(this)
         val active = TrackingService.isRunning
         statusText.text = when {
+            Prefs.isDeviceDataDeletionPending(this) -> "Finishing device data deletion…"
             Prefs.isTrackingPaused(this) -> getString(R.string.tracking_paused)
             !hasLocationPermission() && hasApproximateLocationPermission() -> "Precise location required"
             !hasLocationPermission() -> "Location permission required"
@@ -854,7 +859,7 @@ class MainActivity : Activity() {
     }
 
     private fun showFreshCachedLocation() {
-        if (Prefs.isTrackingPaused(this)) return
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) return
         if (!hasLocationPermission() || !::locationManager.isInitialized || !locationManager.isLocationEnabled) return
         val providers = buildList {
             LocationProviders.preferred(locationManager)?.let(::add)
@@ -892,7 +897,9 @@ class MainActivity : Activity() {
     }
 
     private fun startPreviewLocation() {
-        if (Prefs.isTrackingPaused(this) || !resumed || !hasLocationPermission() || TrackingService.isRunning || !locationManager.isLocationEnabled) return
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) || !resumed ||
+            !hasLocationPermission() || TrackingService.isRunning || !locationManager.isLocationEnabled
+        ) return
         stopPreviewLocation()
         baselinePreviewCapturedForRegistration = false
         baselinePreviewRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()
