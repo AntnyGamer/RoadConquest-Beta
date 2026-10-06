@@ -97,6 +97,8 @@ class MainActivity : Activity() {
 
     private var lastPreviewLocation: Location? = null
     private var baselinePreviewCapturedForRegistration = false
+    private var baselinePreviewRequestElapsedNanos = 0L
+    private var baselinePreviewRequestWallMillis = 0L
     private val previewLocationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             if (Prefs.isTrackingPaused(this@MainActivity) || TrackingService.isRunning || !isFreshLocation(location) ||
@@ -105,7 +107,12 @@ class MainActivity : Activity() {
             if (!LocationProviders.isBetterFix(location, lastPreviewLocation)) return
             lastPreviewLocation = Location(location)
             if (!baselinePreviewCapturedForRegistration && !location.isMock &&
-                location.accuracy in 0.01f..MAX_PREVIEW_ACCURACY_M
+                location.accuracy in 0.01f..MAX_PREVIEW_ACCURACY_M &&
+                LocationProviders.isFixSince(
+                    location,
+                    baselinePreviewRequestElapsedNanos,
+                    baselinePreviewRequestWallMillis
+                )
             ) {
                 baselinePreviewCapturedForRegistration = true
                 captureStartingPlace(Location(location))
@@ -865,6 +872,8 @@ class MainActivity : Activity() {
         if (Prefs.isTrackingPaused(this) || !resumed || !hasLocationPermission() || TrackingService.isRunning || !locationManager.isLocationEnabled) return
         stopPreviewLocation()
         baselinePreviewCapturedForRegistration = false
+        baselinePreviewRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()
+        baselinePreviewRequestWallMillis = System.currentTimeMillis()
         LocationProviders.registerHighAccuracy(locationManager, ::registerPreviewProvider)
     }
 
