@@ -86,6 +86,8 @@ class SettingsActivity : Activity() {
         accountSummaryText = findViewById(R.id.accountSummaryText)
         leaderboardPrivacySwitch = findViewById(R.id.leaderboardPrivacySwitch)
         deleteDeviceDataButton = findViewById(R.id.deleteDeviceDataButton)
+        findViewById<TextView>(R.id.appVersionText).text =
+            getString(R.string.app_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
 
         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
         manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
@@ -195,7 +197,7 @@ class SettingsActivity : Activity() {
                 if (isDestroyed) return@runOnUiThread
                 result.fold(
                     onSuccess = {
-                        Toast.makeText(this, "RoadConquest data exported", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Road Conquest data exported", Toast.LENGTH_SHORT).show()
                         refreshSummary()
                     },
                     onFailure = { error ->
@@ -299,23 +301,24 @@ class SettingsActivity : Activity() {
 
     private fun refreshAccountControls() {
         val session = AccountStore.load(this)
+        val accountConfigured = AccountClient.isConfigured()
         val verifySwitch = findViewById<Switch>(R.id.verifyDrivesSwitch)
         val verificationStatus = findViewById<TextView>(R.id.verificationStatusText)
         val leaderboardsButton = findViewById<Button>(R.id.leaderboardsButton)
         verifySwitch.setOnCheckedChangeListener(null)
         verifySwitch.isChecked = Prefs.isDriveVerificationEnabled(this)
-        verifySwitch.isEnabled = session != null && AccountClient.isConfigured()
+        verifySwitch.isEnabled = session != null && accountConfigured
         verifySwitch.setOnCheckedChangeListener { _, enabled ->
             Prefs.setDriveVerificationEnabled(this, enabled)
         }
         leaderboardsButton.visibility = View.VISIBLE
         leaderboardsButton.setOnClickListener { startActivity(Intent(this, LeaderboardActivity::class.java)) }
-        verificationStatus.text = if (AccountClient.isConfigured()) {
+        verificationStatus.text = if (accountConfigured) {
             "Checking verified scoring…"
         } else {
             "Verified scoring is unavailable."
         }
-        if (AccountClient.isConfigured()) {
+        if (accountConfigured) {
             accountExecutor.execute {
                 val status = runCatching { AccountClient.competition() }
                 runOnUiThread {
@@ -332,15 +335,15 @@ class SettingsActivity : Activity() {
         }
         renderingAccountPrivacy = true
         accountSummaryText.text = when {
-            session == null && !AccountClient.isConfigured() -> "Accounts are unavailable in this build."
+            session == null && !accountConfigured -> "Accounts are unavailable in this build."
             session == null -> "Not signed in."
             else -> "Signed in as " + session.username
         }
         leaderboardPrivacySwitch.isChecked = session?.leaderboardVisible == true
-        leaderboardPrivacySwitch.isEnabled = session != null && AccountClient.isConfigured()
+        leaderboardPrivacySwitch.isEnabled = session != null && accountConfigured
         renderingAccountPrivacy = false
 
-        if (session == null || !AccountClient.isConfigured()) return
+        if (session == null || !accountConfigured) return
         accountExecutor.execute {
             val result = runCatching { AccountClient.me(session.token) }
             runOnUiThread {
