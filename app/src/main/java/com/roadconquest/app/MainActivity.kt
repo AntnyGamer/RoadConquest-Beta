@@ -82,6 +82,7 @@ class MainActivity : Activity() {
     private var enteredForeground = false
     private var recreatingForAppearance = false
     private var accountPrompt: AlertDialog? = null
+    private var locationDisclosure: AlertDialog? = null
     private val summaryExecutor = Executors.newSingleThreadExecutor()
     private val discoveryExecutor = Executors.newSingleThreadExecutor()
     private val placeResolutionInFlight = AtomicBoolean(false)
@@ -498,7 +499,7 @@ class MainActivity : Activity() {
                 if (requestIfMissing) {
                     AlertDialog.Builder(this)
                         .setTitle("Could not start tracking")
-                        .setMessage("Android blocked the tracking service. Open RoadConquest again and verify location permissions and battery settings.")
+                        .setMessage("Android blocked the tracking service. Open Road Conquest again and verify location permissions and battery settings.")
                         .setPositiveButton("OK", null)
                         .show()
                 }
@@ -508,6 +509,10 @@ class MainActivity : Activity() {
     }
 
     private fun ensureBasicPermissions() {
+        if (!hasLocationPermission() && !Prefs.isLocationDisclosureShown(this)) {
+            showLocationDisclosure()
+            return
+        }
         val needed = mutableListOf<String>()
         if (!hasLocationPermission()) {
             needed += Manifest.permission.ACCESS_FINE_LOCATION
@@ -521,6 +526,25 @@ class MainActivity : Activity() {
         if (needed.isNotEmpty()) requestPermissions(needed.toTypedArray(), REQUEST_BASIC_PERMISSIONS)
     }
 
+    private fun showLocationDisclosure() {
+        if (locationDisclosure?.isShowing == true) return
+        locationDisclosure = AlertDialog.Builder(this)
+            .setTitle("Location use")
+            .setMessage(
+                "Road Conquest uses precise location to record driven roads, reveal visited places, and show your position. " +
+                    "When automatic tracking is enabled, location can be used in the background when the app is closed or not in use. " +
+                    "Road matching sends small GPS batches to the configured OSRM service. Verified scoring sends live GPS and app-integrity evidence only if you explicitly enable it."
+            )
+            .setPositiveButton("Continue") { _, _ ->
+                Prefs.setLocationDisclosureShown(this, true)
+                ensureBasicPermissions()
+            }
+            .setNegativeButton("Not now", null)
+            .create()
+        locationDisclosure?.setOnDismissListener { locationDisclosure = null }
+        locationDisclosure?.show()
+    }
+
     private fun maybeExplainBackgroundLocation() {
         if (!hasLocationPermission() || hasBackgroundLocation() || Prefs.isBackgroundPromptShown(this)) return
         Prefs.setBackgroundPromptShown(this, true)
@@ -528,8 +552,8 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Allow all-the-time location")
             .setMessage(
-                "For RoadConquest to restart tracking automatically after a reboot or service restart, " +
-                    "set Location permission to ‘Allow all the time’ in Android settings. A tracking service that you start while RoadConquest is open can continue after you leave the app."
+                "For Road Conquest to restart tracking automatically after a reboot or service restart, " +
+                    "set Location permission to ‘Allow all the time’ in Android settings. A tracking service that you start while Road Conquest is open can continue after you leave the app."
             )
             .setPositiveButton("Open settings") { _, _ -> openAppSettings() }
             .setNegativeButton("Not now", null)
@@ -539,7 +563,7 @@ class MainActivity : Activity() {
     private fun showPreciseLocationDialog() {
         AlertDialog.Builder(this)
             .setTitle("Precise location required")
-            .setMessage("RoadConquest needs Precise location to distinguish nearby roads. Enable Precise location for RoadConquest in Android settings.")
+            .setMessage("Road Conquest needs Precise location to distinguish nearby roads. Enable Precise location for Road Conquest in Android settings.")
             .setPositiveButton("Open settings") { _, _ -> openAppSettings() }
             .setNegativeButton("Not now", null)
             .show()
