@@ -139,17 +139,22 @@ class AccountActivityTest {
         }
     }
 
-    @Test fun deleteAllDataRequiresSignedInAccountForPasswordConfirmation() {
+    @Test fun deleteAllDataUsesLocalTypedConfirmationWithoutRequiringAnAccount() {
         val context = RuntimeEnvironment.getApplication()
         AccountClient.endpointOverrideForTests = "https://example.com"
         AccountStore.clear(context)
+        Prefs.setDeviceDataDeletionPending(context, false)
 
         val controller = Robolectric.buildActivity(SettingsActivity::class.java).create().start().resume()
         try {
             val activity = controller.get()
             val control = activity.findViewById<Button>(R.id.deleteDeviceDataButton)
             assertEquals("Delete all data", control.text.toString())
-            assertFalse("Full deletion requires a signed-in account so the password can be verified", control.isEnabled)
+            assertTrue("Local deletion must remain available while signed out", control.isEnabled)
+            assertEquals(
+                "I confirm I want to delete all of my local data.",
+                SettingsActivity.DELETE_LOCAL_DATA_CONFIRMATION
+            )
         } finally {
             controller.pause().stop().destroy()
         }
