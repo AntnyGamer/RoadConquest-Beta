@@ -8,7 +8,6 @@ import android.text.method.PasswordTransformationMethod
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -19,7 +18,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.roadconquest.app.account.AccountClient
 import com.roadconquest.app.account.AccountStore
-import com.roadconquest.app.data.LocalDataReset
 import com.roadconquest.app.util.Appearance
 import com.roadconquest.app.util.ForegroundSession
 import java.util.concurrent.Executors
@@ -297,13 +295,10 @@ class AccountActivity : Activity() {
             text = "Permanently delete your cloud account, all sessions and all leaderboard data. This cannot be undone. Exported files and data on other devices must be deleted separately."
         })
         val password = passwordField()
-        val local = CheckBox(this).apply {
-            text = "Also delete this phone's saved history and stop tracking"
-            isChecked = true
-        }
         val error = TextView(this)
-        fields.addView(password); fields.addView(local); fields.addView(error)
+        fields.addView(password); fields.addView(error)
         val dialog = AlertDialog.Builder(this).setTitle("Delete account?").setView(fields)
+            .setMessage("This permanently deletes your cloud account, sessions, leaderboard scores and verified-road records. Saved driving data on this phone stays. Use Settings → Data and privacy → Delete all data to remove everything.")
             .setNegativeButton("Cancel", null).setPositiveButton("Delete account", null).create()
         dialog.setOnDismissListener { password.text.clear() }
         dialog.setOnShowListener {
@@ -313,23 +308,16 @@ class AccountActivity : Activity() {
                     error.text = "Enter your current password to delete your account."
                     return@setOnClickListener
                 }
-                val removeLocal = local.isChecked
                 dialog.dismiss()
                 setBusy(true)
                 statusText.text = "Deleting account…"
                 executor.execute {
-                    var accountDeleted = false
                     val result = runCatching {
                         AccountClient.deleteAccount(session.token, currentPassword)
-                        accountDeleted = true
                         synchronized(AccountStore) {
                             if (AccountStore.load(applicationContext)?.token == session.token) {
                                 AccountStore.clear(applicationContext)
                             }
-                        }
-                        if (removeLocal) {
-                            LocalDataReset.stopTracking(applicationContext)
-                            LocalDataReset.clearStoppedData(applicationContext)
                         }
                     }
                     runOnUiThread {
@@ -337,9 +325,8 @@ class AccountActivity : Activity() {
                         setBusy(false)
                         render(AccountStore.load(this))
                         statusText.text = result.fold(
-                            { if (removeLocal) "Account and saved device data deleted. Tracking is off." else "Account deleted. Saved device history was kept." },
-                            { if (accountDeleted) "Account deleted. Device data could not be cleared; use Settings → Data and privacy to retry."
-                              else it.message ?: "Could not delete account. Your saved data is unchanged." }
+                            { "Account deleted. Saved device data was kept." },
+                            { it.message ?: "Could not delete account. Your saved data is unchanged." }
                         )
                     }
                 }
