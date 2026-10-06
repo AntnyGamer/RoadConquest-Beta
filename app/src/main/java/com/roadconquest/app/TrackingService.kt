@@ -275,7 +275,13 @@ class TrackingService : Service(), LocationListener {
             // No more fixes may arrive while Android Location is off. Give any unresolved
             // corner/end-of-drive intervals an immediate final pass instead of waiting for
             // their ordinary retry deadline. A single provider handoff does not need this.
-            if (!locationManager.isLocationEnabled) maybeRunMatching(force = true)
+            if (!locationManager.isLocationEnabled) {
+                // Backoff is useful while we are still collecting evidence, but once Location
+                // is switched off there will be no newer point to wake a deferred corner retry.
+                // Make those pending holes eligible once, then run the normal bounded matcher.
+                repository.makePendingMatchingEligibleNow()
+                maybeRunMatching(force = true)
+            }
         }
         if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
             requestLocations()
@@ -629,7 +635,9 @@ class TrackingService : Service(), LocationListener {
         private const val MAX_START_ANCHOR_AGE_MS = 10_000L
         private const val MATCH_INTERVAL_MS = 10_000L
         private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 1_000f
-        private const val MATCH_RETRY_AFTER_PARTIAL_MS = 30_000L
+        // A partial result usually means an intersection needs one or two newer fixes.
+        // Retry on the normal matching cadence so turn holes close while the drive is still live.
+        private const val MATCH_RETRY_AFTER_PARTIAL_MS = MATCH_INTERVAL_MS
         private const val MATCH_RETRY_AFTER_FAILURE_MS = 5 * 60 * 1000L
         private const val MATCH_SINGLE_POINT_DEFERRAL_MS = 30_000L
         private const val MATCH_BACKLOG_CONTINUATION_MS = 30_000L
