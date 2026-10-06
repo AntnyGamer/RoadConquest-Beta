@@ -37,6 +37,22 @@ class FogCoverageTest {
             800.0, 1000.0, 10.0, 1000.0), 200, 400))
     }
 
+
+    @Test fun movingCameraGuardFallsBackBeforeTheDetailedFogEdgeReachesTheViewport() {
+        val nearEdge = doubleArrayOf(
+            -50.0, -100.0, 250.0, -100.0,
+            250.0, 500.0, -50.0, 500.0
+        )
+        assertTrue(FogCoverage.coversViewport(nearEdge, 200, 400))
+        assertFalse(FogCoverage.coversViewport(nearEdge, 200, 400, 0.35))
+
+        val comfortablyPadded = doubleArrayOf(
+            -100.0, -200.0, 300.0, -200.0,
+            300.0, 600.0, -100.0, 600.0
+        )
+        assertTrue(FogCoverage.coversViewport(comfortablyPadded, 200, 400, 0.35))
+    }
+
     @Test fun invalidOrCollapsedQuadsUseTheWorldFallback() {
         assertFalse(FogCoverage.coversViewport(DoubleArray(8), 200, 400))
         assertFalse(FogCoverage.coversViewport(DoubleArray(8) { Double.NaN }, 200, 400))
