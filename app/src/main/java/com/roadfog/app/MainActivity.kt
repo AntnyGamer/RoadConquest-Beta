@@ -304,7 +304,9 @@ class MainActivity : Activity() {
         renderer?.setPlaceOverlayMode(Prefs.placeOverlayMode(this))
         if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
         renderer?.refreshCosmetics()
-        ProgressionManager.recordBatteryFromSystem(this)
+        if (!Prefs.isDeviceDataDeletionPending(this)) {
+            ProgressionManager.recordBatteryFromSystem(this)
+        }
         // Road updates can finish while this activity is stopped and its receiver is
         // unregistered. A mere pause/resume keeps the receiver registered and can reuse cache.
         renderer?.resumeViewport(refreshRoadsAfterStop)
@@ -561,7 +563,9 @@ class MainActivity : Activity() {
     private fun refreshControls() {
         statsHandler.removeCallbacks(statsRefresh)
         statsRefreshScheduled = false
-        if (Prefs.isTrackingPaused(this) || !hasLocationPermission() || !locationManager.isLocationEnabled) renderer?.clearCurrentLocation()
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
+            !hasLocationPermission() || !locationManager.isLocationEnabled
+        ) renderer?.clearCurrentLocation()
         val manualOnly = Prefs.isManualOnly(this)
         val active = TrackingService.isRunning
         statusText.text = when {
@@ -579,12 +583,21 @@ class MainActivity : Activity() {
             if (generation != summaryGeneration) return@execute
             val result = runCatching {
                 val summary = repository.getSummary()
-                val progression = ProgressionManager.sync(this, summary)
-                val unlocked = Achievements.newlyUnlocked(
-                    this,
-                    summary,
-                    ProgressionManager.metrics(progression)
-                )
+                val deleting = Prefs.isDeviceDataDeletionPending(this)
+                val progression = if (deleting) {
+                    ProgressionRepository(this).snapshot()
+                } else {
+                    ProgressionManager.sync(this, summary)
+                }
+                val unlocked = if (deleting) {
+                    emptyList()
+                } else {
+                    Achievements.newlyUnlocked(
+                        this,
+                        summary,
+                        ProgressionManager.metrics(progression)
+                    )
+                }
                 Triple(summary, progression, unlocked)
             }
             runOnUiThread {
@@ -618,7 +631,10 @@ class MainActivity : Activity() {
             }
         }
 
-        if (Prefs.isTrackingPaused(this)) {
+        if (Prefs.isDeviceDataDeletionPending(this)) {
+            enableButton.text = "Deleting device data…"
+            enableButton.isEnabled = false
+        } else if (Prefs.isTrackingPaused(this)) {
             enableButton.text = getString(R.string.resume_tracking)
             enableButton.isEnabled = true
         } else if (!manualOnly) {
