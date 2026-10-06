@@ -9,7 +9,7 @@
 - Use the farther-out road visibility threshold consistently for road tapping and native map rendering.
 - Match verified-leaderboard OSRM candidate search to the strengthened local turn envelope while retaining the stricter server-side 0.95 confidence, no-alternative, distance, speed, and catalog checks.
 - Update the prominent in-app and hosted privacy disclosures to explicitly state that Road Conquest collects precise location data for driven-road and visited-place features in the background when automatic tracking is enabled and the app is closed or not in use.
-- Simplify destructive controls to exactly two in-app actions: Delete account (cloud account only) and Delete all data (cloud account plus all local Road Conquest data). Both require the current account password; the public deletion webpage remains available for Google Play's external deletion requirement but is no longer a third in-app button.
+- Simplify destructive controls to exactly two in-app actions: Delete account removes the cloud account while keeping local history; Delete all data removes all local Road Conquest data while keeping the cloud account and leaderboard scores. Both require the current account password; the public deletion webpage remains available for Google Play's external account-deletion requirement but is no longer a third in-app button.
 - Add a CI gate that verifies 16 KB native-library ZIP alignment and 64-bit ELF LOAD-segment alignment before a Play release can be published.
 - Keep Android 12+ support, API 37 targeting, the permanent `com.roadconquest.app` package ID, accounts, local-data deletion, fog safety fallbacks, and release signing behavior unchanged unless listed above.
 
