@@ -338,7 +338,6 @@ class AccountActivity : Activity() {
                         if (removeLocal) {
                             stopForDataDeletion()
                             TrackingRepository(applicationContext).clearHistory()
-                            Achievements.reset(applicationContext)
                             ProgressionManager.resetLocalProgression(applicationContext)
                             Prefs.setTrackingPaused(applicationContext, false)
                             notifyDataDeleted()
@@ -371,7 +370,6 @@ class AccountActivity : Activity() {
                 executor.execute {
                     val result = runCatching {
                         TrackingRepository(applicationContext).clearHistory()
-                        Achievements.reset(applicationContext)
                         ProgressionManager.resetLocalProgression(applicationContext)
                         Prefs.setTrackingPaused(applicationContext, false)
                         notifyDataDeleted()
