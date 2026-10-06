@@ -419,7 +419,7 @@ class SettingsActivity : Activity() {
         runCatching {
             ContextCompat.startForegroundService(this, Intent(this, TrackingService::class.java))
         }.onFailure {
-            Toast.makeText(this, "Open RoadConquest and verify location permissions to start tracking.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Open Road Conquest and verify location permissions to start tracking.", Toast.LENGTH_LONG).show()
         }
     }
 
