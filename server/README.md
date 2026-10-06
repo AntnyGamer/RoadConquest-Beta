@@ -108,6 +108,14 @@ Provider references: [Neon plans](https://neon.com/docs/introduction/plans),
 [Functions deployment](https://neon.com/docs/compute/functions/deploy), and
 [Functions runtime limits](https://neon.com/docs/compute/functions/reference/runtime-limits).
 
+### Play policy web pages
+
+The deployed HTTPS account service also serves:
+- `GET /privacy` — Road Conquest privacy policy for the app and Play Console.
+- `GET /delete-account` — external browser flow that signs in and permanently deletes the account through the same authenticated API used by the app.
+
+Keep these URLs publicly reachable when publishing. They are intentionally static/same-origin pages and do not add another hosting dependency.
+
 ## Account changes and deletion
 
 `PUT /v1/username` accepts `{username, password}` under the current bearer session.
