@@ -31,6 +31,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.roadfog.app.data.TrackingRepository
 import com.roadfog.app.data.RoadRecord
 import com.roadfog.app.data.ProgressionRepository
+import com.roadfog.app.data.LocalDataReset
 import com.roadfog.app.account.AccountOnboarding
 import com.roadfog.app.achievements.Achievements
 import com.roadfog.app.export.DataExporter
@@ -195,11 +196,19 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         repository = TrackingRepository(this)
-        // A process kill can interrupt export before its finally block deletes the private
-        // SQLite snapshot. Clean those cache-only files whenever the app is opened again.
+        // Recover a privacy deletion interrupted by process death before doing ordinary
+        // startup cleanup. The persisted pending marker also keeps tracking from auto-resuming.
         summaryExecutor.execute {
-            runCatching { DataExporter.clearTemporarySnapshots(applicationContext) }
-                .onFailure { Log.w("RoadConquest", "Could not remove interrupted export snapshot", it) }
+            val cleanup = runCatching {
+                if (Prefs.isDeviceDataDeletionPending(applicationContext)) {
+                    LocalDataReset.clearStoppedData(applicationContext)
+                } else {
+                    DataExporter.clearTemporarySnapshots(applicationContext)
+                }
+            }
+            cleanup.exceptionOrNull()?.let {
+                Log.w("RoadConquest", "Could not finish startup data cleanup", it)
+            }
         }
         startAfterPermissionGrant = savedInstanceState?.getBoolean(STATE_START_AFTER_PERMISSION) ?: false
         locationManager = getSystemService(LocationManager::class.java)
