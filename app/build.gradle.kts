@@ -57,6 +57,9 @@ tasks.withType<Test>().configureEach {
     // Isolate Robolectric's legacy UI, native Canvas and SQLite backends on every host.
     // Sharing their native runtime can corrupt JNI bindings on Windows and Linux.
     forkEvery = 1
+    // Keep one test class per worker JVM, but let CI run two isolated JVMs at once.
+    // This preserves the native/JNI isolation above while using the runner's spare CPU.
+    if (System.getenv("CI") == "true") maxParallelForks = 2
     doFirst {
         require(javaLauncher.get().metadata.languageVersion.asInt() >= 21) {
             "The Android 17 Robolectric tests require JDK 21 or newer. Set Android Studio's Gradle JDK or JAVA_HOME accordingly."
