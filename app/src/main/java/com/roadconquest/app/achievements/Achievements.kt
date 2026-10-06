@@ -13,11 +13,11 @@ data class AchievementMetrics(
 )
 
 enum class AchievementCategory(val label: String) {
-    ROADS("Roads"),
-    DISTANCE("Distance"),
-    PLACES("Places"),
-    ADS("Ads"),
-    EXTRA("Extra")
+    ROADS("Road Conquest"),
+    DISTANCE("Mileage"),
+    PLACES("Exploration"),
+    ADS("Ad Rewards"),
+    EXTRA("Bonus")
 }
 
 data class AchievementProgress(
@@ -64,8 +64,8 @@ object Achievements {
             AchievementProgress("countries_5", "World Traveler", "Visit 5 different countries", AchievementCategory.PLACES, metrics.countries.toDouble(), 5.0, "countries", 1_800),
             AchievementProgress("countries_10", "Globe Conquerer", "Visit 10 different countries", AchievementCategory.PLACES, metrics.countries.toDouble(), 10.0, "countries", 4_000),
 
-            AchievementProgress("battery_5", "Running on Fumes", "Use RoadConquest with 5% battery or less", AchievementCategory.EXTRA, battery5, 1.0, "complete", 300),
-            AchievementProgress("battery_1", "Last Percent", "Use RoadConquest with 1% battery or less", AchievementCategory.EXTRA, battery1, 1.0, "complete", 1_000),
+            AchievementProgress("battery_5", "Running on Fumes", "Use Road Conquest with 5% battery or less", AchievementCategory.EXTRA, battery5, 1.0, "complete", 300),
+            AchievementProgress("battery_1", "Last Percent", "Use Road Conquest with 1% battery or less", AchievementCategory.EXTRA, battery1, 1.0, "complete", 1_000),
 
             AchievementProgress("ads_5", "Ad Starter", "Watch 5 ads", AchievementCategory.ADS, metrics.adsWatched.toDouble(), 5.0, "ads", 100),
             AchievementProgress("ads_10", "Ad Regular", "Watch 10 ads", AchievementCategory.ADS, metrics.adsWatched.toDouble(), 10.0, "ads", 200),
