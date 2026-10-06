@@ -825,7 +825,6 @@ class MapRenderer(
             fogAgain = true
             return
         }
-        if (cameraMoving && map.cameraPosition.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) return
         mainHandler.removeCallbacks(renderFog)
         val delay = FOG_RENDER_INTERVAL_MS - (SystemClock.elapsedRealtime() - lastFogRenderAt)
         if (cameraMoving && delay > 0L) {
