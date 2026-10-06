@@ -75,7 +75,7 @@ class MatchingRetryTest {
                 assertEquals(1L, repo.getSummary().roadSegmentCount)
                 val now = System.currentTimeMillis()
                 val retryAt = requireNotNull(repo.nextDeferredMatchAttempt(now))
-                assertTrue(retryAt - now in 20_000..30_000)
+                assertTrue(retryAt - now in 5_000..15_000)
                 assertEquals(setOf(ids[1]), repo.loadMatchingWindow(nowMillis = retryAt).markableIds)
             } finally {
                 field(service, "ready").setBoolean(service, false)
