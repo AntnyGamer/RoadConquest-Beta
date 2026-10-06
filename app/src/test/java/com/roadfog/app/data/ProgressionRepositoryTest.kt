@@ -225,8 +225,8 @@ class ProgressionRepositoryTest {
             assertEquals(0L, it.countries)
         }
 
-        // Pre-baseline candidates are discarded; only a candidate observed after the baseline
-        // completes can earn discovery credit.
+        // A place seen while the baseline is resolving is preserved, but it must stay
+        // blocked until the zero-point hierarchy is complete.
         assertTrue(progression.pendingPlaceCandidates(nowMillis = 4_000L).isEmpty())
         later.time = 5_000L
         assertTrue(progression.recordPlaceCandidate(later))
@@ -325,7 +325,13 @@ class ProgressionRepositoryTest {
             accuracy = 5f
             time = 2_000L
         }
-        assertFalse(progression.recordPlaceCandidate(later))
+        assertTrue(progression.recordPlaceCandidate(later))
+        // The queued reward candidate exists but the baseline sentinel is the only candidate
+        // allowed to leave the repository while zero-point resolution is incomplete.
+        assertEquals(
+            Long.MIN_VALUE,
+            progression.pendingPlaceCandidates(nowMillis = 2_000L).single().cellX
+        )
 
         var candidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
         val partial = listOf(
@@ -346,8 +352,10 @@ class ProgressionRepositoryTest {
             .first { it.cellX == Long.MIN_VALUE }
         progression.resolveCandidate(candidate, partial)
 
-        assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).none { it.cellX == Long.MIN_VALUE })
-        assertTrue(progression.recordPlaceCandidate(later))
+        val released = progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE)
+        assertTrue(released.none { it.cellX == Long.MIN_VALUE })
+        assertEquals(1, released.size)
+        assertEquals(later.time, released.single().visitedAt)
         assertEquals(0L, progression.snapshot().balance)
     }
 
