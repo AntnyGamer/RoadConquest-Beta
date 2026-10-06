@@ -123,17 +123,17 @@ class NotificationStopTest {
         } finally { controller.destroy() }
     }
 
-    @Test fun pausedTrackingOnlyAutoResumesInAutomaticMode() {
+    @Test fun pausedTrackingDoesNotAutoResumeWhileDeviceDeletionIsPending() {
         val app = RuntimeEnvironment.getApplication()
         Prefs.setTrackingPaused(app, true)
-        Prefs.setManualOnly(app, false)
-        assertTrue(Prefs.shouldResumePausedTracking(app))
-
         Prefs.setManualOnly(app, true)
+        assertTrue("Manual notification stops still resume on app reopen", Prefs.shouldResumePausedTracking(app))
+
+        Prefs.setDeviceDataDeletionPending(app, true)
         assertFalse(Prefs.shouldResumePausedTracking(app))
 
-        Prefs.setTrackingPaused(app, false)
-        assertFalse(Prefs.shouldResumePausedTracking(app))
+        Prefs.setDeviceDataDeletionPending(app, false)
+        assertTrue(Prefs.shouldResumePausedTracking(app))
     }
 
 }
