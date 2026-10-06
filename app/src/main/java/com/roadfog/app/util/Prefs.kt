@@ -12,6 +12,7 @@ object Prefs {
     private const val KEY_FOG_ENABLED = "fog_enabled"
     private const val KEY_TRACKING_PAUSED = "tracking_paused_until_open"
     private const val KEY_ACCOUNT_PROMPT_SHOWN = "account_prompt_shown"
+    private const val KEY_DEVICE_DATA_DELETION_PENDING = "device_data_deletion_pending"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -53,8 +54,15 @@ object Prefs {
 
     fun isTrackingPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_TRACKING_PAUSED, false)
 
+    fun isDeviceDataDeletionPending(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DEVICE_DATA_DELETION_PENDING, false)
+
+    fun setDeviceDataDeletionPending(context: Context, pending: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DEVICE_DATA_DELETION_PENDING, pending).commit()
+    }
+
     fun shouldResumePausedTracking(context: Context): Boolean =
-        isTrackingPaused(context) && !isManualOnly(context)
+        isTrackingPaused(context) && !isDeviceDataDeletionPending(context)
 
     fun setTrackingPaused(context: Context, paused: Boolean) {
         // Persist before stopping the service so a process restart cannot undo the stop.
