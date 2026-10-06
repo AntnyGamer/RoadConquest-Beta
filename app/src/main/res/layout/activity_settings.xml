@@ -349,7 +349,15 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Account deletion webpage" />
+                android:text="Delete cloud account on web" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="This is the browser alternative to Account → Delete account. It deletes the cloud account and leaderboard data, but not this phone’s local driving history."
+                android:textColor="?attr/rcTextSecondary"
+                android:textSize="12sp" />
 
             <Button
                 android:id="@+id/exportButton"
