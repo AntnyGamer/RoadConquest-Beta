@@ -11,15 +11,13 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Bundle
 import android.view.View
-import android.view.WindowManager
-import android.widget.Button
+ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
-import android.text.InputType
-import androidx.core.content.ContextCompat
+ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -249,52 +247,39 @@ class SettingsActivity : Activity() {
 
     private fun showDeleteDeviceDataDialog() {
         if (deletingDeviceData) return
-        val session = AccountStore.load(this)
-        if (session == null || !AccountClient.isConfigured()) {
-            Toast.makeText(
-                this,
-                "Sign in to your Road Conquest account before deleting all data.",
-                Toast.LENGTH_LONG
-            ).show()
-            return
-        }
-
-        val density = resources.displayMetrics.density
+         val density = resources.displayMetrics.density
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((24 * density).toInt(), 0, (24 * density).toInt(), 0)
         }
-        val password = EditText(this).apply {
-            hint = "Current password"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            isSingleLine = true
-            filters = arrayOf(android.text.InputFilter.LengthFilter(128))
+        val confirmation = EditText(this).apply {
+            hint = "Type the confirmation phrase exactly"
+            isSingleLine = false
+            maxLines = 3
+            filters = arrayOf(android.text.InputFilter.LengthFilter(DELETE_LOCAL_DATA_CONFIRMATION.length))
             isSaveEnabled = false
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
-            setAutofillHints(View.AUTOFILL_HINT_PASSWORD)
-            contentDescription = "Current password for delete all data"
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            contentDescription = "Delete all data confirmation phrase"
         }
         val error = TextView(this)
-        fields.addView(password)
+        fields.addView(confirmation)
         fields.addView(error)
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Delete all data?")
             .setMessage(
-                "This permanently deletes all saved Road Conquest data on this phone, including trips, mileage, roads, explored places, points, purchases and cosmetics. Your cloud account and leaderboard scores stay. Tracking stops and verified-drive sharing turns off. Exported files must be deleted separately. This cannot be undone."
+                "This permanently deletes all saved Road Conquest data on this phone, including trips, mileage, roads, explored places, points, purchases and cosmetics. Your cloud account and leaderboard scores stay. Tracking stops and verified-drive sharing turns off. Exported files must be deleted separately. This cannot be undone.\n\nType exactly:\n$DELETE_LOCAL_DATA_CONFIRMATION"
             )
             .setView(fields)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Delete all data", null)
             .create()
 
-        dialog.setOnDismissListener { password.text.clear() }
+        dialog.setOnDismissListener { confirmation.text.clear() }
         dialog.setOnShowListener {
-            dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val currentPassword = password.text.toString()
-                if (currentPassword.isEmpty()) {
-                    error.text = "Enter your current password to delete all data."
+                if (confirmation.text.toString() != DELETE_LOCAL_DATA_CONFIRMATION) {
+                    error.text = "Type the confirmation phrase exactly, including the period."
                     return@setOnClickListener
                 }
 
@@ -302,14 +287,9 @@ class SettingsActivity : Activity() {
                 deletingDeviceData = true
                 deleteDeviceDataButton.isEnabled = false
                 dataExecutor.execute {
-                    var passwordConfirmed = false
                     val result = runCatching {
-                        // Require the current account password before erasing local Road Conquest
-                        // data, but keep the cloud account and leaderboard records intact.
-                        AccountClient.verifyPassword(session.token, currentPassword)
-                        passwordConfirmed = true
-                        // Make local cleanup durable immediately after password confirmation.
-                        // If the process dies afterward, startup finishes the pending local wipe.
+                        // Persist the pending marker before local cleanup. If the process dies
+                        // after confirmation, startup safely finishes the local wipe.
                         LocalDataReset.stopTracking(applicationContext)
                         LocalDataReset.clearStoppedData(applicationContext)
                     }
@@ -319,8 +299,7 @@ class SettingsActivity : Activity() {
                         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
                         manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
                         deleteDeviceDataButton.isEnabled =
-                            AccountStore.load(this) != null && AccountClient.isConfigured() &&
-                                !Prefs.isDeviceDataDeletionPending(this)
+                            !deletingDeviceData && !Prefs.isDeviceDataDeletionPending(this)
                         result.fold(
                             onSuccess = {
                                 Toast.makeText(
@@ -330,10 +309,10 @@ class SettingsActivity : Activity() {
                                 ).show()
                             },
                             onFailure = { failure ->
-                                val message = if (passwordConfirmed) {
-                                    "Password confirmed. Device cleanup will finish automatically when Road Conquest opens again."
+                                val message = if (Prefs.isDeviceDataDeletionPending(this)) {
+                                    "Device cleanup will finish automatically when Road Conquest opens again."
                                 } else {
-                                    failure.message ?: "Could not confirm your password. No data was deleted."
+                                    failure.message ?: "Could not delete local data. No data was deleted."
                                 }
                                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                             }
@@ -423,8 +402,7 @@ class SettingsActivity : Activity() {
         leaderboardPrivacySwitch.isChecked = session?.leaderboardVisible == true
         leaderboardPrivacySwitch.isEnabled = session != null && accountConfigured
         deleteDeviceDataButton.isEnabled =
-            session != null && accountConfigured && !deletingDeviceData &&
-                !Prefs.isDeviceDataDeletionPending(this)
+            !deletingDeviceData && !Prefs.isDeviceDataDeletionPending(this)
         renderingAccountPrivacy = false
 
         if (session == null || !accountConfigured) return
@@ -454,7 +432,8 @@ class SettingsActivity : Activity() {
                             accountSummaryText.text = "Session expired. Open Account / sign in."
                             leaderboardPrivacySwitch.isChecked = false
                             leaderboardPrivacySwitch.isEnabled = false
-                            deleteDeviceDataButton.isEnabled = false
+                            deleteDeviceDataButton.isEnabled =
+                                !deletingDeviceData && !Prefs.isDeviceDataDeletionPending(this)
                             renderingAccountPrivacy = false
                         }
                     }
@@ -559,6 +538,8 @@ class SettingsActivity : Activity() {
     }
 
     companion object {
+        internal const val DELETE_LOCAL_DATA_CONFIRMATION =
+            "I confirm I want to delete all of my local data."
         private const val REQUEST_EXPORT = 200
     }
 }
