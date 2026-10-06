@@ -137,7 +137,7 @@ class AppDatabase private constructor(context: Context) :
     }
 
     companion object {
-        private const val DB_NAME = "roadfog.db"
+        private const val DB_NAME = "roadconquest.db"
         private const val DB_VERSION = 10
 
         @Volatile
