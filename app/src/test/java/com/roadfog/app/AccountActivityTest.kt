@@ -218,9 +218,11 @@ class AccountActivityTest {
         }
         assertTrue(blockerStarted.await(5, TimeUnit.SECONDS))
 
-        activity.findViewById<Button>(R.id.deleteDeviceDataButton).performClick()
-        org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-            .getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        // Queue the same authorized deletion work the Settings confirmation uses, but do
+        // it directly so this test measures executor teardown rather than Robolectric dialog timing.
+        LocalDataReset.stopTracking(context)
+        executor.execute { LocalDataReset.clearStoppedData(context) }
+
         // Close Settings while the authorized deletion is deliberately queued behind work.
         // Graceful executor shutdown must keep that queued deletion alive.
         controller.pause().stop().destroy()
