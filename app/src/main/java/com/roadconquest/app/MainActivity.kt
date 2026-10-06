@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.Manifest
 import android.app.Activity
@@ -28,24 +28,24 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.data.RoadRecord
-import com.roadfog.app.data.ProgressionRepository
-import com.roadfog.app.data.LocalDataReset
-import com.roadfog.app.account.AccountOnboarding
-import com.roadfog.app.achievements.Achievements
-import com.roadfog.app.export.DataExporter
-import com.roadfog.app.map.MapRenderer
-import com.roadfog.app.map.PlaceOverlayInfo
-import com.roadfog.app.map.PlaceOverlayMode
-import com.roadfog.app.progression.ProgressionManager
-import com.roadfog.app.util.LocationProviders
-import com.roadfog.app.util.Prefs
-import com.roadfog.app.util.Appearance
-import com.roadfog.app.util.UiTheme
-import com.roadfog.app.util.SystemSettingsNavigator
-import com.roadfog.app.util.StatsText
-import com.roadfog.app.util.ForegroundSession
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.data.RoadRecord
+import com.roadconquest.app.data.ProgressionRepository
+import com.roadconquest.app.data.LocalDataReset
+import com.roadconquest.app.account.AccountOnboarding
+import com.roadconquest.app.achievements.Achievements
+import com.roadconquest.app.export.DataExporter
+import com.roadconquest.app.map.MapRenderer
+import com.roadconquest.app.map.PlaceOverlayInfo
+import com.roadconquest.app.map.PlaceOverlayMode
+import com.roadconquest.app.progression.ProgressionManager
+import com.roadconquest.app.util.LocationProviders
+import com.roadconquest.app.util.Prefs
+import com.roadconquest.app.util.Appearance
+import com.roadconquest.app.util.UiTheme
+import com.roadconquest.app.util.SystemSettingsNavigator
+import com.roadconquest.app.util.StatsText
+import com.roadconquest.app.util.ForegroundSession
 import org.maplibre.android.MapLibre
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
@@ -682,9 +682,9 @@ class MainActivity : Activity() {
 
     private fun showOverlayInfo(info: PlaceOverlayInfo) {
         val type = when (info.kind) {
-            com.roadfog.app.data.PlaceKind.COUNTRY -> "Country"
-            com.roadfog.app.data.PlaceKind.STATE -> "State or region"
-            com.roadfog.app.data.PlaceKind.TOWN -> "Town"
+            com.roadconquest.app.data.PlaceKind.COUNTRY -> "Country"
+            com.roadconquest.app.data.PlaceKind.STATE -> "State or region"
+            com.roadconquest.app.data.PlaceKind.TOWN -> "Town"
         }
         val population = info.population?.let {
             String.format(Locale.getDefault(), "%,d", it)

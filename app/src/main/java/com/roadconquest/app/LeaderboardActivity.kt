@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.app.Activity
 import android.content.Context
@@ -9,10 +9,10 @@ import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.roadfog.app.account.AccountClient
-import com.roadfog.app.account.AccountStore
-import com.roadfog.app.util.Appearance
-import com.roadfog.app.util.ForegroundSession
+import com.roadconquest.app.account.AccountClient
+import com.roadconquest.app.account.AccountStore
+import com.roadconquest.app.util.Appearance
+import com.roadconquest.app.util.ForegroundSession
 import java.util.Locale
 import java.util.concurrent.Executors
 

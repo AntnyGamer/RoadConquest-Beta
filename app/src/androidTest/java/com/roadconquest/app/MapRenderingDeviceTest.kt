@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.Manifest
 import android.app.NotificationManager
@@ -14,11 +14,11 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
-import com.roadfog.app.data.MatchedRoad
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.map.MapMode
-import com.roadfog.app.map.MapRenderer
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.data.MatchedRoad
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.map.MapMode
+import com.roadconquest.app.map.MapRenderer
+import com.roadconquest.app.util.Prefs
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test

@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -17,11 +17,11 @@ import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.roadfog.app.account.AccountClient
-import com.roadfog.app.account.AccountStore
-import com.roadfog.app.data.LocalDataReset
-import com.roadfog.app.util.Appearance
-import com.roadfog.app.util.ForegroundSession
+import com.roadconquest.app.account.AccountClient
+import com.roadconquest.app.account.AccountStore
+import com.roadconquest.app.data.LocalDataReset
+import com.roadconquest.app.util.Appearance
+import com.roadconquest.app.util.ForegroundSession
 import java.util.concurrent.Executors
 
 class AccountActivity : Activity() {
@@ -410,7 +410,7 @@ class AccountActivity : Activity() {
     }
 
     companion object {
-        const val EXTRA_ONBOARDING = "com.roadfog.app.ACCOUNT_ONBOARDING"
+        const val EXTRA_ONBOARDING = "com.roadconquest.app.ACCOUNT_ONBOARDING"
         private val USERNAME = Regex("[A-Za-z0-9_]{3,24}")
     }
 }

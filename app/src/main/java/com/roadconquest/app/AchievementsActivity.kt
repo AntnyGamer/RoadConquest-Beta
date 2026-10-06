@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.app.Activity
 import android.content.Context
@@ -11,13 +11,13 @@ import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.roadfog.app.achievements.AchievementCategory
-import com.roadfog.app.achievements.AchievementProgress
-import com.roadfog.app.achievements.Achievements
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.progression.ProgressionManager
-import com.roadfog.app.util.Appearance
-import com.roadfog.app.util.ForegroundSession
+import com.roadconquest.app.achievements.AchievementCategory
+import com.roadconquest.app.achievements.AchievementProgress
+import com.roadconquest.app.achievements.Achievements
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.progression.ProgressionManager
+import com.roadconquest.app.util.Appearance
+import com.roadconquest.app.util.ForegroundSession
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt

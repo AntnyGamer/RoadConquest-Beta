@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.app.Activity
 import android.content.Context
@@ -11,17 +11,17 @@ import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.roadfog.app.data.ProgressionRepository
-import com.roadfog.app.data.ProgressionSnapshot
-import com.roadfog.app.data.PurchaseResult
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.progression.CosmeticType
-import com.roadfog.app.progression.Cosmetics
-import com.roadfog.app.progression.ProgressionManager
-import com.roadfog.app.progression.ShopCatalog
-import com.roadfog.app.progression.ShopItem
-import com.roadfog.app.util.Appearance
-import com.roadfog.app.util.ForegroundSession
+import com.roadconquest.app.data.ProgressionRepository
+import com.roadconquest.app.data.ProgressionSnapshot
+import com.roadconquest.app.data.PurchaseResult
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.progression.CosmeticType
+import com.roadconquest.app.progression.Cosmetics
+import com.roadconquest.app.progression.ProgressionManager
+import com.roadconquest.app.progression.ShopCatalog
+import com.roadconquest.app.progression.ShopItem
+import com.roadconquest.app.util.Appearance
+import com.roadconquest.app.util.ForegroundSession
 import java.util.Locale
 import java.util.concurrent.Executors
 
