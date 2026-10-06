@@ -125,8 +125,8 @@ transaction. Reauthentication verifies the password without changing account or 
 Username changes preserve the stable account ID and all scores; duplicate names return 409.
 Deletion cascades through every session, score, competitive road, live run and receipt. Other
 accounts and the shared road catalog are preserved. Device history is local: Delete account leaves
-it intact, while the separate in-app Delete all data action first reauthenticates the current
-password and then clears device-only data without deleting the cloud account. No deletion request
+it intact, while the separate in-app Delete all data action uses an exact typed confirmation phrase
+and then clears device-only data without contacting or deleting the cloud account. No deletion request
 accepts a target user ID.
 
 An existing restricted API role also needs these grants, applied by the database owner with
