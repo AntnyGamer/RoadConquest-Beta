@@ -25,7 +25,7 @@ import org.robolectric.annotation.SQLiteMode
 class NotificationStopTest {
     @Before fun setup() {
         val app = RuntimeEnvironment.getApplication()
-        app.getSharedPreferences("roadfog_preferences", 0).edit().clear().commit()
+        app.getSharedPreferences("roadconquest_preferences", 0).edit().clear().commit()
         Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_BACKGROUND_LOCATION, "${app.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
         Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(true)

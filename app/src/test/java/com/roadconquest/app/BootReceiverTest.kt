@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 class BootReceiverTest {
     @Before fun setup() {
         val app = RuntimeEnvironment.getApplication()
-        app.getSharedPreferences("roadfog_preferences", 0).edit().clear().commit()
+        app.getSharedPreferences("roadconquest_preferences", 0).edit().clear().commit()
         Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(true)
         Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
     }
