@@ -363,7 +363,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="7dp"
-                android:text="Permanently deletes your cloud account plus this phone’s trips, mileage, roads, explored places, points, purchases and cosmetics. You must be signed in and confirm your current password."
+                android:text="Permanently deletes this phone’s trips, mileage, roads, explored places, points, purchases and cosmetics. Your cloud account and leaderboard scores stay. You must be signed in and confirm your current password."
                 android:textColor="?attr/rcTextSecondary"
                 android:textSize="12sp" />
 
