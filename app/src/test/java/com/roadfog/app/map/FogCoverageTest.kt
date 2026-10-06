@@ -34,13 +34,13 @@ class FogCoverageTest {
             245.0, 490.0, -45.0, 490.0
         )
         assertTrue(FogCoverage.coversViewport(almostExposed, 200, 400))
-        assertFalse(FogCoverage.coversViewport(almostExposed, 200, 400, 0.25))
+        assertFalse(FogCoverage.coversViewport(almostExposed, 200, 400, 0.50))
 
         val roomy = doubleArrayOf(
-            -100.0, -200.0, 300.0, -200.0,
-            300.0, 600.0, -100.0, 600.0
+            -110.0, -210.0, 310.0, -210.0,
+            310.0, 610.0, -110.0, 610.0
         )
-        assertTrue(FogCoverage.coversViewport(roomy, 200, 400, 0.25))
+        assertTrue(FogCoverage.coversViewport(roomy, 200, 400, 0.50))
     }
 
     @Test fun rotationAndPanningRequireCoverageAtEveryCorner() {
