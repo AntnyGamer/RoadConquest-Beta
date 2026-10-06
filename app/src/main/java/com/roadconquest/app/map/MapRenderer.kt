@@ -311,8 +311,8 @@ class MapRenderer(
         return true
     }
 
-    fun centerOnStartingLocation(latitude: Double, longitude: Double): Boolean {
-        if (destroyed || centeredOnce || !latitude.isFinite() || !longitude.isFinite() ||
+    fun centerOnStartingLocation(latitude: Double, longitude: Double, force: Boolean = false): Boolean {
+        if (destroyed || (!force && centeredOnce) || !latitude.isFinite() || !longitude.isFinite() ||
             latitude !in -85.05112878..85.05112878 || longitude !in -180.0..180.0
         ) return false
         centeredOnce = true
