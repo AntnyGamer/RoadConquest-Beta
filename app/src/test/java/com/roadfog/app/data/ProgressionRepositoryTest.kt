@@ -380,7 +380,7 @@ class ProgressionRepositoryTest {
             longitude = -75.0
             accuracy = 5f
             time = 2_000L
-            setMock(true)
+            isMock = true
         }
         assertFalse(progression.recordPlaceCandidate(mock))
         assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).isEmpty())
