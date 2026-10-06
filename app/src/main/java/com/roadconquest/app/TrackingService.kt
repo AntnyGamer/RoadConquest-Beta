@@ -295,28 +295,34 @@ class TrackingService : Service(), LocationListener {
      * or race a matcher that is about to defer the same corner again.
      */
     private fun queueFinalMatchingFlush() {
-        if (!ready || locationManager.isLocationEnabled ||
+        if (!ready || !::locationManager.isInitialized || !::repository.isInitialized ||
+            locationManager.isLocationEnabled ||
             !finalMatchingFlushScheduled.compareAndSet(false, true)
         ) return
 
         val storageSubmitted = runCatching {
             storageExecutor.execute {
-                if (!ready || locationManager.isLocationEnabled) {
-                    finalMatchingFlushScheduled.set(false)
-                } else {
-                    val matchingSubmitted = runCatching {
-                        matchingExecutor.execute {
-                            try {
-                                if (ready && !locationManager.isLocationEnabled) {
-                                    repository.makePendingMatchingEligibleNow()
-                                    maybeRunMatching(force = true)
+                try {
+                    if (!ready || locationManager.isLocationEnabled) {
+                        finalMatchingFlushScheduled.set(false)
+                    } else {
+                        val matchingSubmitted = runCatching {
+                            matchingExecutor.execute {
+                                try {
+                                    if (ready && !locationManager.isLocationEnabled) {
+                                        repository.makePendingMatchingEligibleNow()
+                                        maybeRunMatching(force = true)
+                                    }
+                                } finally {
+                                    finalMatchingFlushScheduled.set(false)
                                 }
-                            } finally {
-                                finalMatchingFlushScheduled.set(false)
                             }
-                        }
-                    }.isSuccess
-                    if (!matchingSubmitted) finalMatchingFlushScheduled.set(false)
+                        }.isSuccess
+                        if (!matchingSubmitted) finalMatchingFlushScheduled.set(false)
+                    }
+                } catch (error: Exception) {
+                    finalMatchingFlushScheduled.set(false)
+                    Log.e("RoadConquest", "Could not queue final road matching pass", error)
                 }
             }
         }.isSuccess
