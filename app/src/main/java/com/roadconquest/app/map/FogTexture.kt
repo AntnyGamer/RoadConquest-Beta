@@ -14,9 +14,9 @@ object FogTexture {
     fun create(size: Int = SIZE): Bitmap {
         require(size > 0 && size and (size - 1) == 0)
         val pixels = IntArray(size * size)
+        // Duplicate the mathematical edge so BitmapShader repetition has no seam.
+        val denominator = (size - 1).coerceAtLeast(1).toDouble()
         for (y in 0 until size) for (x in 0 until size) {
-            // Duplicate the mathematical edge so BitmapShader repetition has no seam.
-            val denominator = (size - 1).coerceAtLeast(1).toDouble()
             val u = x.toDouble() / denominator * 2.0 * PI
             val v = y.toDouble() / denominator * 2.0 * PI
             // Layer broad cloud masses with progressively finer static detail. Integer
