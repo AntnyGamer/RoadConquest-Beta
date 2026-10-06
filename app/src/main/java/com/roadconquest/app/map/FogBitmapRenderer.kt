@@ -440,7 +440,7 @@ object FogBitmapRenderer {
     private const val MIN_VISIBLE_REVEAL_RADIUS_PX = 1.25f
 
     fun bitmapDimensionForZoom(zoom: Double): Int = when {
-        zoom < MIN_ROAD_ZOOM -> 512
+        zoom < MIN_FOG_REVEAL_ZOOM -> 512
         zoom < 12.0 -> 640
         else -> MAX_BITMAP_DIMENSION
     }
