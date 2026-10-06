@@ -11,13 +11,13 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Bundle
 import android.view.View
- import android.widget.Button
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
- import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -247,7 +247,7 @@ class SettingsActivity : Activity() {
 
     private fun showDeleteDeviceDataDialog() {
         if (deletingDeviceData) return
-         val density = resources.displayMetrics.density
+        val density = resources.displayMetrics.density
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((24 * density).toInt(), 0, (24 * density).toInt(), 0)
