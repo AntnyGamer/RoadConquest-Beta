@@ -68,7 +68,9 @@ class TrackingService : Service(), LocationListener {
     }
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != Intent.ACTION_BATTERY_CHANGED) return
+            if (intent?.action != Intent.ACTION_BATTERY_CHANGED || !ready ||
+                Prefs.isTrackingPaused(this@TrackingService)
+            ) return
             val level = intent.getIntExtra("level", -1)
             val scale = intent.getIntExtra("scale", -1)
             if (level < 0 || scale <= 0) return
