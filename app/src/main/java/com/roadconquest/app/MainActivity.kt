@@ -902,9 +902,10 @@ class MainActivity : Activity() {
         showFreshCachedLocation()
         val activeRenderer = renderer ?: return
         if (activeRenderer.hasCentered || Prefs.isDeviceDataDeletionPending(this)) return
-        // When Location is available, wait for the fresh live fix so startup still follows the
-        // current car position. The saved zero point is specifically the offline fallback.
-        if (::locationManager.isInitialized && locationManager.isLocationEnabled && hasLocationPermission()) return
+        // When Android Location is available, wait for the fresh live fix so startup still
+        // follows the current car position. The saved zero point is specifically the
+        // Location-off fallback and must not steal initial centering from a later permission fix.
+        if (!::locationManager.isInitialized || locationManager.isLocationEnabled) return
 
         summaryExecutor.execute {
             val starting = runCatching {
