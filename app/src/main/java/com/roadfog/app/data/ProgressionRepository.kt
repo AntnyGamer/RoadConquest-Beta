@@ -145,6 +145,13 @@ class ProgressionRepository(context: Context) {
     fun recordPlaceCandidate(location: Location): Boolean = synchronized(dbHelper.historyLock) {
         if (!isCurrentHistory()) return@synchronized false
         if (location.latitude !in -85.0..85.0 || location.longitude !in -180.0..180.0) return@synchronized false
+        val db = dbHelper.writableDatabase
+        // Reward-bearing discoveries must never race ahead of the exact zero-point baseline.
+        if (db.rawQuery(
+                "SELECT 1 FROM place_candidates WHERE cell_x = ? AND cell_y = ? LIMIT 1",
+                arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString())
+            ).use { it.moveToFirst() }
+        ) return@synchronized false
         val radius = 6_378_137.0
         val longitude = ((location.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         val x = floor(radius * Math.toRadians(longitude) / PLACE_CANDIDATE_CELL_M).toLong()
@@ -154,7 +161,7 @@ class ProgressionRepository(context: Context) {
         ).toLong()
         val latitude = Math.toDegrees(atan(sinh((y + 0.5) * PLACE_CANDIDATE_CELL_M / radius)))
         val cellLongitude = Math.toDegrees((x + 0.5) * PLACE_CANDIDATE_CELL_M / radius)
-        dbHelper.writableDatabase.insertWithOnConflict(
+        db.insertWithOnConflict(
             "place_candidates",
             null,
             ContentValues().apply {
@@ -183,6 +190,12 @@ class ProgressionRepository(context: Context) {
         if (db.rawQuery("SELECT 1 FROM visited_places LIMIT 1", null).use { it.moveToFirst() }) {
             return@synchronized false
         }
+        // Anything queued before the first live/current fix predates the new profile.
+        db.delete(
+            "place_candidates",
+            "NOT (cell_x = ? AND cell_y = ?)",
+            arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString())
+        )
         val values = ContentValues().apply {
             put("cell_x", BASELINE_CANDIDATE_X)
             put("cell_y", BASELINE_CANDIDATE_Y)
@@ -299,8 +312,13 @@ class ProgressionRepository(context: Context) {
                     }
                 }
                 if (baseline && !baselineComplete(db)) {
-                    scheduleCandidateRetry(db, candidate, System.currentTimeMillis())
-                } else {
+                    if (candidate.attempts + 1 >= BASELINE_PARTIAL_RESOLUTION_LIMIT) {
+                        markMissingBaselineKinds(db)
+                    } else {
+                        scheduleCandidateRetry(db, candidate, System.currentTimeMillis())
+                    }
+                }
+                if (!baseline || baselineComplete(db)) {
                     db.delete(
                         "place_candidates",
                         "cell_x = ? AND cell_y = ?",
@@ -504,10 +522,26 @@ class ProgressionRepository(context: Context) {
     private fun baselineComplete(db: SQLiteDatabase): Boolean =
         PlaceKind.entries.all { kind ->
             db.rawQuery(
+                "SELECT 1 FROM progression_counters WHERE counter_key LIKE ? OR counter_key = ? LIMIT 1",
+                arrayOf(
+                    "baseline:${kind.name.lowercase()}:%",
+                    baselineMissingKey(kind)
+                )
+            ).use { it.moveToFirst() }
+        }
+
+    private fun markMissingBaselineKinds(db: SQLiteDatabase) {
+        for (kind in PlaceKind.entries) {
+            val resolved = db.rawQuery(
                 "SELECT 1 FROM progression_counters WHERE counter_key LIKE ? LIMIT 1",
                 arrayOf("baseline:${kind.name.lowercase()}:%")
             ).use { it.moveToFirst() }
+            if (!resolved) putCounter(db, baselineMissingKey(kind), 1L)
         }
+    }
+
+    private fun baselineMissingKey(kind: PlaceKind): String =
+        "baseline_missing:${kind.name.lowercase()}"
 
     private fun scheduleCandidateRetry(
         db: SQLiteDatabase,
@@ -584,6 +618,7 @@ class ProgressionRepository(context: Context) {
         private const val PLACE_CANDIDATE_CELL_M = 2_000.0
         private const val BASELINE_RETRY_MS = 60_000L
         private const val BASELINE_RETRY_MAX_MS = 15 * 60_000L
+        private const val BASELINE_PARTIAL_RESOLUTION_LIMIT = 3
         private const val BASELINE_CANDIDATE_X = Long.MIN_VALUE
         private const val BASELINE_CANDIDATE_Y = Long.MIN_VALUE
         private const val COUNTER_REWARDED_ROADS = "rewarded_roads"
