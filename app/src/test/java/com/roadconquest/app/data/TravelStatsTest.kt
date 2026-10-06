@@ -1,4 +1,4 @@
-package com.roadfog.app.data
+package com.roadconquest.app.data
 
 import android.location.Location
 import org.junit.Assert.*
@@ -100,7 +100,7 @@ class TravelStatsTest {
         ))
         assertEquals(1L, repo.getSummary().roadsUnlockedCount)
         assertEquals(2L, repo.getSummary().roadSegmentCount)
-        assertEquals(2, com.roadfog.app.map.OverlayRoads.prepare(
+        assertEquals(2, com.roadconquest.app.map.OverlayRoads.prepare(
             repo.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)).starts.size - 1)
     }
 

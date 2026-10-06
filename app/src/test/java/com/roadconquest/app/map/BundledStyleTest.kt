@@ -1,4 +1,4 @@
-package com.roadfog.app.map
+package com.roadconquest.app.map
 
 import org.json.JSONObject
 import org.junit.Assert.*

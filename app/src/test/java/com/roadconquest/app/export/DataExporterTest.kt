@@ -1,9 +1,9 @@
-package com.roadfog.app.export
+package com.roadconquest.app.export
 
 import android.location.Location
-import com.roadfog.app.data.MatchedRoad
-import com.roadfog.app.data.ProgressionRepository
-import com.roadfog.app.data.TrackingRepository
+import com.roadconquest.app.data.MatchedRoad
+import com.roadconquest.app.data.ProgressionRepository
+import com.roadconquest.app.data.TrackingRepository
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -87,16 +87,16 @@ class DataExporterTest {
             progression.resolveCandidate(
                 candidate,
                 listOf(
-                    com.roadfog.app.data.PlaceDiscovery(
-                        com.roadfog.app.data.PlaceKind.COUNTRY,
+                    com.roadconquest.app.data.PlaceDiscovery(
+                        com.roadconquest.app.data.PlaceKind.COUNTRY,
                         "us",
                         "United States",
                         visitedAt = candidate.visitedAt,
                         latitude = candidate.latitude,
                         longitude = candidate.longitude
                     ),
-                    com.roadfog.app.data.PlaceDiscovery(
-                        com.roadfog.app.data.PlaceKind.STATE,
+                    com.roadconquest.app.data.PlaceDiscovery(
+                        com.roadconquest.app.data.PlaceKind.STATE,
                         "us|new jersey",
                         "New Jersey",
                         countryName = "United States",
@@ -104,8 +104,8 @@ class DataExporterTest {
                         latitude = candidate.latitude,
                         longitude = candidate.longitude
                     ),
-                    com.roadfog.app.data.PlaceDiscovery(
-                        com.roadfog.app.data.PlaceKind.TOWN,
+                    com.roadconquest.app.data.PlaceDiscovery(
+                        com.roadconquest.app.data.PlaceKind.TOWN,
                         "us|new jersey|glassboro",
                         "Glassboro",
                         parentName = "New Jersey",

@@ -1,8 +1,8 @@
-package com.roadfog.app.data
+package com.roadconquest.app.data
 
-import com.roadfog.app.achievements.Achievements
-import com.roadfog.app.progression.AdRewardBridge
-import com.roadfog.app.progression.ProgressionManager
+import com.roadconquest.app.achievements.Achievements
+import com.roadconquest.app.progression.AdRewardBridge
+import com.roadconquest.app.progression.ProgressionManager
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -26,11 +26,11 @@ class ProgressionRepositoryTest {
     }
 
     @Test fun resetLocalProgressionAlsoClearsAchievementPreferenceState() {
-        com.roadfog.app.util.Prefs.setCarStyle(context, "sport")
-        com.roadfog.app.util.Prefs.setCarColor(context, "red")
-        com.roadfog.app.util.Prefs.setRoadColor(context, "gold")
-        com.roadfog.app.util.Prefs.setGoldUiEnabled(context, true)
-        com.roadfog.app.util.Prefs.setPlaceOverlayMode(context, com.roadfog.app.map.PlaceOverlayMode.TOWN)
+        com.roadconquest.app.util.Prefs.setCarStyle(context, "sport")
+        com.roadconquest.app.util.Prefs.setCarColor(context, "red")
+        com.roadconquest.app.util.Prefs.setRoadColor(context, "gold")
+        com.roadconquest.app.util.Prefs.setGoldUiEnabled(context, true)
+        com.roadconquest.app.util.Prefs.setPlaceOverlayMode(context, com.roadconquest.app.map.PlaceOverlayMode.TOWN)
         Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 100))
         assertTrue(
             Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
@@ -43,11 +43,11 @@ class ProgressionRepositoryTest {
             Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
                 .first { it.id == "roads_10" }.unlocked
         )
-        assertEquals("classic", com.roadfog.app.util.Prefs.carStyle(context))
-        assertEquals("blue", com.roadfog.app.util.Prefs.carColor(context))
-        assertEquals("blue", com.roadfog.app.util.Prefs.roadColor(context))
-        assertFalse(com.roadfog.app.util.Prefs.isGoldUiEnabled(context))
-        assertEquals(com.roadfog.app.map.PlaceOverlayMode.NONE, com.roadfog.app.util.Prefs.placeOverlayMode(context))
+        assertEquals("classic", com.roadconquest.app.util.Prefs.carStyle(context))
+        assertEquals("blue", com.roadconquest.app.util.Prefs.carColor(context))
+        assertEquals("blue", com.roadconquest.app.util.Prefs.roadColor(context))
+        assertFalse(com.roadconquest.app.util.Prefs.isGoldUiEnabled(context))
+        assertEquals(com.roadconquest.app.map.PlaceOverlayMode.NONE, com.roadconquest.app.util.Prefs.placeOverlayMode(context))
     }
 
     @Test fun roadAndAchievementPointsAreIdempotentAndNeverRetract() {

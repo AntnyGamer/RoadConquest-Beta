@@ -1,4 +1,4 @@
-package com.roadfog.app.data
+package com.roadconquest.app.data
 
 import android.content.Context
 import android.location.Location
@@ -140,7 +140,7 @@ class TrackingRepositoryTest {
         val covered = mutableSetOf<Pair<Long, Long>>()
         var batches = 0
         while (true) {
-            val window = repository.loadMatchingWindow(limit = com.roadfog.app.matching.OsrmMatcher.MAX_MATCH_POINTS)
+            val window = repository.loadMatchingWindow(limit = com.roadconquest.app.matching.OsrmMatcher.MAX_MATCH_POINTS)
             if (window.points.isEmpty()) break
             assertTrue(window.points.size in 2..10)
             covered += window.points.map { it.id }.zipWithNext()
