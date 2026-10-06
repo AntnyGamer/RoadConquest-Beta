@@ -306,12 +306,15 @@ class SettingsActivity : Activity() {
                         // account. Local data is untouched if password confirmation fails.
                         AccountClient.deleteAccount(session.token, currentPassword)
                         accountDeleted = true
+                        // Make local cleanup durable immediately after the server confirms
+                        // the password and deletes the cloud account. If the process dies
+                        // afterward, startup finishes the pending local wipe.
+                        LocalDataReset.stopTracking(applicationContext)
                         synchronized(AccountStore) {
                             if (AccountStore.load(applicationContext)?.token == session.token) {
                                 AccountStore.clear(applicationContext)
                             }
                         }
-                        LocalDataReset.stopTracking(applicationContext)
                         LocalDataReset.clearStoppedData(applicationContext)
                     }
                     runOnUiThread {
