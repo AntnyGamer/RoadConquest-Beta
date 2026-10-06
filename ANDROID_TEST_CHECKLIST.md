@@ -76,7 +76,7 @@ If all of the above pass on the target Android device and firmware, that provide
   must leave the original account unchanged.
 - Cancel both deletion confirmations and verify that all data remains.
 - **Account → Delete account** must require the current password, delete the cloud account/sessions/leaderboard data, and leave saved device history intact.
-- **Settings → Data and privacy → Delete all data** must be unavailable while signed out, require the current password when signed in, and only begin local deletion after the server accepts that password and deletes the cloud account. Then tracking stops, verified-drive sharing turns off, history and fog reveals clear, points/purchases/cosmetics clear, and delayed road matches cannot restore them. The
+- **Settings → Data and privacy → Delete all data** must be unavailable while signed out, require the current password when signed in, and only begin local deletion after the server accepts that password without deleting the account. The cloud account and leaderboard scores stay. Then tracking stops, verified-drive sharing turns off, history and fog reveals clear, points/purchases/cosmetics clear, and delayed road matches cannot restore them. The
   cloud account remains when only device data is deleted. Tracking and verified sharing can be
   explicitly re-enabled later.
 - Interrupt an export (for example by killing the app during export), reopen Road Conquest, then
