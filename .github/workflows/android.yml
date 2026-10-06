@@ -216,8 +216,8 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             existing_target=$(gh release view "$tag" --json targetCommitish --jq '.targetCommitish')
             if [ "$existing_target" = "$GITHUB_SHA" ]; then exit 0; fi
-            echo "::error::Release $tag already points to $existing_target, not tested commit $GITHUB_SHA. Bump versionName/versionCode."
-            exit 1
+            echo "::notice::Release $tag already points to $existing_target. Skipping publication for tested commit $GITHUB_SHA until versionName/versionCode is bumped."
+            exit 0
           fi
           for secret in SIGNING_KEYSTORE SIGNING_ALIAS SIGNING_STORE_PASSWORD SIGNING_KEY_PASSWORD; do
             if [ -z "${!secret}" ]; then
