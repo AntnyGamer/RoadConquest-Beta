@@ -125,7 +125,10 @@ class LocationProviderRecoveryTest {
 
     @Test fun serviceStartedWhileLocationIsOffWaitsForFirstFixInsteadOfStopping() {
         val app = RuntimeEnvironment.getApplication()
-        Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        Shadows.shadowOf(app).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            "${app.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        )
         val manager = app.getSystemService(LocationManager::class.java)
         val shadow = Shadows.shadowOf(manager)
         shadow.setLocationEnabled(false)
