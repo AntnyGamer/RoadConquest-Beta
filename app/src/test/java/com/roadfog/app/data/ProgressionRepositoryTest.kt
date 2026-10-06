@@ -265,4 +265,45 @@ class ProgressionRepositoryTest {
         assertEquals(10L, snapshot.adsWatched)
         assertEquals(300L, snapshot.balance)
     }
+    @Test fun partialBaselineKeepsRetryingMissingKindsWithoutAwardingThem() {
+        val progression = ProgressionRepository(context)
+        val fix = android.location.Location("gps").apply {
+            latitude = 39.7
+            longitude = -75.1
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(fix))
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+
+        assertEquals(
+            0,
+            progression.resolveCandidate(
+                baseline,
+                listOf(
+                    PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States",
+                        visitedAt = baseline.visitedAt, latitude = baseline.latitude, longitude = baseline.longitude),
+                    PlaceDiscovery(PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States",
+                        baseline.visitedAt, baseline.latitude, baseline.longitude)
+                )
+            )
+        )
+        val retryTime = System.currentTimeMillis() + 61_000L
+        val retry = progression.pendingPlaceCandidates(nowMillis = retryTime)
+            .first { it.cellX == Long.MIN_VALUE && it.cellY == Long.MIN_VALUE }
+        assertEquals(
+            0,
+            progression.resolveCandidate(
+                retry,
+                listOf(
+                    PlaceDiscovery(PlaceKind.TOWN, "us|new jersey|glassboro", "Glassboro", "New Jersey", "United States",
+                        retry.visitedAt, retry.latitude, retry.longitude)
+                )
+            )
+        )
+        assertEquals(listOf("Glassboro"), progression.visitedPlaces(PlaceKind.TOWN).map { it.displayName })
+        assertEquals(0L, progression.snapshot().towns)
+        assertEquals(0L, progression.snapshot().balance)
+    }
+
 }

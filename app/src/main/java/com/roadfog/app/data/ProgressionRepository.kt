@@ -207,44 +207,42 @@ class ProgressionRepository(context: Context) {
         require(limit in 1..50)
         val db = dbHelper.readableDatabase
 
-        // With no place data yet, wait specifically for the exact live baseline fix. A later
-        // sparse driving candidate must never become the zero-point starting location.
+        // A partially-resolved zero-point baseline stays retryable. Until at least one baseline
+        // place is known it blocks ordinary candidates entirely; after that, it is simply given
+        // first priority whenever its retry deadline arrives.
         val hasKnownPlace = db.rawQuery(
             "SELECT 1 FROM visited_places LIMIT 1",
             null
         ).use { it.moveToFirst() }
+        val baseline = db.query(
+            "place_candidates",
+            arrayOf(
+                "cell_x", "cell_y", "latitude", "longitude",
+                "first_seen_at", "attempts", "next_attempt_ms"
+            ),
+            "cell_x = ? AND cell_y = ?",
+            arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString()),
+            null,
+            null,
+            null,
+            "1"
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else PendingPlaceCandidate(
+                cursor.getLong(0),
+                cursor.getLong(1),
+                cursor.getDouble(2),
+                cursor.getDouble(3),
+                cursor.getLong(4),
+                cursor.getInt(5)
+            ) to cursor.getLong(6)
+        }
         if (!hasKnownPlace) {
-            return db.query(
-                "place_candidates",
-                arrayOf(
-                    "cell_x", "cell_y", "latitude", "longitude",
-                    "first_seen_at", "attempts", "next_attempt_ms"
-                ),
-                "cell_x = ? AND cell_y = ?",
-                arrayOf(BASELINE_CANDIDATE_X.toString(), BASELINE_CANDIDATE_Y.toString()),
-                null,
-                null,
-                null,
-                "1"
-            ).use { cursor ->
-                if (!cursor.moveToFirst() || cursor.getLong(6) > nowMillis) {
-                    emptyList()
-                } else {
-                    listOf(
-                        PendingPlaceCandidate(
-                            cursor.getLong(0),
-                            cursor.getLong(1),
-                            cursor.getDouble(2),
-                            cursor.getDouble(3),
-                            cursor.getLong(4),
-                            cursor.getInt(5)
-                        )
-                    )
-                }
-            }
+            return baseline?.takeIf { it.second <= nowMillis }?.let { listOf(it.first) }.orEmpty()
         }
 
         val result = ArrayList<PendingPlaceCandidate>(limit)
+        if (baseline != null && baseline.second <= nowMillis) result += baseline.first
+        if (result.size >= limit) return result
         db.query(
             "place_candidates",
             arrayOf("cell_x", "cell_y", "latitude", "longitude", "first_seen_at", "attempts"),
@@ -257,7 +255,7 @@ class ProgressionRepository(context: Context) {
             null,
             null,
             "attempts ASC, next_attempt_ms ASC, first_seen_at ASC, cell_x ASC, cell_y ASC",
-            limit.toString()
+            (limit - result.size).toString()
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 result += PendingPlaceCandidate(
@@ -300,11 +298,15 @@ class ProgressionRepository(context: Context) {
                         added++
                     }
                 }
-                db.delete(
-                    "place_candidates",
-                    "cell_x = ? AND cell_y = ?",
-                    arrayOf(candidate.cellX.toString(), candidate.cellY.toString())
-                )
+                if (baseline && !baselineComplete(db)) {
+                    scheduleCandidateRetry(db, candidate, System.currentTimeMillis())
+                } else {
+                    db.delete(
+                        "place_candidates",
+                        "cell_x = ? AND cell_y = ?",
+                        arrayOf(candidate.cellX.toString(), candidate.cellY.toString())
+                    )
+                }
                 db.setTransactionSuccessful()
                 added
             } finally {
@@ -315,25 +317,7 @@ class ProgressionRepository(context: Context) {
     fun deferCandidate(candidate: PendingPlaceCandidate, nowMillis: Long = System.currentTimeMillis()) =
         synchronized(dbHelper.historyLock) {
             if (!isCurrentHistory()) return@synchronized
-            val attempts = (candidate.attempts + 1).coerceAtMost(10)
-            val baseline = candidate.cellX == BASELINE_CANDIDATE_X &&
-                candidate.cellY == BASELINE_CANDIDATE_Y
-            val delay = if (baseline) {
-                (BASELINE_RETRY_MS * (1L shl (attempts - 1).coerceAtMost(4)))
-                    .coerceAtMost(BASELINE_RETRY_MAX_MS)
-            } else {
-                (30L * 60_000L * (1L shl attempts.coerceAtMost(5)))
-                    .coerceAtMost(24L * 60L * 60_000L)
-            }
-            dbHelper.writableDatabase.update(
-                "place_candidates",
-                ContentValues().apply {
-                    put("attempts", attempts)
-                    put("next_attempt_ms", nowMillis + delay)
-                },
-                "cell_x = ? AND cell_y = ?",
-                arrayOf(candidate.cellX.toString(), candidate.cellY.toString())
-            )
+            scheduleCandidateRetry(dbHelper.writableDatabase, candidate, nowMillis)
         }
 
     fun recordBatteryPercent(percent: Int): Boolean = synchronized(dbHelper.historyLock) {
@@ -516,6 +500,40 @@ class ProgressionRepository(context: Context) {
 
     private fun baselineKey(discovery: PlaceDiscovery): String =
         "baseline:${discovery.kind.name.lowercase()}:${discovery.key}"
+
+    private fun baselineComplete(db: SQLiteDatabase): Boolean =
+        PlaceKind.entries.all { kind ->
+            db.rawQuery(
+                "SELECT 1 FROM progression_counters WHERE counter_key LIKE ? LIMIT 1",
+                arrayOf("baseline:${kind.name.lowercase()}:%")
+            ).use { it.moveToFirst() }
+        }
+
+    private fun scheduleCandidateRetry(
+        db: SQLiteDatabase,
+        candidate: PendingPlaceCandidate,
+        nowMillis: Long
+    ) {
+        val attempts = (candidate.attempts + 1).coerceAtMost(10)
+        val baseline = candidate.cellX == BASELINE_CANDIDATE_X &&
+            candidate.cellY == BASELINE_CANDIDATE_Y
+        val delay = if (baseline) {
+            (BASELINE_RETRY_MS * (1L shl (attempts - 1).coerceAtMost(4)))
+                .coerceAtMost(BASELINE_RETRY_MAX_MS)
+        } else {
+            (30L * 60_000L * (1L shl attempts.coerceAtMost(5)))
+                .coerceAtMost(24L * 60L * 60_000L)
+        }
+        db.update(
+            "place_candidates",
+            ContentValues().apply {
+                put("attempts", attempts)
+                put("next_attempt_ms", nowMillis + delay)
+            },
+            "cell_x = ? AND cell_y = ?",
+            arrayOf(candidate.cellX.toString(), candidate.cellY.toString())
+        )
+    }
 
     private fun isCurrentHistory(expectedHistoryGeneration: Long? = null): Boolean =
         historyGeneration == dbHelper.historyGeneration &&
