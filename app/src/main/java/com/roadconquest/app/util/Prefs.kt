@@ -9,6 +9,7 @@ object Prefs {
     private const val KEY_MANUAL_ONLY = "manual_only"
     private const val KEY_EVER_STARTED = "ever_started"
     private const val KEY_BACKGROUND_PROMPT_SHOWN = "background_prompt_shown"
+    private const val KEY_LOCATION_DISCLOSURE_SHOWN = "location_disclosure_shown"
     private const val KEY_FOG_ENABLED = "fog_enabled"
     private const val KEY_TRACKING_PAUSED = "tracking_paused_until_open"
     private const val KEY_ACCOUNT_PROMPT_SHOWN = "account_prompt_shown"
@@ -84,6 +85,13 @@ object Prefs {
     }
 
     fun driveVerificationConsentVersion(context: Context): Long = prefs(context).getLong("verification_consent_version", 0L)
+
+    fun isLocationDisclosureShown(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_LOCATION_DISCLOSURE_SHOWN, false)
+
+    fun setLocationDisclosureShown(context: Context, shown: Boolean) {
+        prefs(context).edit().putBoolean(KEY_LOCATION_DISCLOSURE_SHOWN, shown).apply()
+    }
 
     fun isBackgroundPromptShown(context: Context): Boolean =
         prefs(context).getBoolean(KEY_BACKGROUND_PROMPT_SHOWN, false)
