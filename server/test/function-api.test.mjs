@@ -62,6 +62,9 @@ test("serverless accounts enforce authentication, privacy, limits and TLS with r
     assert.equal(renamed.status, 200);
     assert.equal(renamed.body.username, "FunctionRenamed");
     assert.equal((await call("/v1/me", "GET", undefined, signup.body.token)).body.username, "FunctionRenamed");
+    assert.equal((await call("/v1/reauth", "POST", { password: "wrong password" }, login.body.token)).status, 403);
+    assert.equal((await call("/v1/reauth", "POST", { password: credentials.password }, login.body.token)).status, 200);
+    assert.equal((await call("/v1/me", "GET", undefined, login.body.token)).status, 200);
     assert.equal((await call("/v1/account", "DELETE", { password: "wrong password" }, login.body.token)).status, 403);
     assert.equal((await call("/v1/account", "DELETE", { password: credentials.password }, login.body.token)).status, 200);
     assert.equal((await call("/v1/me", "GET", undefined, signup.body.token)).status, 401);
