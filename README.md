@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 9
+# Road Conquest 1.0 Beta 10
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 35.
+This release uses Android application ID `com.roadconquest.app` and internal version code 36.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -128,6 +128,8 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 ## Google Play submission
 
 The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload.
+CI verifies 16 KB native-library packaging/alignment before publication, in addition to unit tests, lint,
+release builds, account-server tests, and native map tests on supported Android generations.
 The account service exposes browser pages at `/privacy` and `/delete-account`; the app links both from
 Settings → Data and privacy. Use those deployed HTTPS URLs for the Play Console privacy-policy and
 account-deletion fields. The first Android location permission flow is preceded by a prominent disclosure
