@@ -38,9 +38,10 @@ This checklist is for final device-level validation on supported Android 12+ pho
 
 1. In **Always** mode, leave RoadConquest and confirm tracking continues.
 2. Reboot the phone with background location granted and verify RoadConquest resumes according to the device's Android background-execution policy.
-3. Switch to **Manual** mode, disable tracking, leave/reopen the app, and confirm it stays off until **Enable** is pressed.
-4. Switch Manual -> Always and confirm tracking starts without needing another app restart.
-5. Force-stop RoadConquest and confirm it does **not** restart itself until manually launched; this is expected Android behavior.
+3. In **Always** mode, turn Android Location off, fresh-reset device data, then turn Location back on. Confirm RoadConquest waits while Location is off and uses the first new live fix after it is enabled as the zero-point starting location; an older cached fix must not become the baseline.
+4. Switch to **Manual** mode, disable tracking, leave/reopen the app, and confirm it stays off until **Enable** is pressed.
+5. Switch Manual -> Always while Android Location is off, then enable Location and confirm tracking starts without another app restart.
+6. Force-stop RoadConquest and confirm it does **not** restart itself until manually launched; this is expected Android behavior.
 
 ## Progression and achievements
 
@@ -50,7 +51,7 @@ This checklist is for final device-level validation on supported Android 12+ pho
 3. Verify town/state/country achievement progress reflects the discovery counts.
 4. At 5% battery while RoadConquest is open or tracking, verify **Running on Fumes** unlocks once.
    At 1%, verify **Last Percent** unlocks once. Ordinary battery levels must not affect progression.
-5. Confirm ad achievements display 5/10/25/50/100 goals but cannot advance in Beta 3 because no ad
+5. Confirm ad achievements display 5/10/25/50/100 goals but cannot advance in this release because no ad
    provider is bundled yet.
 
 ## Export
