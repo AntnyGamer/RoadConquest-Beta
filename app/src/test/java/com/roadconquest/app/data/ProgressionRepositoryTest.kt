@@ -157,7 +157,7 @@ class ProgressionRepositoryTest {
         assertEquals(0L, ProgressionRepository(context).snapshot().rewardedRoads)
         assertEquals(
             0L,
-            context.getSharedPreferences("roadfog_achievements", 0)
+            context.getSharedPreferences("roadconquest_achievements", 0)
                 .getLong("max_roads_seen", 0L)
         )
 
