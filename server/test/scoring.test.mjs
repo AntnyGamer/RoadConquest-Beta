@@ -17,7 +17,7 @@ export function matching(points = fixes) {
 const evidence = () => ({ run: randomUUID(), nonce: "A".repeat(43), sequence: 0, fixes: structuredClone(fixes) });
 const catalog = new Map([[edgeKey(10, 11), "100"], [edgeKey(11, 12), "101"]]);
 const version = "2026-10-01T00:00:00Z";
-const config = { packageName: "com.roadfog.app", certificates: ["A".repeat(43)], versions: ["6"] };
+const config = { packageName: "com.roadconquest.app", certificates: ["A".repeat(43)], versions: ["6"] };
 const verdict = () => ({ requestDetails: { requestHash: "hash", requestPackageName: config.packageName, timestampMillis: String(now) },
   appIntegrity: { appRecognitionVerdict: "PLAY_RECOGNIZED", packageName: config.packageName, versionCode: "6", certificateSha256Digest: config.certificates },
   accountDetails: { appLicensingVerdict: "LICENSED" }, deviceIntegrity: { deviceRecognitionVerdict: ["MEETS_DEVICE_INTEGRITY", "MEETS_STRONG_INTEGRITY"] } });
