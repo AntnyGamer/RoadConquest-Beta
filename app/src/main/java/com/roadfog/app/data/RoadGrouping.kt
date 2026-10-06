@@ -105,14 +105,39 @@ internal object RoadGrouping {
     }
 
     private fun boundsCanTouch(first: Road, second: Road): Boolean {
-        val latitudePad = JOIN_TOLERANCE_M / METERS_PER_DEGREE
+        val tolerance = if (isUnnamed(first.nameKey)) UNNAMED_JOIN_TOLERANCE_M else JOIN_TOLERANCE_M
+        val latitudePad = tolerance / METERS_PER_DEGREE
         if (first.maxLatitude + latitudePad < second.minLatitude ||
             second.maxLatitude + latitudePad < first.minLatitude
         ) return false
 
-        // Raw min/max longitude is not safe at ±180°. Exact endpoint-to-polyline
-        // distance below already normalizes longitude on the globe.
-        return true
+        val overlapSouth = max(first.minLatitude, second.minLatitude)
+        val overlapNorth = min(first.maxLatitude, second.maxLatitude)
+        val latitude = if (overlapSouth <= overlapNorth) {
+            (overlapSouth + overlapNorth) / 2.0
+        } else {
+            (max(first.minLatitude, second.minLatitude) + min(first.maxLatitude, second.maxLatitude)) / 2.0
+        }
+        val longitudePad = tolerance /
+            (METERS_PER_DEGREE * cos(Math.toRadians(latitude.coerceIn(-89.0, 89.0))).coerceAtLeast(0.01))
+
+        fun span(road: Road): Double =
+            if (road.maxLongitude >= road.minLongitude) {
+                road.maxLongitude - road.minLongitude
+            } else {
+                road.maxLongitude - road.minLongitude + 360.0
+            }
+
+        fun wrap(value: Double): Double =
+            ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+
+        val firstSpan = span(first)
+        val secondSpan = span(second)
+        if (firstSpan >= 360.0 - 1e-9 || secondSpan >= 360.0 - 1e-9) return true
+        val firstCenter = wrap(first.minLongitude + firstSpan / 2.0)
+        val secondCenter = wrap(second.minLongitude + secondSpan / 2.0)
+        val centerDistance = abs(wrap(secondCenter - firstCenter))
+        return centerDistance <= (firstSpan + secondSpan) / 2.0 + longitudePad
     }
 
     private fun parseCoordinates(json: String): DoubleArray? {
