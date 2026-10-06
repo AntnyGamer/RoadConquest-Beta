@@ -170,7 +170,10 @@ class FogOverlayTest {
             roadScreen = doubleArrayOf(100.0, 320.0, 540.0, 320.0),
             metersPerPixel = 2_000.0
         ))
-        assertEquals(0, Color.alpha(rendered.getPixel(320, 320)))
+        // At this scale the physical 1500 ft fade would be sub-pixel. The overview
+        // minimum should still cut fog opacity substantially without pretending the whole
+        // 1500 ft corridor is fully clear at continent-scale zoom.
+        assertTrue(Color.alpha(rendered.getPixel(320, 320)) < 120)
         assertTrue(Color.alpha(rendered.getPixel(320, 321)) < 204)
         assertEquals(204, Color.alpha(rendered.getPixel(320, 324)))
     }
