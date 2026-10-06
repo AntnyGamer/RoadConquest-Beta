@@ -300,11 +300,12 @@ class OsrmMatcher(
         pair.optDouble(0, Double.NaN) in -180.0..180.0 && pair.optDouble(1, Double.NaN) in -90.0..90.0
 
     private fun coordinateDistanceMeters(a: JSONArray, b: JSONArray): Double {
-        val lon1 = Math.toRadians(a.optDouble(0, 0.0))
+        val lon1 = a.optDouble(0, 0.0)
         val lat1 = Math.toRadians(a.optDouble(1, 0.0))
-        val lon2 = Math.toRadians(b.optDouble(0, 0.0))
+        val lon2 = b.optDouble(0, 0.0)
         val lat2 = Math.toRadians(b.optDouble(1, 0.0))
-        val x = (lon2 - lon1) * cos((lat1 + lat2) / 2.0)
+        val deltaLongitude = Math.toRadians(((lon2 - lon1 + 540.0) % 360.0) - 180.0)
+        val x = deltaLongitude * cos((lat1 + lat2) / 2.0)
         val y = lat2 - lat1
         return EARTH_RADIUS_M * sqrt(x * x + y * y)
     }

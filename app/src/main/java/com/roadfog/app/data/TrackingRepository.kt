@@ -407,6 +407,30 @@ class TrackingRepository(context: Context) {
         val centerLatitude = (bounds.minLat + bounds.maxLat) / 2.0
         val longitudePad = RoadGrouping.JOIN_TOLERANCE_M /
             (METERS_PER_DEGREE * cos(Math.toRadians(centerLatitude)).coerceAtLeast(0.01))
+        val longitudeSpan = if (bounds.maxLon >= bounds.minLon) {
+            bounds.maxLon - bounds.minLon
+        } else {
+            bounds.maxLon - bounds.minLon + 360.0
+        }
+        fun wrap(value: Double) = ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+        val querySpan = (longitudeSpan + 2 * longitudePad).coerceAtMost(360.0)
+        val queryWest = if (querySpan >= 360.0) -180.0 else wrap(bounds.minLon - longitudePad)
+        val queryEast = if (querySpan >= 360.0) 180.0 else wrap(bounds.maxLon + longitudePad)
+        val longitudeSelection = when {
+            querySpan >= 360.0 -> "1 = 1"
+            queryEast >= queryWest ->
+                "((min_lon <= max_lon AND max_lon >= ? AND min_lon <= ?) OR " +
+                    "(min_lon > max_lon AND (min_lon <= ? OR max_lon >= ?)))"
+            else -> "(min_lon > max_lon OR max_lon >= ? OR min_lon <= ?)"
+        }
+        val longitudeArgs = when {
+            querySpan >= 360.0 -> emptyArray()
+            queryEast >= queryWest -> arrayOf(
+                queryWest.toString(), queryEast.toString(),
+                queryEast.toString(), queryWest.toString()
+            )
+            else -> arrayOf(queryWest.toString(), queryEast.toString())
+        }
         val groupIds = LinkedHashSet<String>()
         val ungroupedSegments = ArrayList<String>()
         existingGroupId?.takeIf { it.isNotBlank() }?.let(groupIds::add)
@@ -417,13 +441,12 @@ class TrackingRepository(context: Context) {
                 "segment_id", "name", "geometry_json", "min_lat", "max_lat",
                 "min_lon", "max_lon", "road_group_id"
             ),
-            "segment_id != ? AND max_lat >= ? AND min_lat <= ? AND max_lon >= ? AND min_lon <= ?",
+            "segment_id != ? AND max_lat >= ? AND min_lat <= ? AND $longitudeSelection",
             arrayOf(
                 segmentId,
                 (bounds.minLat - latitudePad).toString(),
                 (bounds.maxLat + latitudePad).toString(),
-                (bounds.minLon - longitudePad).toString(),
-                (bounds.maxLon + longitudePad).toString()
+                *longitudeArgs
             ),
             null,
             null,
@@ -532,7 +555,38 @@ class TrackingRepository(context: Context) {
     /** Recorded driving evidence remains visible until road matching confirms each interval. */
     @Synchronized
     fun getPendingRouteInBounds(north: Double, east: Double, south: Double, west: Double): List<RoadRecord> {
-        val longitude = if (east >= west) "longitude BETWEEN ? AND ?" else "(longitude >= ? OR longitude <= ?)"
+        val latitudePad = PENDING_ROUTE_QUERY_PAD_M / METERS_PER_DEGREE
+        val centerLatitude = ((north + south) / 2.0).coerceIn(-89.0, 89.0)
+        val longitudePad = (PENDING_ROUTE_QUERY_PAD_M /
+            (METERS_PER_DEGREE * cos(Math.toRadians(centerLatitude)).coerceAtLeast(0.01)))
+            .coerceAtMost(180.0)
+        val longitudeSpan = if (east >= west) east - west else east - west + 360.0
+        val querySpan = (longitudeSpan + 2 * longitudePad).coerceAtMost(360.0)
+        fun wrap(value: Double) = ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+        val queryWest = if (querySpan >= 360.0) -180.0 else wrap(west - longitudePad)
+        val queryEast = if (querySpan >= 360.0) 180.0 else wrap(east + longitudePad)
+        val querySouth = (south - latitudePad).coerceAtLeast(-90.0)
+        val queryNorth = (north + latitudePad).coerceAtMost(90.0)
+        val longitudeSelection = if (queryEast >= queryWest) {
+            "longitude BETWEEN ? AND ?"
+        } else {
+            "(longitude >= ? OR longitude <= ?)"
+        }
+        val sql = """
+            WITH pending(id) AS (
+                SELECT id FROM track_points
+                WHERE matched = 0 AND latitude BETWEEN ? AND ? AND $longitudeSelection
+            ),
+            context(id) AS (
+                SELECT id FROM pending
+                UNION SELECT id - 1 FROM pending
+                UNION SELECT id + 1 FROM pending
+            )
+            SELECT ${TRACK_COLUMNS.joinToString(",")}
+            FROM track_points
+            WHERE id IN (SELECT id FROM context)
+            ORDER BY id ASC
+        """.trimIndent()
         val output = ArrayList<RoadRecord>()
         var previous: TrackPoint? = null
         var coordinates = JSONArray()
@@ -545,10 +599,13 @@ class TrackingRepository(context: Context) {
             coordinates = JSONArray()
         }
         fun add(point: TrackPoint) { coordinates.put(JSONArray().put(point.longitude).put(point.latitude)) }
-        dbHelper.readableDatabase.query("track_points", TRACK_COLUMNS,
-            "latitude BETWEEN ? AND ? AND $longitude",
-            arrayOf(south.toString(), north.toString(), west.toString(), east.toString()),
-            null, null, "id ASC").use { cursor ->
+        dbHelper.readableDatabase.rawQuery(
+            sql,
+            arrayOf(
+                querySouth.toString(), queryNorth.toString(),
+                queryWest.toString(), queryEast.toString()
+            )
+        ).use { cursor ->
             while (cursor.moveToNext()) {
                 val point = cursor.toTrackPoint()
                 val before = previous
@@ -559,7 +616,7 @@ class TrackingRepository(context: Context) {
                     val distance = MATCH_DISTANCE_RESULT.get()
                     Location.distanceBetween(before.latitude, before.longitude, point.latitude, point.longitude, distance)
                     continuous = gap in 1..MAX_STOP_GAP_MS && distance[0].isFinite() &&
-                        distance[0] <= gap / 1000.0 * 100.0 &&
+                        distance[0] <= gap / 1000.0 * MAX_MATCH_SPEED_MPS &&
                         (gap <= MATCH_CLUSTER_GAP_MS || distance[0] <= MAX_STOP_GAP_DISTANCE_M)
                 }
                 if (continuous) {
@@ -594,10 +651,16 @@ class TrackingRepository(context: Context) {
         val selection: String
         val args: Array<String>
         if (east >= west) {
-            selection = "max_lat >= ? AND min_lat <= ? AND max_lon >= ? AND min_lon <= ?"
-            args = arrayOf(south.toString(), north.toString(), west.toString(), east.toString())
+            selection = "max_lat >= ? AND min_lat <= ? AND (" +
+                "(min_lon <= max_lon AND max_lon >= ? AND min_lon <= ?) OR " +
+                "(min_lon > max_lon AND (min_lon <= ? OR max_lon >= ?)))"
+            args = arrayOf(
+                south.toString(), north.toString(),
+                west.toString(), east.toString(), east.toString(), west.toString()
+            )
         } else {
-            selection = "max_lat >= ? AND min_lat <= ? AND (max_lon >= ? OR min_lon <= ?)"
+            selection = "max_lat >= ? AND min_lat <= ? AND " +
+                "(min_lon > max_lon OR max_lon >= ? OR min_lon <= ?)"
             args = arrayOf(south.toString(), north.toString(), west.toString(), east.toString())
         }
         val unlimited = limit == Int.MAX_VALUE
@@ -806,8 +869,7 @@ class TrackingRepository(context: Context) {
         if (coordinates.length() < 2) return null
         var minLat = Double.POSITIVE_INFINITY
         var maxLat = Double.NEGATIVE_INFINITY
-        var minLon = Double.POSITIVE_INFINITY
-        var maxLon = Double.NEGATIVE_INFINITY
+        val longitudes = DoubleArray(coordinates.length())
         for (i in 0 until coordinates.length()) {
             val coordinate = coordinates.optJSONArray(i) ?: return null
             if (coordinate.length() < 2) return null
@@ -816,11 +878,26 @@ class TrackingRepository(context: Context) {
             if (!lat.isFinite() || !lon.isFinite() || lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
             minLat = min(minLat, lat)
             maxLat = max(maxLat, lat)
-            minLon = min(minLon, lon)
-            maxLon = max(maxLon, lon)
+            longitudes[i] = lon
         }
         if (!minLat.isFinite()) return null
-        return RoadBounds(minLat, maxLat, minLon, maxLon)
+
+        // Use the smallest circular interval. min_lon > max_lon intentionally encodes
+        // bounds that cross the International Date Line.
+        longitudes.sort()
+        var largestGap = longitudes.first() + 360.0 - longitudes.last()
+        var gapStart = longitudes.last()
+        var gapEnd = longitudes.first() + 360.0
+        for (i in 0 until longitudes.lastIndex) {
+            val gap = longitudes[i + 1] - longitudes[i]
+            if (gap > largestGap) {
+                largestGap = gap
+                gapStart = longitudes[i]
+                gapEnd = longitudes[i + 1]
+            }
+        }
+        fun wrap(value: Double) = ((value + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+        return RoadBounds(minLat, maxLat, wrap(gapEnd), wrap(gapStart))
     }
 
     private fun roadSegmentId(db: SQLiteDatabase, name: String, coordinates: JSONArray): String {
@@ -960,6 +1037,9 @@ class TrackingRepository(context: Context) {
         private const val MAX_STOP_GAP_DISTANCE_M = 120f
         private const val STOP_GAP_SPEED_MPS = 2.2f
         private const val MAX_MATCH_SPEED_MPS = 100f
+        // A drawable pending interval is at most 3 km (30 s at the hard speed cap).
+        // This margin catches a line crossing a tiny viewport even if both endpoints are outside.
+        private const val PENDING_ROUTE_QUERY_PAD_M = 3_100.0
         private val MATCH_DISTANCE_RESULT = ThreadLocal.withInitial { FloatArray(1) }
 
         private val TRACK_COLUMNS = arrayOf(

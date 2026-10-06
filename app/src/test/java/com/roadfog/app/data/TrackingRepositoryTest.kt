@@ -348,4 +348,17 @@ class TrackingRepositoryTest {
         assertTrue(uncapped.complete)
     }
 
+    @Test fun pendingLineCrossingViewportRendersEvenWhenBothEndpointsAreOutside() {
+        point(1_000_000L, lat = 40.0, lon = -74.01)
+        point(1_030_000L, lat = 40.0, lon = -73.99)
+        val pending = repository.getPendingRouteInBounds(
+            north = 40.0005,
+            east = -73.9999,
+            south = 39.9995,
+            west = -74.0001
+        )
+        assertEquals(1, pending.size)
+        assertEquals(2, org.json.JSONArray(pending.single().geometryJson).length())
+    }
+
 }
