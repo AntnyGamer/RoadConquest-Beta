@@ -88,6 +88,7 @@ class SettingsActivity : Activity() {
         deleteDeviceDataButton = findViewById(R.id.deleteDeviceDataButton)
 
         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+        manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
         manualOnlySwitch.setOnCheckedChangeListener { _, checked ->
             Prefs.setManualOnly(this, checked)
             if (checked) {
@@ -169,8 +170,12 @@ class SettingsActivity : Activity() {
             startAutomaticTrackingIfPossible()
         }
         enteredForeground = false
-        // Account settings can switch to manual tracking after deleting device history.
-        if (::manualOnlySwitch.isInitialized) manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+        // Account settings can switch to manual tracking after deleting device history,
+        // but never while an interrupted deletion is still pending.
+        if (::manualOnlySwitch.isInitialized) {
+            manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+            manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
+        }
         if (::repository.isInitialized) refreshSummary()
         if (::accountSummaryText.isInitialized) refreshAccountControls()
     }
@@ -234,6 +239,8 @@ class SettingsActivity : Activity() {
                 LocalDataReset.stopTracking(applicationContext)
                 deletingDeviceData = true
                 deleteDeviceDataButton.isEnabled = false
+                manualOnlySwitch.isChecked = true
+                manualOnlySwitch.isEnabled = false
                 dataExecutor.execute {
                     val result = runCatching { LocalDataReset.clearStoppedData(applicationContext) }
                     runOnUiThread {
@@ -241,6 +248,7 @@ class SettingsActivity : Activity() {
                         deletingDeviceData = false
                         deleteDeviceDataButton.isEnabled = true
                         manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
+                        manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
                         result.fold(
                             onSuccess = {
                                 Toast.makeText(this, "Saved device data deleted. Tracking and verified-drive sharing are off.", Toast.LENGTH_SHORT).show()
