@@ -25,6 +25,21 @@ class ProgressionRepositoryTest {
         Achievements.reset(context)
     }
 
+    @Test fun resetLocalProgressionAlsoClearsAchievementPreferenceState() {
+        Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 100))
+        assertTrue(
+            Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
+                .first { it.id == "roads_10" }.unlocked
+        )
+
+        ProgressionManager.resetLocalProgression(context)
+
+        assertFalse(
+            Achievements.progress(context, DataSummary(0, 0, null, null, 0.0, 0))
+                .first { it.id == "roads_10" }.unlocked
+        )
+    }
+
     @Test fun roadAndAchievementPointsAreIdempotentAndNeverRetract() {
         val progression = ProgressionRepository(context)
         progression.syncRoadRewards(10)
