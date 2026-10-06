@@ -118,11 +118,13 @@ class MatchingRetryTest {
             org.robolectric.Shadows.shadowOf(manager).setLocationEnabled(false)
             field(service, "locationManager").set(service, manager)
             field(service, "ready").setBoolean(service, true)
+            val storage = field(service, "storageExecutor").get(service) as ExecutorService
             val executor = field(service, "matchingExecutor").get(service) as ScheduledExecutorService
             try {
                 service.onProviderDisabled("gps")
-                // The first barrier waits for the serialized finalizer, which then enqueues the
-                // forced matcher. The second barrier proves that matcher has also completed.
+                // Finalization first drains queued storage, then serializes behind any in-flight
+                // match, and finally enqueues the forced matcher.
+                storage.submit {}.get(10, TimeUnit.SECONDS)
                 executor.submit {}.get(10, TimeUnit.SECONDS)
                 executor.submit {}.get(10, TimeUnit.SECONDS)
                 assertEquals(1, server.requestCount)
