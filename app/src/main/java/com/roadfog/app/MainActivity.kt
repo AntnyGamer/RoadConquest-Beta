@@ -33,6 +33,7 @@ import com.roadfog.app.data.RoadRecord
 import com.roadfog.app.data.ProgressionRepository
 import com.roadfog.app.account.AccountOnboarding
 import com.roadfog.app.achievements.Achievements
+import com.roadfog.app.export.DataExporter
 import com.roadfog.app.map.MapRenderer
 import com.roadfog.app.map.PlaceOverlayInfo
 import com.roadfog.app.map.PlaceOverlayMode
@@ -194,6 +195,12 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         repository = TrackingRepository(this)
+        // A process kill can interrupt export before its finally block deletes the private
+        // SQLite snapshot. Clean those cache-only files whenever the app is opened again.
+        summaryExecutor.execute {
+            runCatching { DataExporter.clearTemporarySnapshots(applicationContext) }
+                .onFailure { Log.w("RoadConquest", "Could not remove interrupted export snapshot", it) }
+        }
         startAfterPermissionGrant = savedInstanceState?.getBoolean(STATE_START_AFTER_PERMISSION) ?: false
         locationManager = getSystemService(LocationManager::class.java)
         mapView = findViewById(R.id.mapView)
