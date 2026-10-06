@@ -156,6 +156,16 @@ class FogOverlayTest {
         }
     }
 
+    @Test fun dateLineEdgeFragmentsSnapIntoOneContinuousRevealChain() {
+        val roads = listOf(
+            RoadRecord("east", "Date Line", "[[179.99999,0],[180,0]]", 0, 0, 0.0, 0.0, 179.99999, 180.0),
+            RoadRecord("west", "Date Line", "[[-180,0],[-179.99999,0]]", 0, 0, 0.0, 0.0, -180.0, -179.99999)
+        )
+        val overlay = OverlayRoads.prepare(roads)
+        assertEquals("Equivalent +180/-180 endpoints must be the same fog node", 2, overlay.starts.size)
+        assertEquals(6, overlay.coordinates.size)
+    }
+
     @Test fun wideZoomFogUsesSmallerUploadBitmaps() {
         assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(8.9))
         assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(9.0))
