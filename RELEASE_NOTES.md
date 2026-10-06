@@ -3,6 +3,8 @@
 - Use the public display name **Road Conquest** and Android application ID `com.roadconquest.app` for the Play release.
 - Show the exact `versionName` and `versionCode` in **Settings → About**.
 - Build and publish a signed Android App Bundle (AAB) for Google Play while retaining the signed APK for direct installs.
+- Add hosted privacy-policy and external account-deletion pages on the existing account service and link both from Settings → Data and privacy.
+- Show a prominent location-use disclosure before the first Android location permission request, including background use, road matching, and optional verified scoring.
 - Reuse the immutable high-accuracy location request and avoid a recurring accepted-fix list resize without changing GPS cadence, filtering, matching, or accuracy.
 - Avoid reparsing account endpoint configuration several times during one Settings refresh.
 - Organize achievements into separate **Road Conquest**, **Mileage**, **Exploration**, **Ad Rewards**, and **Bonus** categories with category buttons. Ad achievements have their own Ad Rewards category; battery achievements are under Bonus.
