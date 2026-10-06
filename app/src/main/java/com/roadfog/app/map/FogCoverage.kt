@@ -17,9 +17,12 @@ internal object FogCoverage {
 
     fun coversViewport(quad: DoubleArray, width: Int, height: Int): Boolean {
         if (quad.size != 8 || quad.any { !it.isFinite() } || width <= 0 || height <= 0) return false
+        // Keep a real guard band, not just a couple of pixels. During animated zoom/rotation
+        // the native camera can advance before Java receives the next movement callback.
+        val guard = max(8.0, min(width, height) * COVERAGE_GUARD_FRACTION)
         for (corner in 0..3) {
-            val x = if (corner == 0 || corner == 3) -2.0 else width + 2.0
-            val y = if (corner < 2) -2.0 else height + 2.0
+            val x = if (corner == 0 || corner == 3) -guard else width + guard
+            val y = if (corner < 2) -guard else height + guard
             var orientation = 0
             for (edge in 0..3) {
                 val i = edge * 2
@@ -34,4 +37,6 @@ internal object FogCoverage {
         }
         return true
     }
+
+    private const val COVERAGE_GUARD_FRACTION = 0.125
 }

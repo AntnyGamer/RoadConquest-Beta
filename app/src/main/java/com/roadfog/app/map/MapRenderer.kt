@@ -77,6 +77,8 @@ class MapRenderer(
     private var cameraMoving = false
     private var resumeFrameListener: MapView.OnDidFinishRenderingFrameListener? = null
     private var resumeGeneration = 0
+    private var fogHandoffFrameListener: MapView.OnDidFinishRenderingFrameListener? = null
+    private var fogHandoffGeneration = 0
     private var fogRunning = false
     private var fogAgain = false
     private var reusableFogBitmap: Bitmap? = null
@@ -563,6 +565,7 @@ class MapRenderer(
     }
 
     private fun installFogLayer(style: Style) {
+        cancelFogHandoff()
         detailedFogCoordinates = null
         showingDetailedFog = false
         // Keep a ready native world layer behind the detailed viewport. A fast pinch can
@@ -607,26 +610,77 @@ class MapRenderer(
 
     private fun updateFogCoverage(force: Boolean = false) {
         val coordinates = detailedFogCoordinates
-        // Keep the georeferenced detailed bitmap during gestures for as long as it still
-        // covers the viewport. Fall back to the world layer only when movement actually outruns
-        // that coverage, avoiding a visible "fog closes again" flash on every pan or pinch.
+        // Require a safety band outside the viewport. Camera callbacks can trail the native
+        // renderer by a frame during a fast rotated zoom, especially on Android 12.
         val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
                 FogCoverage.coversViewport(fogCoverageScreen, mapView.width, mapView.height)
             }
-        if (!force && detailed == showingDetailedFog) return
-        showingDetailedFog = detailed
         val detailedLayer = map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer
         val worldLayer = map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer
-        // Enable the incoming coverage before hiding the outgoing native layer.
+
+        if (!fogEnabled) {
+            cancelFogHandoff()
+            showingDetailedFog = false
+            detailedLayer?.setProperties(rasterOpacity(0f))
+            worldLayer?.setProperties(rasterOpacity(0f))
+            return
+        }
+        if (detailed == showingDetailedFog) {
+            // Do not cut an in-flight handoff short: the incoming raster needs to survive
+            // actual native frames before the previous coverage is removed.
+            if (!force || fogHandoffFrameListener != null) return
+            detailedLayer?.setProperties(rasterOpacity(if (detailed) 1f else 0f))
+            worldLayer?.setProperties(rasterOpacity(if (detailed) 0f else 1f))
+            return
+        }
+
+        showingDetailedFog = detailed
+        fogHandoffFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
+        fogHandoffFrameListener = null
+        val generation = ++fogHandoffGeneration
+
+        // Make the incoming coverage visible first and deliberately overlap both rasters for
+        // two rendered frames. MapLibre/Android 12 can otherwise batch the opacity changes into
+        // a frame where the detailed ImageSource edge is already outside the rotated viewport.
         if (detailed) {
             detailedLayer?.setProperties(rasterOpacity(1f))
-            worldLayer?.setProperties(rasterOpacity(0f))
         } else {
-            worldLayer?.setProperties(rasterOpacity(if (fogEnabled) 1f else 0f))
-            detailedLayer?.setProperties(rasterOpacity(0f))
+            worldLayer?.setProperties(rasterOpacity(1f))
         }
+        var framesRemaining = FOG_HANDOFF_FRAMES
+        lateinit var listener: MapView.OnDidFinishRenderingFrameListener
+        listener = MapView.OnDidFinishRenderingFrameListener { _, _, _ ->
+            if (destroyed || generation != fogHandoffGeneration) {
+                mapView.removeOnDidFinishRenderingFrameListener(listener)
+                if (fogHandoffFrameListener === listener) fogHandoffFrameListener = null
+                return@OnDidFinishRenderingFrameListener
+            }
+            framesRemaining--
+            if (framesRemaining > 0) {
+                map.triggerRepaint()
+                return@OnDidFinishRenderingFrameListener
+            }
+            mapView.removeOnDidFinishRenderingFrameListener(listener)
+            if (fogHandoffFrameListener === listener) fogHandoffFrameListener = null
+            if (detailed && showingDetailedFog) {
+                (map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer)
+                    ?.setProperties(rasterOpacity(0f))
+            } else if (!detailed && !showingDetailedFog) {
+                (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)
+                    ?.setProperties(rasterOpacity(0f))
+            }
+        }
+        fogHandoffFrameListener = listener
+        mapView.addOnDidFinishRenderingFrameListener(listener)
+        map.triggerRepaint()
+    }
+
+    private fun cancelFogHandoff() {
+        fogHandoffGeneration++
+        fogHandoffFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
+        fogHandoffFrameListener = null
     }
 
     private fun installCarLayer(style: Style) {
@@ -957,6 +1011,7 @@ class MapRenderer(
         mainHandler.removeCallbacksAndMessages(null)
         resumeFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
         resumeFrameListener = null
+        cancelFogHandoff()
         reusableFogBitmap?.recycle()
         reusableFogBitmap = null
         carIconBitmap?.recycle()
@@ -995,6 +1050,7 @@ class MapRenderer(
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
         private const val FOG_RENDER_INTERVAL_MS = 80L
+        private const val FOG_HANDOFF_FRAMES = 2
         private const val OVERLAY_UPDATE_BATCH = 4
     }
 }

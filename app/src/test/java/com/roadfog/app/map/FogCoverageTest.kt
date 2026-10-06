@@ -43,4 +43,13 @@ class FogCoverageTest {
         assertFalse(FogCoverage.coversViewport(doubleArrayOf(), 200, 400))
         assertEquals(0.0, FogCoverage.minimumZoom(0, 0, 2f, 40.0), 0.0)
     }
+    @Test fun coverageRequiresSafetyBandBeforeDetailedFogHandoff() {
+        assertFalse(FogCoverage.coversViewport(doubleArrayOf(
+            -10.0, -10.0, 210.0, -10.0, 210.0, 410.0, -10.0, 410.0
+        ), 200, 400))
+        assertTrue(FogCoverage.coversViewport(doubleArrayOf(
+            -80.0, -80.0, 280.0, -80.0, 280.0, 480.0, -80.0, 480.0
+        ), 200, 400))
+    }
+
 }
