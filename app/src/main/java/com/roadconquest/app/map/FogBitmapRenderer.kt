@@ -411,8 +411,15 @@ object FogBitmapRenderer {
 
     private fun radial(innerFraction: Float) = RadialGradient(
         0f, 0f, 1f,
-        intArrayOf(Color.WHITE, Color.WHITE, Color.BLACK),
-        floatArrayOf(0f, innerFraction, 1f),
+        intArrayOf(
+            Color.WHITE,
+            Color.WHITE,
+            Color.rgb(140, 140, 140),
+            Color.rgb(51, 51, 51),
+            Color.rgb(15, 15, 15),
+            Color.BLACK
+        ),
+        floatArrayOf(0f, innerFraction, 0.20f, 0.50f, 0.80f, 1f),
         Shader.TileMode.CLAMP
     )
 
@@ -421,7 +428,9 @@ object FogBitmapRenderer {
     const val LOCATION_CLEAR_M = ROAD_CLEAR_M
     const val LOCATION_FULL_M = ROAD_FULL_M
     const val MAX_FOG_ALPHA = 0.80f
-    const val MIN_ROAD_ZOOM = 8.0
+    // Confirmed/pending blue roads stay visible farther out than the cleared fog corridor.
+    const val MIN_ROAD_ZOOM = 6.0
+    const val MIN_FOG_REVEAL_ZOOM = 9.0
     const val MAX_ZOOM = 20.0
     const val CENTER_ZOOM = 18.0
     const val MAX_BITMAP_DIMENSION = 768
@@ -459,11 +468,33 @@ object FogBitmapRenderer {
             ))
         }
         val capBounds = RectF(-1f, -1f, 1f, 1f)
+        private val roadClearFraction = ROAD_CLEAR_M / ROAD_FULL_M
         val roadLinear = LinearGradient(
             0f, -1f, 0f, 1f,
-            intArrayOf(Color.BLACK, Color.WHITE, Color.WHITE, Color.BLACK),
-            floatArrayOf(0f, (1f - ROAD_CLEAR_M / ROAD_FULL_M) / 2f,
-                (1f + ROAD_CLEAR_M / ROAD_FULL_M) / 2f, 1f),
+            intArrayOf(
+                Color.BLACK,
+                Color.rgb(15, 15, 15),
+                Color.rgb(51, 51, 51),
+                Color.rgb(140, 140, 140),
+                Color.WHITE,
+                Color.WHITE,
+                Color.rgb(140, 140, 140),
+                Color.rgb(51, 51, 51),
+                Color.rgb(15, 15, 15),
+                Color.BLACK
+            ),
+            floatArrayOf(
+                0f,
+                0.10f,
+                0.25f,
+                0.40f,
+                (1f - roadClearFraction) / 2f,
+                (1f + roadClearFraction) / 2f,
+                0.60f,
+                0.75f,
+                0.90f,
+                1f
+            ),
             Shader.TileMode.CLAMP
         )
         val roadRadial = radial(ROAD_CLEAR_M / ROAD_FULL_M)
