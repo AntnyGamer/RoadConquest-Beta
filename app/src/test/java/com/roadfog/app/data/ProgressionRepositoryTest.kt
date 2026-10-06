@@ -225,8 +225,8 @@ class ProgressionRepositoryTest {
             assertEquals(0L, it.countries)
         }
 
-        // A place seen while the baseline is resolving is preserved, but it must stay
-        // blocked until the zero-point hierarchy is complete.
+        // The ordinary candidate from before the first live baseline is deliberately removed:
+        // it cannot define or inherit the zero-point starting location.
         assertTrue(progression.pendingPlaceCandidates(nowMillis = 4_000L).isEmpty())
         later.time = 5_000L
         assertTrue(progression.recordPlaceCandidate(later))
