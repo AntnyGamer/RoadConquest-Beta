@@ -13,26 +13,52 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 object DataExporter {
-    fun writeZip(context: Context, repository: TrackingRepository, output: OutputStream) {
-        val snapshotFile = File.createTempFile("roadconquest-export-", ".db", context.cacheDir)
-        try {
-            SQLiteDatabase.openOrCreateDatabase(snapshotFile, null).use { snapshot ->
-                repository.copyExportSnapshot(snapshot)
-                val summary = TrackingRepository.summaryOf(snapshot)
-                ZipOutputStream(output.buffered()).use { zip ->
-                    val points = writeTrackPoints(snapshot, zip)
-                    val roadCount = writeRoads(snapshot, zip)
-                    val roadVisitCount = writeRoadVisits(snapshot, zip)
-                    val exploredCount = writeExploredPlaces(snapshot, zip)
-                    val progression = writeProgression(snapshot, zip)
-                    writeMetadata(context, summary.copy(trackPointCount = points.trackPointCount,
-                        roadSegmentCount = roadCount, firstTrackAt = points.firstTrackAt, lastTrackAt = points.lastTrackAt),
-                        exploredCount, roadVisitCount, progression, zip)
+    private const val SNAPSHOT_PREFIX = "roadconquest-export-"
+    private const val SNAPSHOT_SUFFIX = ".db"
+    private val snapshotLock = Any()
+
+    fun writeZip(context: Context, repository: TrackingRepository, output: OutputStream) =
+        synchronized(snapshotLock) {
+            // A killed process cannot execute the previous export's finally block. Remove any
+            // orphaned private SQLite snapshot before copying current history into a new one.
+            clearTemporarySnapshotsLocked(context)
+            val snapshotFile = File.createTempFile(SNAPSHOT_PREFIX, SNAPSHOT_SUFFIX, context.cacheDir)
+            try {
+                SQLiteDatabase.openOrCreateDatabase(snapshotFile, null).use { snapshot ->
+                    repository.copyExportSnapshot(snapshot)
+                    val summary = TrackingRepository.summaryOf(snapshot)
+                    ZipOutputStream(output.buffered()).use { zip ->
+                        val points = writeTrackPoints(snapshot, zip)
+                        val roadCount = writeRoads(snapshot, zip)
+                        val roadVisitCount = writeRoadVisits(snapshot, zip)
+                        val exploredCount = writeExploredPlaces(snapshot, zip)
+                        val progression = writeProgression(snapshot, zip)
+                        writeMetadata(context, summary.copy(trackPointCount = points.trackPointCount,
+                            roadSegmentCount = roadCount, firstTrackAt = points.firstTrackAt, lastTrackAt = points.lastTrackAt),
+                            exploredCount, roadVisitCount, progression, zip)
+                    }
                 }
+            } finally {
+                SQLiteDatabase.deleteDatabase(snapshotFile)
             }
-        } finally {
-            SQLiteDatabase.deleteDatabase(snapshotFile)
         }
+
+    /** Delete private snapshots left behind by an interrupted export, including SQLite sidecars. */
+    fun clearTemporarySnapshots(context: Context) = synchronized(snapshotLock) {
+        clearTemporarySnapshotsLocked(context)
+    }
+
+    private fun clearTemporarySnapshotsLocked(context: Context) {
+        val cache = context.applicationContext.cacheDir
+        cache.listFiles()
+            .orEmpty()
+            .filter { it.name.startsWith(SNAPSHOT_PREFIX) && it.name.endsWith(SNAPSHOT_SUFFIX) }
+            .forEach(SQLiteDatabase::deleteDatabase)
+        // deleteDatabase removes normal -wal/-shm files with the base DB. Sweep by prefix too
+        // in case process death happened between sidecar creation and the base-file flush.
+        cache.listFiles().orEmpty()
+            .filter { it.name.startsWith(SNAPSHOT_PREFIX) }
+            .forEach { it.delete() }
     }
 
     private fun writeMetadata(
