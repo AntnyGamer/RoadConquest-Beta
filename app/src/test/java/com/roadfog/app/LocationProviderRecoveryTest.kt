@@ -37,6 +37,25 @@ class LocationProviderRecoveryTest {
         assertEquals("fused", LocationProviders.preferred(manager))
     }
 
+    @Test fun startingPlaceRejectsFixesOlderThanTheCurrentLocationRequest() {
+        val old = Location("gps").apply {
+            time = 9_000L
+            elapsedRealtimeNanos = 9_000_000_000L
+        }
+        val current = Location("gps").apply {
+            time = 10_000L
+            elapsedRealtimeNanos = 10_000_000_000L
+        }
+        assertFalse(LocationProviders.isFixSince(old, 10_000_000_000L, 10_000L))
+        assertTrue(LocationProviders.isFixSince(current, 10_000_000_000L, 10_000L))
+
+        // Providers without elapsedRealtime still fall back to wall-clock fix time.
+        current.elapsedRealtimeNanos = 0L
+        old.elapsedRealtimeNanos = 0L
+        assertFalse(LocationProviders.isFixSince(old, 10_000_000_000L, 10_000L))
+        assertTrue(LocationProviders.isFixSince(current, 10_000_000_000L, 10_000L))
+    }
+
     @Test fun freshAccuracyWinsRegardlessOfProviderAndOldFixesCannotFreezeTracking() {
         fun fix(provider: String, seconds: Long, accuracyMeters: Float) = Location(provider).apply {
             time = seconds * 1_000L
