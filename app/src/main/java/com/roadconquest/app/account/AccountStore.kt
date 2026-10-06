@@ -1,10 +1,10 @@
-package com.roadfog.app.account
+package com.roadconquest.app.account
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.util.Prefs
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator

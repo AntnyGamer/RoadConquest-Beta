@@ -1,4 +1,4 @@
-package com.roadfog.app.account
+package com.roadconquest.app.account
 
 import android.content.Context
 import android.location.Location
@@ -7,7 +7,7 @@ import android.util.Base64
 import com.google.android.gms.tasks.Tasks
 import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.StandardIntegrityManager
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.util.Prefs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest

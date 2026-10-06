@@ -1,11 +1,11 @@
-package com.roadfog.app.data
+package com.roadconquest.app.data
 
 import android.content.Context
 import android.content.Intent
-import com.roadfog.app.TrackingService
-import com.roadfog.app.export.DataExporter
-import com.roadfog.app.progression.ProgressionManager
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.TrackingService
+import com.roadconquest.app.export.DataExporter
+import com.roadconquest.app.progression.ProgressionManager
+import com.roadconquest.app.util.Prefs
 
 /** One authoritative path for deleting all device-only RoadConquest progress. */
 object LocalDataReset {

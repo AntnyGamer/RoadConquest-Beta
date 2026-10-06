@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.Manifest
 import android.app.Notification
@@ -20,13 +20,13 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.data.ProgressionRepository
-import com.roadfog.app.account.VerifiedDriving
-import com.roadfog.app.matching.OsrmMatcher
-import com.roadfog.app.progression.ProgressionManager
-import com.roadfog.app.util.LocationProviders
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.data.ProgressionRepository
+import com.roadconquest.app.account.VerifiedDriving
+import com.roadconquest.app.matching.OsrmMatcher
+import com.roadconquest.app.progression.ProgressionManager
+import com.roadconquest.app.util.LocationProviders
+import com.roadconquest.app.util.Prefs
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ScheduledFuture
@@ -593,12 +593,12 @@ class TrackingService : Service(), LocationListener {
     }
 
     companion object {
-        const val ACTION_LOCATION_UPDATE = "com.roadfog.app.LOCATION_UPDATE"
-        const val ACTION_STATS_UPDATED = "com.roadfog.app.STATS_UPDATED"
-        const val ACTION_ROADS_UPDATED = "com.roadfog.app.ROADS_UPDATED"
-        const val ACTION_EXPLORATION_UPDATED = "com.roadfog.app.EXPLORATION_UPDATED"
-        const val ACTION_TRACKING_STATE_CHANGED = "com.roadfog.app.TRACKING_STATE_CHANGED"
-        const val ACTION_STOP_UNTIL_OPEN = "com.roadfog.app.STOP_UNTIL_OPEN"
+        const val ACTION_LOCATION_UPDATE = "com.roadconquest.app.LOCATION_UPDATE"
+        const val ACTION_STATS_UPDATED = "com.roadconquest.app.STATS_UPDATED"
+        const val ACTION_ROADS_UPDATED = "com.roadconquest.app.ROADS_UPDATED"
+        const val ACTION_EXPLORATION_UPDATED = "com.roadconquest.app.EXPLORATION_UPDATED"
+        const val ACTION_TRACKING_STATE_CHANGED = "com.roadconquest.app.TRACKING_STATE_CHANGED"
+        const val ACTION_STOP_UNTIL_OPEN = "com.roadconquest.app.STOP_UNTIL_OPEN"
         const val EXTRA_LATITUDE = "latitude"
         const val EXTRA_LONGITUDE = "longitude"
         const val EXTRA_BEARING = "bearing"

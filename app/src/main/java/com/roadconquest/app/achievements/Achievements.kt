@@ -1,8 +1,8 @@
-package com.roadfog.app.achievements
+package com.roadconquest.app.achievements
 
 import android.content.Context
-import com.roadfog.app.data.DataSummary
-import com.roadfog.app.data.ProgressionRepository
+import com.roadconquest.app.data.DataSummary
+import com.roadconquest.app.data.ProgressionRepository
 
 data class AchievementMetrics(
     val towns: Long = 0L,

@@ -1,10 +1,10 @@
-package com.roadfog.app.account
+package com.roadconquest.app.account
 
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
-import com.roadfog.app.AccountActivity
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.AccountActivity
+import com.roadconquest.app.util.Prefs
 
 /** A one-time invitation, without making local exploration depend on an account. */
 object AccountOnboarding {

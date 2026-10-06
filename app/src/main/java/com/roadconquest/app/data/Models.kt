@@ -1,4 +1,4 @@
-package com.roadfog.app.data
+package com.roadconquest.app.data
 
 data class TrackPoint(
     val id: Long,

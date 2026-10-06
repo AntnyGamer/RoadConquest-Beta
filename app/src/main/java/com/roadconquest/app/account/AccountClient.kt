@@ -1,6 +1,6 @@
-package com.roadfog.app.account
+package com.roadconquest.app.account
 
-import com.roadfog.app.BuildConfig
+import com.roadconquest.app.BuildConfig
 import org.json.JSONObject
 import java.net.URI
 import javax.net.ssl.HttpsURLConnection
