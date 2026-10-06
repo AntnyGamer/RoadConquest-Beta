@@ -94,7 +94,7 @@ class MatchingRetryTest {
             val controller = Robolectric.buildService(TrackingService::class.java)
             val service = controller.get()
             val repo = repository()
-            repeat(2) { index ->
+            val ids = (0 until 2).map { index ->
                 repo.insertLocation(Location("gps").apply {
                     latitude = 40.0
                     longitude = -74.0 - index * 0.001
@@ -103,6 +103,9 @@ class MatchingRetryTest {
                     time = 1_000_000L + index * 3_000L
                 })
             }
+            // Reproduce the exported-drive failure mode: the points are still waiting on a
+            // future retry deadline when the user switches Android Location off.
+            repo.deferMatching(ids, System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5))
             val manager = RuntimeEnvironment.getApplication()
                 .getSystemService(android.location.LocationManager::class.java)
             field(service, "repository").set(service, repo)
