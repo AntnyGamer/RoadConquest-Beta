@@ -74,11 +74,9 @@ If all of the above pass on the target Android device and firmware, that provide
 - Change a username using the current password; verify the new name in Account settings and
   after signing in again, with scores and privacy preserved. A taken name or wrong password
   must leave the original account unchanged.
-- Cancel both deletion confirmations and verify that all data remains. The device-data control is under **Settings → Data and privacy**.
-- Delete an account with the current password; verify that all old sessions stop working.
-  The default local-history option clears trips, mileage, roads, explored places, points, purchases and cosmetics.
-- Delete device data while offline and signed out. Tracking stops, verified-drive GPS sharing
-  turns off, history and fog reveals clear, and delayed road matches cannot restore them. The
+- Cancel both deletion confirmations and verify that all data remains.
+- **Account → Delete account** must require the current password, delete the cloud account/sessions/leaderboard data, and leave saved device history intact.
+- **Settings → Data and privacy → Delete all data** must be unavailable while signed out, require the current password when signed in, and only begin local deletion after the server accepts that password and deletes the cloud account. Then tracking stops, verified-drive sharing turns off, history and fog reveals clear, points/purchases/cosmetics clear, and delayed road matches cannot restore them. The
   cloud account remains when only device data is deleted. Tracking and verified sharing can be
   explicitly re-enabled later.
 - Interrupt an export (for example by killing the app during export), reopen Road Conquest, then
