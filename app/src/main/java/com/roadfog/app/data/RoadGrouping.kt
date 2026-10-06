@@ -38,58 +38,6 @@ internal object RoadGrouping {
     fun isUnnamed(nameKey: String): Boolean =
         nameKey.isEmpty() || nameKey == "unnamed road"
 
-    fun assignGroups(roads: List<Road>): Map<String, String> {
-        if (roads.isEmpty()) return emptyMap()
-        val result = HashMap<String, String>(roads.size)
-        val named = roads.groupBy { it.nameKey }
-
-        for (sameName in named.values) {
-            val count = sameName.size
-            if (count == 1) {
-                val only = sameName[0]
-                result[only.segmentId] = only.segmentId
-                continue
-            }
-            val parent = IntArray(count) { it }
-            fun root(index: Int): Int {
-                var current = index
-                while (parent[current] != current) {
-                    parent[current] = parent[parent[current]]
-                    current = parent[current]
-                }
-                return current
-            }
-            fun union(a: Int, b: Int) {
-                val first = root(a)
-                val second = root(b)
-                if (first != second) parent[second] = first
-            }
-
-            val order = sameName.indices.sortedBy { sameName[it].minLatitude }
-            val latitudePad = JOIN_TOLERANCE_M / METERS_PER_DEGREE
-            for (position in order.indices) {
-                val firstIndex = order[position]
-                val first = sameName[firstIndex]
-                for (nextPosition in position + 1 until order.size) {
-                    val secondIndex = order[nextPosition]
-                    val second = sameName[secondIndex]
-                    if (second.minLatitude > first.maxLatitude + latitudePad) break
-                    if (connected(first, second)) union(firstIndex, secondIndex)
-                }
-            }
-
-            val canonical = HashMap<Int, String>()
-            for (index in sameName.indices) {
-                val component = root(index)
-                val id = sameName[index].segmentId
-                canonical[component] = minOf(canonical[component] ?: id, id)
-            }
-            for (index in sameName.indices) {
-                result[sameName[index].segmentId] = requireNotNull(canonical[root(index)])
-            }
-        }
-        return result
-    }
 
     fun connected(first: Road, second: Road): Boolean {
         if (first.nameKey != second.nameKey) return false
