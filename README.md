@@ -38,7 +38,7 @@ the Google Play listing is created; changing it later would create a different a
 - Use automatic tracking or control it manually. Stop tracking from the foreground notification.
 - Export driving history, road geometry, explored places, place discoveries, point awards,
   purchases and progression counters from Settings.
-- Create an optional account, change your username and manage leaderboard visibility. There are exactly two destructive account/data actions in the app: Account → Delete account removes the cloud account while keeping saved device history; Settings → Data and privacy → Delete all data removes all local Road Conquest data while keeping the cloud account and leaderboard scores. Both require the current account password. Local full-data deletion stops tracking, disables verified-drive sharing and removes private interrupted-export snapshots.
+- Create an optional account, change your username and manage leaderboard visibility. There are exactly two destructive account/data actions in the app: Account → Delete account removes the cloud account while keeping saved device history and requires the current account password; Settings → Data and privacy → Delete all data removes all local Road Conquest data while keeping the cloud account and leaderboard scores and requires typing the exact local confirmation phrase. Local full-data deletion works while signed out, stops tracking, disables verified-drive sharing and removes private interrupted-export snapshots.
 
 Turning Show fog off changes only its visibility. Tracking continues and the saved reveals return
 when fog is enabled again. Manual tracking stays off until you enable it. In automatic mode,

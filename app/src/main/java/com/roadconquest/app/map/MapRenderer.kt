@@ -138,7 +138,7 @@ class MapRenderer(
         viewportRevision++
         updateCameraLimits()
         updateFogCoverage()
-        if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM) scheduleFogRender()
+        if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) scheduleFogRender()
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
         cameraMoving = false
@@ -311,8 +311,8 @@ class MapRenderer(
         return true
     }
 
-    fun centerOnStartingLocation(latitude: Double, longitude: Double): Boolean {
-        if (destroyed || centeredOnce || !latitude.isFinite() || !longitude.isFinite() ||
+    fun centerOnStartingLocation(latitude: Double, longitude: Double, force: Boolean = false): Boolean {
+        if (destroyed || (!force && centeredOnce) || !latitude.isFinite() || !longitude.isFinite() ||
             latitude !in -85.05112878..85.05112878 || longitude !in -180.0..180.0
         ) return false
         centeredOnce = true
@@ -693,7 +693,7 @@ class MapRenderer(
         // coverage while the camera is moving. Android 12 can present a native frame before the
         // Java camera callback catches up; switching to the ready world layer early prevents a
         // bitmap edge from flashing as a white rectangle without closing fog on every gesture.
-        val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
+        val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
                 FogCoverage.coversViewport(
@@ -813,11 +813,18 @@ class MapRenderer(
 
     private fun scheduleFogRender() {
         if (destroyed || !fogEnabled) return
+        // At overview zooms the static world fog already provides complete coverage. Do not
+        // burn CPU/GPU time rebuilding detailed reveal bitmaps that are intentionally hidden.
+        if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
+            mainHandler.removeCallbacks(renderFog)
+            fogAgain = false
+            updateFogCoverage()
+            return
+        }
         if (fogRunning) {
             fogAgain = true
             return
         }
-        if (cameraMoving && map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) return
         mainHandler.removeCallbacks(renderFog)
         val delay = FOG_RENDER_INTERVAL_MS - (SystemClock.elapsedRealtime() - lastFogRenderAt)
         if (cameraMoving && delay > 0L) {
@@ -885,10 +892,10 @@ class MapRenderer(
         ).coerceAtMost(1f)
         val bitmapWidth = (expandedWidth * scale).roundToInt().coerceAtLeast(2)
         val bitmapHeight = (expandedHeight * scale).roundToInt().coerceAtLeast(2)
-        val roads = if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM) displayedRoads
+        val roads = if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedRoads
             else OverlayRoads.EMPTY
         val roadScreen = projectRoads(roads)
-        val places = if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM) displayedPlaces else doubleArrayOf()
+        val places = if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedPlaces else doubleArrayOf()
         val placeScreen = projectPlaces(places)
 
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
@@ -906,7 +913,7 @@ class MapRenderer(
         val mercatorMetersPerPixel = metersPerPixel / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
         // Screen corners can span several wrapped worlds at overview zooms. An ImageSource
         // cannot represent those as one narrow wrapped quad; use one complete Mercator world.
-        if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM ||
+        if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
             (expandedWidth + expandedHeight) * mercatorMetersPerPixel >= 2 * PI * 6378137.0) {
             val world = 2 * PI * 6378137.0
             val size = maxBitmapDimension
@@ -1088,7 +1095,10 @@ class MapRenderer(
         private val EMPTY_FEATURES = FeatureCollection.fromFeatures(emptyList<Feature>())
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
-        private const val FOG_RENDER_INTERVAL_MS = 80L
+        // Native MapLibre transforms the georeferenced bitmap between refreshes, so ~8 fps
+        // while actively gesturing is visually continuous without wasting battery on 12.5 fps
+        // off-screen bitmap redraws. Idle renders still happen immediately.
+        private const val FOG_RENDER_INTERVAL_MS = 120L
         private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.50
         private const val OVERLAY_UPDATE_BATCH = 4
         private const val STARTING_LOCATION_ZOOM = 15.0

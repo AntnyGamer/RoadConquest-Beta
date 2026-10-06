@@ -63,6 +63,7 @@ class MainActivity : Activity() {
     private var safeLeft = 0
     private var safeRight = 0
     private var mapWasCentered = false
+    private var startingFallbackApplied = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(Appearance.wrap(newBase))
@@ -901,20 +902,29 @@ class MainActivity : Activity() {
     private fun showFreshCachedOrStartingLocation() {
         showFreshCachedLocation()
         val activeRenderer = renderer ?: return
-        if (activeRenderer.hasCentered || Prefs.isDeviceDataDeletionPending(this)) return
+        if (Prefs.isDeviceDataDeletionPending(this)) return
         // When Android Location is available, wait for the fresh live fix so startup still
-        // follows the current car position. The saved zero point is specifically the
-        // Location-off fallback and must not steal initial centering from a later permission fix.
-        if (!::locationManager.isInitialized || locationManager.isLocationEnabled) return
+        // follows the current car position. When Location is off, however, saved MapView state
+        // must not win over the user's zero point. Apply that fallback once per Activity launch,
+        // then leave the camera alone so normal panning is not constantly undone.
+        if (!::locationManager.isInitialized || locationManager.isLocationEnabled || startingFallbackApplied) return
+        startingFallbackApplied = true
 
         summaryExecutor.execute {
             val starting = runCatching {
                 ProgressionRepository(applicationContext).startingLocation()
-            }.getOrNull() ?: return@execute
+            }.getOrNull()
             runOnUiThread {
-                if (!isDestroyed) {
-                    renderer?.centerOnStartingLocation(starting.latitude, starting.longitude)
+                if (isDestroyed) return@runOnUiThread
+                if (starting == null || locationManager.isLocationEnabled || renderer !== activeRenderer) {
+                    startingFallbackApplied = false
+                    return@runOnUiThread
                 }
+                activeRenderer.centerOnStartingLocation(
+                    starting.latitude,
+                    starting.longitude,
+                    force = true
+                )
             }
         }
     }
