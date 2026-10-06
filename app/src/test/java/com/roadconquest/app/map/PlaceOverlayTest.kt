@@ -84,6 +84,57 @@ class PlaceOverlayTest {
         assertFalse(PlaceOverlayCache.read(context, place).cached)
     }
 
+    @Test fun sameNamedTownUsesTheBoundaryNearestTheDiscoveredLocation() {
+        val place = PlaceDiscovery(
+            PlaceKind.TOWN,
+            "us|new jersey|washington township",
+            "Washington Township",
+            "New Jersey",
+            "United States",
+            1L,
+            39.717675,
+            -75.090175
+        )
+        val body = """
+            [
+              {
+                "name":"Washington Township",
+                "lat":"40.9800",
+                "lon":"-74.1000",
+                "addresstype":"administrative",
+                "address":{
+                  "township":"Washington Township",
+                  "state":"New Jersey",
+                  "country":"United States"
+                },
+                "extratags":{"population":"111"},
+                "geojson":{"type":"Polygon","coordinates":[[
+                  [-74.11,40.97],[-74.09,40.97],[-74.09,40.99],[-74.11,40.99],[-74.11,40.97]
+                ]]}
+              },
+              {
+                "name":"Washington Township",
+                "lat":"39.7180",
+                "lon":"-75.0900",
+                "addresstype":"administrative",
+                "address":{
+                  "township":"Washington Township",
+                  "state":"New Jersey",
+                  "country":"United States"
+                },
+                "extratags":{"population":"222"},
+                "geojson":{"type":"Polygon","coordinates":[[
+                  [-75.10,39.71],[-75.08,39.71],[-75.08,39.73],[-75.10,39.73],[-75.10,39.71]
+                ]]}
+              }
+            ]
+        """.trimIndent()
+
+        val data = PlaceOverlayClient.parseResponse(place, body)
+        assertNotNull(data)
+        assertEquals(222L, data!!.population)
+    }
+
     @Test fun wrongAdministrativeResultIsRejected() {
         val place = PlaceDiscovery(
             PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States",
