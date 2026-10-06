@@ -241,8 +241,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
         ): Double {
             val lat1 = Math.toRadians(latitude1)
             val lat2 = Math.toRadians(latitude2)
-            val deltaLongitude = ((longitude2 - longitude1 + 540.0) % 360.0) - 180.0
-            val x = Math.toRadians(deltaLongitude) * cos((lat1 + lat2) / 2.0)
+            val x = Math.toRadians(longitude2 - longitude1) * cos((lat1 + lat2) / 2.0)
             val y = lat2 - lat1
             return EARTH_RADIUS_M * hypot(x, y)
         }
