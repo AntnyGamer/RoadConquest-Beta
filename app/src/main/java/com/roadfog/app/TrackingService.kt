@@ -89,7 +89,7 @@ class TrackingService : Service(), LocationListener {
         verifiedDriving = VerifiedDriving(this)
         locationManager = getSystemService(LocationManager::class.java)
         createNotificationChannel()
-        if (Prefs.isTrackingPaused(this) ||
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) {
             stopSelf()
@@ -131,7 +131,7 @@ class TrackingService : Service(), LocationListener {
             sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
             return START_NOT_STICKY
         }
-        if (Prefs.isTrackingPaused(this)) {
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) {
             ready = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
