@@ -125,6 +125,18 @@ OSRM demo; a compatible controlled matcher can be selected with
 `ROADCONQUEST_OSRM_API_URL=https://roads.example.com`. Administrative overlay boundaries are requested only after the user enables an overlay; results are cached and requests are throttled. The APK reads the active provider from `OVERLAY_PROVIDER.txt` on this repository’s `main` branch so the service can be switched or disabled without an app update. Custom builds can point at another remote config with `ROADCONQUEST_PLACE_OVERLAY_CONFIG_URL=https://example.com/overlay-provider.txt`.
 See [server setup](server/README.md) and the [physical-device checklist](ANDROID_TEST_CHECKLIST.md).
 
+## Google Play submission
+
+The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload.
+The account service exposes browser pages at `/privacy` and `/delete-account`; the app links both from
+Settings → Data and privacy. Use those deployed HTTPS URLs for the Play Console privacy-policy and
+account-deletion fields. The first Android location permission flow is preceded by a prominent disclosure
+covering precise location, background use, road matching, and optional verified scoring.
+
+Play Console still requires the publisher to complete the Data safety form, background-location declaration,
+developer/package registration, store listing assets, review access where applicable, and the other account-level
+declarations that cannot be supplied by source code alone.
+
 ## Privacy and map credits
 
 Driving history, explored places, points and purchases stay on the phone. Road matching sends small
