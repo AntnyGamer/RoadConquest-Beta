@@ -1001,7 +1001,7 @@ class MapRenderer(
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
         private const val FOG_RENDER_INTERVAL_MS = 80L
-        private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.25
+        private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.50
         private const val OVERLAY_UPDATE_BATCH = 4
     }
 }
