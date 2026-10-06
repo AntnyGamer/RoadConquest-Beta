@@ -67,7 +67,7 @@ class NotificationStopTest {
             val notification = Shadows.shadowOf(service).lastForegroundNotification
             assertNotNull(notification)
             assertEquals(
-                "RoadConquest is ready",
+                "Road Conquest is ready",
                 notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
             )
             assertEquals(
