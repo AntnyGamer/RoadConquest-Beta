@@ -187,7 +187,11 @@ class TrackingRepository(context: Context) {
         // When retrying a hole inside an otherwise matched drive, keep up to two points on
         // the newer side so OSRM sees the exit direction as well as the junction itself. For a
         // live newest batch these are absent, so the available context slots come from behind.
-        val newerAnchors = ArrayList<TrackPoint>(minOf(2, anchorSlots))
+        // Always reserve at least one slot for the older side of a retry hole. Without
+        // that incoming anchor, a tiny retry window can know the road after an intersection
+        // but not the road we approached it on, which is exactly the ambiguity we are fixing.
+        val newerAnchorLimit = minOf(2, (anchorSlots - 1).coerceAtLeast(0))
+        val newerAnchors = ArrayList<TrackPoint>(newerAnchorLimit)
         dbHelper.readableDatabase.query(
             "track_points",
             TRACK_COLUMNS,
@@ -196,7 +200,7 @@ class TrackingRepository(context: Context) {
             null,
             null,
             "id ASC",
-            minOf(2, anchorSlots).toString()
+            newerAnchorLimit.toString()
         ).use { cursor ->
             var boundary = latest
             while (cursor.moveToNext()) {
