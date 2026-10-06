@@ -356,7 +356,21 @@ class ProgressionRepositoryTest {
         assertTrue(released.none { it.cellX == Long.MIN_VALUE })
         assertEquals(1, released.size)
         assertEquals(later.time, released.single().visitedAt)
-        assertEquals(0L, progression.snapshot().balance)
+        assertEquals(
+            1,
+            progression.resolveCandidate(
+                released.single(),
+                listOf(
+                    PlaceDiscovery(
+                        PlaceKind.TOWN, "us|pennsylvania|queued", "Queued Town",
+                        "Pennsylvania", "United States", released.single().visitedAt,
+                        released.single().latitude, released.single().longitude
+                    )
+                )
+            )
+        )
+        assertEquals(100L, progression.snapshot().balance)
+        assertEquals(1L, progression.snapshot().towns)
     }
 
 }
