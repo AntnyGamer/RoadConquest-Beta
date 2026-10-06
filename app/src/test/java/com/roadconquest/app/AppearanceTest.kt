@@ -1,17 +1,17 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.content.res.Configuration
 import android.graphics.Color
 import android.view.ContextThemeWrapper
 import android.widget.Button
 import android.widget.Switch
-import com.roadfog.app.map.MapMode
-import com.roadfog.app.map.PlaceOverlayMode
-import com.roadfog.app.util.Appearance
-import com.roadfog.app.util.Prefs
-import com.roadfog.app.util.UiTheme
-import com.roadfog.app.util.StatsText
-import com.roadfog.app.data.DataSummary
+import com.roadconquest.app.map.MapMode
+import com.roadconquest.app.map.PlaceOverlayMode
+import com.roadconquest.app.util.Appearance
+import com.roadconquest.app.util.Prefs
+import com.roadconquest.app.util.UiTheme
+import com.roadconquest.app.util.StatsText
+import com.roadconquest.app.data.DataSummary
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -113,7 +113,7 @@ class AppearanceTest {
         assertEquals(UiTheme.SYSTEM, Prefs.uiTheme(app))
         assertEquals(MapMode.STREETS, Prefs.mapMode(app))
         assertEquals("RoadConquest", app.getString(R.string.app_name))
-        assertEquals("com.roadfog.app", app.packageName)
+        assertEquals("com.roadconquest.app", app.packageName)
         assertFalse(app.getString(R.string.stats_initial).contains("GPS"))
     }
 

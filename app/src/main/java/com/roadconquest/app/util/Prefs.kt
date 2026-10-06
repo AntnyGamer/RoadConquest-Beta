@@ -1,8 +1,8 @@
-package com.roadfog.app.util
+package com.roadconquest.app.util
 
 import android.content.Context
-import com.roadfog.app.map.MapMode
-import com.roadfog.app.map.PlaceOverlayMode
+import com.roadconquest.app.map.MapMode
+import com.roadconquest.app.map.PlaceOverlayMode
 
 object Prefs {
     private const val FILE = "roadfog_preferences"

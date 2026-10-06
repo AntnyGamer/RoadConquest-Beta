@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.os.Looper
 import android.view.ViewGroup
@@ -6,11 +6,11 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import com.roadfog.app.data.AppDatabase
-import com.roadfog.app.achievements.AchievementCategory
-import com.roadfog.app.achievements.Achievements
-import com.roadfog.app.data.DataSummary
-import com.roadfog.app.data.TrackingRepository
+import com.roadconquest.app.data.AppDatabase
+import com.roadconquest.app.achievements.AchievementCategory
+import com.roadconquest.app.achievements.Achievements
+import com.roadconquest.app.data.DataSummary
+import com.roadconquest.app.data.TrackingRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before

@@ -1,8 +1,8 @@
-package com.roadfog.app.util
+package com.roadconquest.app.util
 
 import android.content.Context
-import com.roadfog.app.R
-import com.roadfog.app.data.DataSummary
+import com.roadconquest.app.R
+import com.roadconquest.app.data.DataSummary
 
 object StatsText {
     fun format(context: Context, summary: DataSummary): String {

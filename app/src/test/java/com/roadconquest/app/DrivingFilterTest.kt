@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.location.Location
 import org.junit.Assert.*

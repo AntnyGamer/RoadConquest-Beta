@@ -1,9 +1,9 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.Manifest
 import android.content.Intent
 import android.location.LocationManager
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.util.Prefs
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test

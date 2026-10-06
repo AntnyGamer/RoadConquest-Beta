@@ -1,4 +1,4 @@
-package com.roadfog.app
+package com.roadconquest.app
 
 import android.view.View
 import android.app.AlertDialog
@@ -9,12 +9,12 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Switch
 import android.widget.TextView
-import com.roadfog.app.account.AccountClient
-import com.roadfog.app.account.AccountStore
-import com.roadfog.app.data.TrackingRepository
-import com.roadfog.app.data.AppDatabase
-import com.roadfog.app.data.LocalDataReset
-import com.roadfog.app.util.Prefs
+import com.roadconquest.app.account.AccountClient
+import com.roadconquest.app.account.AccountStore
+import com.roadconquest.app.data.TrackingRepository
+import com.roadconquest.app.data.AppDatabase
+import com.roadconquest.app.data.LocalDataReset
+import com.roadconquest.app.util.Prefs
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test

@@ -1,4 +1,4 @@
-package com.roadfog.app.util
+package com.roadconquest.app.util
 
 import android.location.LocationManager
 import android.location.Location
