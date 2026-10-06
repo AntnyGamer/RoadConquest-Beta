@@ -70,7 +70,7 @@ object DataExporter {
         zip: ZipOutputStream
     ) {
         val metadata = JSONObject()
-            .put("app", "RoadConquest")
+            .put("app", "Road Conquest")
             .put("schema_version", 7)
             .put("explored_place_count", exploredCount)
             .put("road_visit_count", roadVisitCount)
