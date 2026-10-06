@@ -127,17 +127,35 @@ class MapRenderingDeviceTest {
                         // OnCameraIdle. Confirm the pan and wait for its rendered frame.
                         val frame = CountDownLatch(1)
                         val listener = MapView.OnDidFinishRenderingFrameListener { _, _, _ -> frame.countDown() }
+                        var beforeLongitude = Double.NaN
                         scenario.onActivity {
                             val center = android.graphics.PointF(view.width / 2f, view.height / 2f)
-                            val before = map.projection.fromScreenLocation(center).longitude
+                            beforeLongitude = map.projection.fromScreenLocation(center).longitude
                             view.addOnDidFinishRenderingFrameListener(listener)
                             map.scrollBy(direction * view.width * 1.25f, 0f)
-                            val after = map.projection.fromScreenLocation(center).longitude
-                            val difference = ((after - before + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-                            assertTrue("The world pan changes the visible longitude", kotlin.math.abs(difference) > 0.1)
                         }
                         assertTrue("The world pan renders", frame.await(10, TimeUnit.SECONDS))
                         scenario.onActivity { view.removeOnDidFinishRenderingFrameListener(listener) }
+
+                        // On newer MapLibre/Android renderers the Java projection can lag the
+                        // native scroll call by a frame. Check the camera only after rendering,
+                        // and allow a short propagation window instead of asserting synchronously.
+                        val panDeadline = SystemClock.elapsedRealtime() + 2_000L
+                        var panDifference = 0.0
+                        while (kotlin.math.abs(panDifference) <= 0.1 &&
+                            SystemClock.elapsedRealtime() < panDeadline
+                        ) {
+                            scenario.onActivity {
+                                val center = android.graphics.PointF(view.width / 2f, view.height / 2f)
+                                val afterLongitude = map.projection.fromScreenLocation(center).longitude
+                                panDifference = ((afterLongitude - beforeLongitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+                            }
+                            if (kotlin.math.abs(panDifference) <= 0.1) SystemClock.sleep(25)
+                        }
+                        assertTrue(
+                            "The world pan changes the visible longitude",
+                            kotlin.math.abs(panDifference) > 0.1
+                        )
                         awaitPixels("Fog survives loop $loop in direction $direction at zoom $zoom") { bitmap ->
                             listOf(0.01, 0.25, 0.5, 0.75, 0.99).all { column ->
                                 Color.red(bitmap.getPixel((bitmap.width * column).toInt(), bitmap.height / 2)) < 220
