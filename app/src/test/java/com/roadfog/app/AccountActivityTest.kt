@@ -159,7 +159,9 @@ class AccountActivityTest {
         try {
             val activity = controller.get()
             val control = activity.findViewById<Button>(R.id.deleteDeviceDataButton)
+            val manual = activity.findViewById<Switch>(R.id.manualOnlySwitch)
             assertTrue("Local deletion works without an account service", control.isEnabled)
+            assertTrue(manual.isEnabled)
             val before = repository.getSummary().trackPointCount
             control.performClick()
             org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
@@ -178,6 +180,7 @@ class AccountActivityTest {
                 Thread.sleep(10)
             } while (System.nanoTime() < deadline)
             assertTrue("Deletion finishes", control.isEnabled)
+            assertTrue("Tracking mode can be changed again after deletion", manual.isEnabled)
             assertEquals(0L, repository.getSummary().trackPointCount)
             assertTrue(Prefs.isManualOnly(context))
             assertFalse(Prefs.isTrackingPaused(context))
@@ -220,6 +223,7 @@ class AccountActivityTest {
         assertTrue(Prefs.isDeviceDataDeletionPending(context))
         assertTrue(Prefs.isTrackingPaused(context))
         assertFalse(Prefs.shouldResumePausedTracking(context))
+        assertFalse(activity.findViewById<Switch>(R.id.manualOnlySwitch).isEnabled)
 
         // Close Settings while the authorized deletion is deliberately queued behind work.
         // Graceful executor shutdown must keep that queued deletion alive.
