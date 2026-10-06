@@ -354,7 +354,8 @@ async function handle(req, res) {
 
   const renameAccount = req.method === "PUT" && url.pathname === "/v1/username";
   const deleteAccount = req.method === "DELETE" && url.pathname === "/v1/account";
-  if (renameAccount || deleteAccount) {
+  const reauthenticate = req.method === "POST" && url.pathname === "/v1/reauth";
+  if (renameAccount || deleteAccount || reauthenticate) {
     const user = await authenticatedUser(req);
     if (!user) return send(res, 401, { error: "Authentication required." });
     const body = await readJson(req);
@@ -383,6 +384,10 @@ async function handle(req, res) {
       if (!await verifyPassword(body.password, saved.password_salt, saved.password_hash, PEPPER)) {
         await client.query("ROLLBACK");
         return send(res, 403, { error: "Current password is incorrect." });
+      }
+      if (reauthenticate) {
+        await client.query("COMMIT");
+        return send(res, 200, { ok: true });
       }
       if (renameAccount) {
         const renamed = await client.query(
