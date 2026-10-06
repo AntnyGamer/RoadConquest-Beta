@@ -267,8 +267,8 @@ jobs:
             --out "$out/RoadConquest-$version.apk" "$out/RoadConquest-$version-unsigned.apk"
           new_cert=$("$signer" verify --print-certs "$out/RoadConquest-$version.apk" | sed -n 's/Signer #1 certificate SHA-256 digest: //p')
           test "$new_cert" = "cd3c4b180b4740a0bff77e37de109be6cab264cd1bd66e0ced05441252ad9ae1"
-          jarsigner -keystore "$RUNNER_TEMP/roadconquest-release.keystore" \\
-            -storepass:env SIGNING_STORE_PASSWORD -keypass:env SIGNING_KEY_PASSWORD \\
+          jarsigner -keystore "$RUNNER_TEMP/roadconquest-release.keystore" \
+            -storepass "$SIGNING_STORE_PASSWORD" -keypass "$SIGNING_KEY_PASSWORD" \
             -sigalg SHA256withRSA -digestalg SHA-256 "$out/RoadConquest-$version.aab" "$SIGNING_ALIAS"
           # Android upload keys are commonly self-signed; verify the JAR signature without
           # treating trust-chain warnings as a corrupt bundle.
