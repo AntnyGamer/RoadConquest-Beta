@@ -268,7 +268,7 @@ class SettingsActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             isSingleLine = true
             maxEms = 32
-            saveEnabled = false
+            isSaveEnabled = false
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
             setAutofillHints(View.AUTOFILL_HINT_PASSWORD)
             contentDescription = "Current password for delete all data"
@@ -280,7 +280,7 @@ class SettingsActivity : Activity() {
         val dialog = AlertDialog.Builder(this)
             .setTitle("Delete all data?")
             .setMessage(
-                "This permanently deletes your Road Conquest cloud account and all saved data on this phone, including trips, mileage, roads, explored places, points, purchases and cosmetics. Tracking stops and verified-drive sharing turns off. Exported files must be deleted separately. This cannot be undone."
+                "This permanently deletes all saved Road Conquest data on this phone, including trips, mileage, roads, explored places, points, purchases and cosmetics. Your cloud account and leaderboard scores stay. Tracking stops and verified-drive sharing turns off. Exported files must be deleted separately. This cannot be undone."
             )
             .setView(fields)
             .setNegativeButton("Cancel", null)
@@ -300,21 +300,15 @@ class SettingsActivity : Activity() {
                 deletingDeviceData = true
                 deleteDeviceDataButton.isEnabled = false
                 dataExecutor.execute {
-                    var accountDeleted = false
+                    var passwordConfirmed = false
                     val result = runCatching {
-                        // The server verifies the current password before deleting the cloud
-                        // account. Local data is untouched if password confirmation fails.
-                        AccountClient.deleteAccount(session.token, currentPassword)
-                        accountDeleted = true
-                        // Make local cleanup durable immediately after the server confirms
-                        // the password and deletes the cloud account. If the process dies
-                        // afterward, startup finishes the pending local wipe.
+                        // Require the current account password before erasing local Road Conquest
+                        // data, but keep the cloud account and leaderboard records intact.
+                        AccountClient.verifyPassword(session.token, currentPassword)
+                        passwordConfirmed = true
+                        // Make local cleanup durable immediately after password confirmation.
+                        // If the process dies afterward, startup finishes the pending local wipe.
                         LocalDataReset.stopTracking(applicationContext)
-                        synchronized(AccountStore) {
-                            if (AccountStore.load(applicationContext)?.token == session.token) {
-                                AccountStore.clear(applicationContext)
-                            }
-                        }
                         LocalDataReset.clearStoppedData(applicationContext)
                     }
                     runOnUiThread {
@@ -329,13 +323,13 @@ class SettingsActivity : Activity() {
                             onSuccess = {
                                 Toast.makeText(
                                     this,
-                                    "Account and all saved Road Conquest data deleted. Tracking is off.",
+                                    "All saved Road Conquest data on this phone deleted. Your account was kept. Tracking is off.",
                                     Toast.LENGTH_LONG
                                 ).show()
                             },
                             onFailure = { failure ->
-                                val message = if (accountDeleted) {
-                                    "Account deleted. Device cleanup will finish automatically when Road Conquest opens again."
+                                val message = if (passwordConfirmed) {
+                                    "Password confirmed. Device cleanup will finish automatically when Road Conquest opens again."
                                 } else {
                                     failure.message ?: "Could not confirm your password. No data was deleted."
                                 }
