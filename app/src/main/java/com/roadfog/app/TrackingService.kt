@@ -51,6 +51,8 @@ class TrackingService : Service(), LocationListener {
     private var lastExplored: Location? = null
     private var lastPlaceCandidate: Location? = null
     @Volatile private var baselineCandidateCaptured = false
+    private var baselineRequestElapsedNanos = 0L
+    private var baselineRequestWallMillis = 0L
     private var lastBearingDegrees = 0.0
     @Volatile private var lastMatchAttempt = 0L
     @Volatile private var ready = false
@@ -96,6 +98,8 @@ class TrackingService : Service(), LocationListener {
             stopSelf()
             return
         }
+        baselineRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()
+        baselineRequestWallMillis = System.currentTimeMillis()
         ready = true
         isRunning = true
         ContextCompat.registerReceiver(this, providerReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION).apply {
@@ -149,7 +153,8 @@ class TrackingService : Service(), LocationListener {
         // never from a later sparse discovery candidate. If Location was off, this naturally
         // waits until the first good fix after the user turns it back on.
         if (!baselineCandidateCaptured && !location.isMock &&
-            location.hasAccuracy() && location.accuracy in 0.01f..MAX_PREVIEW_ACCURACY_M
+            location.hasAccuracy() && location.accuracy in 0.01f..MAX_PREVIEW_ACCURACY_M &&
+            LocationProviders.isFixSince(location, baselineRequestElapsedNanos, baselineRequestWallMillis)
         ) {
             baselineCandidateCaptured = true
             val baseline = Location(location)
