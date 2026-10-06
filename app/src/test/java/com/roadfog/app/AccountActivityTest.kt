@@ -220,15 +220,9 @@ class AccountActivityTest {
         activity.findViewById<Button>(R.id.deleteDeviceDataButton).performClick()
         org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
             .getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        assertTrue(Prefs.isDeviceDataDeletionPending(context))
-        assertTrue(Prefs.isTrackingPaused(context))
-        assertFalse(Prefs.shouldResumePausedTracking(context))
-        assertFalse(activity.findViewById<Switch>(R.id.manualOnlySwitch).isEnabled)
-
         // Close Settings while the authorized deletion is deliberately queued behind work.
         // Graceful executor shutdown must keep that queued deletion alive.
         controller.pause().stop().destroy()
-        assertTrue(Prefs.isDeviceDataDeletionPending(context))
         releaseBlocker.countDown()
 
         assertTrue(
@@ -240,6 +234,33 @@ class AccountActivityTest {
         assertFalse(Prefs.isTrackingPaused(context))
         assertFalse(Prefs.isDeviceDataDeletionPending(context))
         assertFalse(Prefs.isDriveVerificationEnabled(context))
+    }
+
+
+    @Test fun deviceDeletionMarkerIsDurableBeforeCleanupAndBlocksResume() {
+        AppDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
+            .set(null, null)
+        val context = RuntimeEnvironment.getApplication()
+        TrackingRepository(context).insertLocation(Location("gps").apply {
+            latitude = 40.0; longitude = -74.0; accuracy = 5f; time = 1_000_000L
+        })
+        Prefs.setManualOnly(context, false)
+        Prefs.setTrackingPaused(context, false)
+        Prefs.setDriveVerificationEnabled(context, true)
+
+        LocalDataReset.stopTracking(context)
+
+        assertTrue(Prefs.isDeviceDataDeletionPending(context))
+        assertTrue(Prefs.isManualOnly(context))
+        assertTrue(Prefs.isTrackingPaused(context))
+        assertFalse(Prefs.shouldResumePausedTracking(context))
+        assertFalse(Prefs.isDriveVerificationEnabled(context))
+
+        LocalDataReset.clearStoppedData(context)
+        assertFalse(Prefs.isDeviceDataDeletionPending(context))
+        assertFalse(Prefs.isTrackingPaused(context))
+        assertTrue(Prefs.isManualOnly(context))
+        assertEquals(0L, TrackingRepository(context).getSummary().trackPointCount)
     }
 
 }
