@@ -400,7 +400,8 @@ class SettingsActivity : Activity() {
     }
 
     private fun startAutomaticTrackingIfPossible() {
-        if (Prefs.isTrackingPaused(this) || TrackingService.isRunning ||
+        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
+            TrackingService.isRunning ||
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) return
 
