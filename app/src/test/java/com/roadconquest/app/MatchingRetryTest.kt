@@ -119,6 +119,9 @@ class MatchingRetryTest {
             val executor = field(service, "matchingExecutor").get(service) as ScheduledExecutorService
             try {
                 service.onProviderDisabled("gps")
+                // The first barrier waits for the serialized finalizer, which then enqueues the
+                // forced matcher. The second barrier proves that matcher has also completed.
+                executor.submit {}.get(10, TimeUnit.SECONDS)
                 executor.submit {}.get(10, TimeUnit.SECONDS)
                 assertEquals(1, server.requestCount)
                 assertEquals(1L, repo.getSummary().roadSegmentCount)
