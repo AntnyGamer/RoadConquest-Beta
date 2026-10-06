@@ -295,7 +295,7 @@ class AccountActivity : Activity() {
         val error = TextView(this)
         fields.addView(password); fields.addView(error)
         val dialog = AlertDialog.Builder(this).setTitle("Delete account?").setView(fields)
-            .setMessage("This permanently deletes your cloud account, sessions, leaderboard scores and verified-road records. Saved driving data on this phone stays. Use Settings → Data and privacy → Delete all data to remove everything.")
+            .setMessage("This permanently deletes your cloud account, sessions, leaderboard scores and verified-road records. Saved driving data on this phone stays. If you want everything removed, cancel and use Settings → Data and privacy → Delete all data instead.")
             .setNegativeButton("Cancel", null).setPositiveButton("Delete account", null).create()
         dialog.setOnDismissListener { password.text.clear() }
         dialog.setOnShowListener {
