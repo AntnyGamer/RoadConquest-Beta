@@ -434,4 +434,39 @@ class ProgressionRepositoryTest {
         assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).isEmpty())
     }
 
+
+    @Test fun placeCandidateCellCenterStaysInsideLongitudeRangeAtDateLine() {
+        val progression = ProgressionRepository(context)
+        val start = android.location.Location("gps").apply {
+            latitude = 0.0
+            longitude = 0.0
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(start))
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+        progression.resolveCandidate(
+            baseline,
+            listOf(
+                PlaceDiscovery(PlaceKind.COUNTRY, "xx", "Example Country",
+                    visitedAt = baseline.visitedAt, latitude = baseline.latitude, longitude = baseline.longitude),
+                PlaceDiscovery(PlaceKind.STATE, "xx|region", "Example Region", "Example Country", "Example Country",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude),
+                PlaceDiscovery(PlaceKind.TOWN, "xx|region|start", "Start", "Example Region", "Example Country",
+                    baseline.visitedAt, baseline.latitude, baseline.longitude)
+            )
+        )
+
+        val nearDateLine = android.location.Location("gps").apply {
+            latitude = 0.0
+            longitude = 179.9999
+            accuracy = 5f
+            time = 3_000L
+        }
+        assertTrue(progression.recordPlaceCandidate(nearDateLine))
+        val candidate = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
+        assertTrue(candidate.longitude in -180.0..180.0)
+        assertTrue(kotlin.math.abs(kotlin.math.abs(candidate.longitude) - 180.0) < 0.05)
+    }
+
 }
