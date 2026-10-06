@@ -110,6 +110,7 @@ class MatchingRetryTest {
                 service,
                 com.roadconquest.app.matching.OsrmMatcher(server.url("/").toString().trimEnd('/'))
             )
+            org.robolectric.Shadows.shadowOf(manager).setLocationEnabled(false)
             field(service, "locationManager").set(service, manager)
             field(service, "ready").setBoolean(service, true)
             val executor = field(service, "matchingExecutor").get(service) as ScheduledExecutorService
