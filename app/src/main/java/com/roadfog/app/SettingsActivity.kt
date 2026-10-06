@@ -164,7 +164,7 @@ class SettingsActivity : Activity() {
             recreate()
             return
         }
-        if (enteredForeground && Prefs.isTrackingPaused(this)) {
+        if (enteredForeground && Prefs.shouldResumePausedTracking(this)) {
             Prefs.setTrackingPaused(this, false)
             startAutomaticTrackingIfPossible()
         }
