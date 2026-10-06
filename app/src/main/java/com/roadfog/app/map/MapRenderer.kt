@@ -613,7 +613,12 @@ class MapRenderer(
         val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
-                FogCoverage.coversViewport(fogCoverageScreen, mapView.width, mapView.height)
+                FogCoverage.coversViewport(
+                    fogCoverageScreen,
+                    mapView.width,
+                    mapView.height,
+                    if (cameraMoving) MOVING_FOG_COVERAGE_GUARD_FRACTION else 0.0
+                )
             }
         if (!force && detailed == showingDetailedFog) return
         showingDetailedFog = detailed
@@ -995,6 +1000,9 @@ class MapRenderer(
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
         private const val FOG_RENDER_INTERVAL_MS = 80L
+        // API 31 can render a couple native camera frames before the Java move callback catches
+        // up. Switch to the world fallback before the detailed image edge reaches the viewport.
+        private const val MOVING_FOG_COVERAGE_GUARD_FRACTION = 0.35
         private const val OVERLAY_UPDATE_BATCH = 4
     }
 }
