@@ -276,11 +276,17 @@ class TrackingService : Service(), LocationListener {
             // corner/end-of-drive intervals an immediate final pass instead of waiting for
             // their ordinary retry deadline. A single provider handoff does not need this.
             if (!locationManager.isLocationEnabled) {
-                // Backoff is useful while we are still collecting evidence, but once Location
-                // is switched off there will be no newer point to wake a deferred corner retry.
-                // Make those pending holes eligible once, then run the normal bounded matcher.
-                repository.makePendingMatchingEligibleNow()
-                maybeRunMatching(force = true)
+                // Serialize finalization behind any match already in flight. That in-flight
+                // request may itself defer an ambiguous corner; clearing deadlines here on the
+                // main thread would race with it and could still leave a five-minute hole.
+                runCatching {
+                    matchingExecutor.execute {
+                        if (ready && !locationManager.isLocationEnabled) {
+                            repository.makePendingMatchingEligibleNow()
+                            maybeRunMatching(force = true)
+                        }
+                    }
+                }
             }
         }
         if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
