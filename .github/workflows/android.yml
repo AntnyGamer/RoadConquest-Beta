@@ -99,6 +99,31 @@ jobs:
           fi
       - name: Test, lint and build
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon --console=plain
+      - name: Verify 16 KB native-library compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release-unsigned.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$apk"
+          tmp="$RUNNER_TEMP/roadconquest-native-libs"
+          rm -rf "$tmp"
+          mkdir -p "$tmp"
+          unzip -qq "$apk" 'lib/*/*.so' -d "$tmp"
+          found=0
+          while IFS= read -r -d '' so; do
+            found=1
+            while read -r alignment; do
+              [ -n "$alignment" ] || continue
+              value=$((alignment))
+              if [ "$value" -lt 16384 ]; then
+                echo "::error file=$so::64-bit native LOAD segment alignment is $alignment; Google Play requires 16 KB compatibility."
+                exit 1
+              fi
+            done < <(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }')
+          done < <(find "$tmp/lib" -type f \( -path '*/arm64-v8a/*.so' -o -path '*/x86_64/*.so' \) -print0)
+          if [ "$found" -eq 0 ]; then
+            echo "::notice::No 64-bit native libraries found in the release APK."
+          fi
       - name: Save verification reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
