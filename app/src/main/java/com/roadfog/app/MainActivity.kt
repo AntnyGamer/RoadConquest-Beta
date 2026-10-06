@@ -277,7 +277,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // Closing the notification shade only resumes an already-started activity.
-        val resumeStoppedTracking = enteredForeground && Prefs.isTrackingPaused(this)
+        val resumeStoppedTracking = enteredForeground && Prefs.shouldResumePausedTracking(this)
         enteredForeground = false
         if (appliedTheme != Prefs.uiTheme(this) || appliedGoldUi != Prefs.isGoldUiEnabled(this)) {
             if (resumeStoppedTracking) {
