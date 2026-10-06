@@ -1,6 +1,6 @@
-# RoadConquest 1.0 Beta 7
+# Road Conquest 1.0 Beta 8
 
-RoadConquest remembers the roads you drive and the places you visit, revealing them through a
+Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
 
 [Download the Android app](https://github.com/AntnyGamer/RoadConquest-Beta/releases) ·
@@ -9,15 +9,17 @@ cloud-textured fog map.
 
 ## Install
 
-Android 12 or newer is required. Download the signed APK from Releases and install it on your
-phone. Each release also includes the Android Studio project and SHA-256 checksums.
+Android 12 or newer is required. Download the signed APK from Releases for direct installation.
+For Google Play, use the signed Android App Bundle (AAB) from the same verified release. Each release
+also includes the Android Studio project and SHA-256 checksums.
 
 Grant Precise location. For automatic background tracking, choose Allow all the time in Android's
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release keeps the permanent signing identity and application ID `com.roadfog.app`.
-Its internal Android version code is 33.
+This release uses Android application ID `com.roadconquest.app` and internal version code 34.
+The app shows its exact version in Settings → About. Treat the application ID as permanent once
+the Google Play listing is created; changing it later would create a different app.
 
 ## Explore
 
@@ -27,11 +29,11 @@ Its internal Android version code is 33.
 - Earn points from newly unlocked roads, achievements and first visits to towns, states/regions
   and countries. Your current point balance is visible directly on the map.
 - Open Garage & Shop to buy and equip car shapes, car colors, road colors, or the Golden
-  RoadConquest UI and launcher icon. Purchases are one-time and equipped cosmetics can be changed later.
+  Road Conquest UI and launcher icon. Purchases are one-time and equipped cosmetics can be changed later.
 - Choose Streets, Minimal, Night or Satellite maps, and a Light, Dark or phone-controlled appearance.
 - Use the map overlay button to highlight explored countries in blue, states/regions in purple, or towns in green. Only one overlay type is active at a time; tap a highlighted area for population and area when available.
 - Tap an unlocked road for its name, saved length, first-unlocked time, last-driven time and times driven.
-- Browse achievements by Roads, Distance, Places, Ads and Extra categories. Battery challenges live under Extra; ad milestones have their own Ads category.
+- Browse achievements by **Road Conquest**, **Mileage**, **Exploration**, **Ad Rewards**, and **Bonus** categories. Battery challenges live under Bonus; ad milestones have their own Ad Rewards category.
   Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
 - Use automatic tracking or control it manually. Stop tracking from the foreground notification.
 - Export driving history, road geometry, explored places, place discoveries, point awards,
@@ -42,7 +44,7 @@ Its internal Android version code is 33.
 
 Turning Show fog off changes only its visibility. Tracking continues and the saved reveals return
 when fog is enabled again. Manual tracking stays off until you enable it. In automatic mode,
-RoadConquest can stay armed while Android Location is off and begins using the first good live fix
+Road Conquest can stay armed while Android Location is off and begins using the first good live fix
 after Location is enabled. After a fresh install or device-data reset, that first current fix defines
 the zero-point starting town/state/country and awards no discovery points. Cached fixes from before
 the new location request cannot become that baseline. Automatic tracking still depends on location
@@ -93,7 +95,7 @@ Open the project in Android Studio with JDK 21 or newer, Android SDK 37.0 and Bu
 The wrapper pins Gradle 9.6.0 with a verified checksum and Android Gradle Plugin 9.4.1.
 
 ```sh
-./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease
 ./gradlew :app:connectedDebugAndroidTest
 ```
 
@@ -103,11 +105,11 @@ the permanent release key. Signing keys, local SDK paths, databases and build ou
 from Git.
 
 GitHub Actions runs account/database tests, Android unit tests, debug and release lint, and native
-map integration tests on Android 12, 15 and 17. The release job publishes the verified APK only after
+map integration tests on Android 12, 15 and 17. The release job publishes the verified signed APK and Play-ready signed AAB only after
 all required jobs pass and only when that version tag does not already exist; ordinary commits at an
 already-published version are verified without retargeting or overwriting the release. It also attaches the exact account-function bundle produced by the tested
-backend job, so the deployable server artifact for that release is preserved alongside the APK. It verifies the permanent signing-certificate digest and includes the source
-ZIP and checksums. Configure these repository secrets from the private signing backup:
+backend job, so the deployable server artifact for that release is preserved alongside the Android release artifacts. It verifies the permanent signing-certificate digest and includes the source
+ZIP and checksums for the APK, AAB, source archive and server bundle. Configure these repository secrets from the private signing backup:
 
 - `ROADCONQUEST_RELEASE_KEYSTORE_BASE64`
 - `ROADCONQUEST_RELEASE_KEY_ALIAS`
@@ -127,7 +129,7 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 
 Driving history, explored places, points and purchases stay on the phone. Road matching sends small
 coordinate batches to the selected OSRM service. Town/state/country labels are requested through
-Android's system geocoder only while RoadConquest is foregrounded; the geocoder implementation and
+Android's system geocoder only while Road Conquest is foregrounded; the geocoder implementation and
 network behavior are supplied by the device. Pending data remains saved for retry after network or
 matching failures. User-selected ZIP exports contain precise history, road geometry and progression data.
 
@@ -147,5 +149,5 @@ styles, map data, imagery and dependencies retain their own licenses and service
 
 ## License
 
-RoadConquest's original source is licensed under GNU Affero General Public License v3 only
+Road Conquest's original source is licensed under GNU Affero General Public License v3 only
 (`AGPL-3.0-only`). The complete license is in [LICENSE](LICENSE) and bundled with the app.
