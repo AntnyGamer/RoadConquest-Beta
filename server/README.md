@@ -1,7 +1,7 @@
-# RoadConquest account service
+# Road Conquest account service
 
-This service backs RoadConquest accounts and the leaderboard-privacy preference. Release builds
-and debug builds default to the live RoadConquest Neon HTTPS endpoint. Automated tests override
+This service backs Road Conquest accounts and the leaderboard-privacy preference. Release builds
+and debug builds default to the live Road Conquest Neon HTTPS endpoint. Automated tests override
 the endpoint to avoid production accounts. Override either build with a Gradle property:
 
 ```properties
@@ -62,7 +62,7 @@ free plan, not a 30-day database trial. Verify the current plan and limits in th
 provisioning. Quota exhaustion can interrupt service; no provider promises unlimited free hosting
 or unchanged terms forever. Do not create Render's expiring free PostgreSQL for this deployment.
 
-Create a dedicated RoadConquest project in a Functions-supported region, such as AWS US East
+Create a dedicated Road Conquest project in a Functions-supported region, such as AWS US East
 (N. Virginia). Use the smallest 0.25 CU database compute and keep the Free plan's provider-managed
 idle suspension enabled; some Free accounts cannot change that timeout.
 Apply `schema.sql` once with the administrative database connection before deploying. Set these
@@ -143,7 +143,7 @@ A small final batch is attempted on a normal tracking stop. Missing networks, ki
 low-quality GPS, ambiguous matches, failed attestation and short/slow motion earn no credit;
 there is no offline-history backfill or estimated-credit fallback.
 
-The server requires the correct package/request hash, an approved version and signing certificate, a fresh token timestamp, and `MEETS_DEVICE_INTEGRITY`. Play-installed builds must be `PLAY_RECOGNIZED` and `LICENSED`; the exact official signed sideload build may use Google's `UNRECOGNIZED_VERSION` verdict with an `UNLICENSED` or `UNEVALUATED` licensing verdict while still matching the approved certificate/version. Production has **no test verifier or client-provided verdict endpoint**.
+The server requires the exact Android package `com.roadconquest.app`, the correct request hash, an approved version and signing certificate, a fresh token timestamp, and `MEETS_DEVICE_INTEGRITY`. Play-installed builds must be `PLAY_RECOGNIZED` and `LICENSED`; the exact official signed sideload build may use Google's `UNRECOGNIZED_VERSION` verdict with an `UNLICENSED` or `UNEVALUATED` licensing verdict while still matching the approved certificate/version. Production has **no test verifier or client-provided verdict endpoint**.
 CI injects a deterministic verifier directly into the scoring module to test database behavior;
 that dependency is never selectable through environment variables or HTTP.
 
@@ -187,7 +187,7 @@ PLAY_SERVICE_ACCOUNT_FILE=/run/secrets/play-integrity.json
 # or PLAY_SERVICE_ACCOUNT_JSON=<service-account JSON stored as a secret env var>
 PLAY_CLOUD_PROJECT_NUMBER=<numeric linked Google Cloud project>
 PLAY_CERTIFICATES=<base64url SHA256 app-signing certificate, without padding>
-PLAY_VERSION_CODES=26,27,28,29,30,31,32,33
+PLAY_VERSION_CODES=26,27,28,29,30,31,32,33,34
 ```
 
 Configure and authorize the Google Cloud project for Play Integrity token decoding. Play-installed
