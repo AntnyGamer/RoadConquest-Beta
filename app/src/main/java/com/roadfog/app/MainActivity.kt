@@ -323,10 +323,17 @@ class MainActivity : Activity() {
 
     private fun captureStartingPlace(location: Location) {
         discoveryExecutor.execute {
-            val recorded = runCatching {
+            val result = runCatching {
                 ProgressionRepository(applicationContext).recordBaselineCandidate(location)
-            }.getOrDefault(false)
-            if (!recorded) return@execute
+            }
+            if (result.isFailure) {
+                Log.e("RoadConquest", "Could not save starting place location", result.exceptionOrNull())
+                runOnUiThread {
+                    if (!isDestroyed) baselinePreviewCapturedForRegistration = false
+                }
+                return@execute
+            }
+            if (!result.getOrThrow()) return@execute
 
             val added = runCatching {
                 ProgressionManager.resolvePendingPlaces(applicationContext, 6)
