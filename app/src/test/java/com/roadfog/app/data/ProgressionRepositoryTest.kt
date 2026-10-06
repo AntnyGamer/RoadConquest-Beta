@@ -75,7 +75,14 @@ class ProgressionRepositoryTest {
 
     @Test fun firstResolvedPlacesAfterResetBecomeUnrewardedBaseline() {
         val progression = ProgressionRepository(context)
-        val candidate = PendingPlaceCandidate(10, 20, 39.7, -75.1, 1_000L, 0)
+        val fix = android.location.Location("gps").apply {
+            latitude = 39.7
+            longitude = -75.1
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(fix))
+        val candidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
         val baseline = listOf(
             PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States", visitedAt = 1_000L, latitude = 39.7, longitude = -75.1),
             PlaceDiscovery(PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States", 1_000L, 39.7, -75.1),
