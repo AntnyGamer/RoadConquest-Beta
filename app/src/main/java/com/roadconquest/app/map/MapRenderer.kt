@@ -517,7 +517,9 @@ class MapRenderer(
                 FillLayer(overlayLayerId(mode), overlaySourceId(mode)).withProperties(
                     fillColor(color),
                     fillOpacity(0.30f),
-                    fillOutlineColor(outline),
+                    // Keep the built-in antialiased edge subtle; the dedicated 1.25 px line
+                    // below supplies the visible separator without making borders look heavy.
+                    fillOutlineColor(color),
                     fillAntialias(true)
                 )
             )
