@@ -453,7 +453,9 @@ class SettingsActivity : Activity() {
         summaryGeneration++
         summaryExecutor.shutdownNow()
         accountExecutor.shutdownNow()
-        dataExecutor.shutdownNow()
+        // A confirmed privacy deletion must finish even if the Settings screen closes.
+        // UI callbacks already ignore a destroyed Activity.
+        dataExecutor.shutdown()
         super.onDestroy()
     }
 
