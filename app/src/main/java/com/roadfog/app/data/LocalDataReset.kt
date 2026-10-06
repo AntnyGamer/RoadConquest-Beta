@@ -11,6 +11,10 @@ import com.roadfog.app.util.Prefs
 object LocalDataReset {
     fun stopTracking(context: Context) {
         val app = context.applicationContext
+        // Persist an explicit deletion marker before service teardown. If Android kills the
+        // process before cleanup finishes, reopening RoadConquest must not interpret this as a
+        // normal notification "stop until open" and resume tracking.
+        Prefs.setDeviceDataDeletionPending(app, true)
         Prefs.setManualOnly(app, true)
         Prefs.setTrackingPaused(app, true)
         // Privacy deletion revokes precise-GPS upload consent before service teardown. This
@@ -21,6 +25,7 @@ object LocalDataReset {
 
     fun clearStoppedData(context: Context) {
         val app = context.applicationContext
+        var cleared = false
         try {
             TrackingRepository(app).clearHistory()
             ProgressionManager.resetLocalProgression(app)
@@ -32,10 +37,15 @@ object LocalDataReset {
             )) {
                 app.sendBroadcast(Intent(action).setPackage(app.packageName))
             }
+            cleared = true
         } finally {
-            // Manual-only remains enabled, so clearing this temporary stop flag cannot
-            // restart tracking. It only avoids carrying a "stop until open" state forward.
-            Prefs.setTrackingPaused(app, false)
+            if (cleared) {
+                // Manual-only remains enabled, so clearing the temporary stop flag cannot
+                // restart tracking. Clear the deletion marker last so a crash at any earlier
+                // point leaves the app safely stopped and eligible for recovery on next launch.
+                Prefs.setTrackingPaused(app, false)
+                Prefs.setDeviceDataDeletionPending(app, false)
+            }
         }
     }
 }
