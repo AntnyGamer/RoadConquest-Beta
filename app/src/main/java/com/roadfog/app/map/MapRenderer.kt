@@ -214,7 +214,7 @@ class MapRenderer(
                 }
                 if (cacheGeneration != PlaceOverlayCache.generation()) return@execute
                 val data = result.getOrNull()
-                PlaceOverlayCache.write(context, place, data)
+                if (!PlaceOverlayCache.write(context, place, data, cacheGeneration)) return@execute
                 if (data != null) {
                     loaded += data
                     fetchedSincePost++
