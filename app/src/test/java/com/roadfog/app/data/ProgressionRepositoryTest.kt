@@ -373,4 +373,17 @@ class ProgressionRepositoryTest {
         assertEquals(1L, progression.snapshot().towns)
     }
 
+    @Test fun mockLocationCannotQueuePlaceProgression() {
+        val progression = ProgressionRepository(context)
+        val mock = android.location.Location("gps").apply {
+            latitude = 40.0
+            longitude = -75.0
+            accuracy = 5f
+            time = 2_000L
+            setMock(true)
+        }
+        assertFalse(progression.recordPlaceCandidate(mock))
+        assertTrue(progression.pendingPlaceCandidates(nowMillis = Long.MAX_VALUE).isEmpty())
+    }
+
 }
