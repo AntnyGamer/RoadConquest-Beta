@@ -28,6 +28,21 @@ class FogCoverageTest {
             125.0, 225.0, 75.0, 225.0), 200, 400))
     }
 
+    @Test fun movingCameraFallsBackBeforeDetailedFogCanReachTheViewportEdge() {
+        val almostExposed = doubleArrayOf(
+            -45.0, -90.0, 245.0, -90.0,
+            245.0, 490.0, -45.0, 490.0
+        )
+        assertTrue(FogCoverage.coversViewport(almostExposed, 200, 400))
+        assertFalse(FogCoverage.coversViewport(almostExposed, 200, 400, 0.25))
+
+        val roomy = doubleArrayOf(
+            -100.0, -200.0, 300.0, -200.0,
+            300.0, 600.0, -100.0, 600.0
+        )
+        assertTrue(FogCoverage.coversViewport(roomy, 200, 400, 0.25))
+    }
+
     @Test fun rotationAndPanningRequireCoverageAtEveryCorner() {
         assertTrue(FogCoverage.coversViewport(doubleArrayOf(100.0, -250.0, 550.0, 200.0,
             100.0, 650.0, -350.0, 200.0), 200, 400))

@@ -607,13 +607,19 @@ class MapRenderer(
 
     private fun updateFogCoverage(force: Boolean = false) {
         val coordinates = detailedFogCoordinates
-        // Keep the georeferenced detailed bitmap during gestures for as long as it still
-        // covers the viewport. Fall back to the world layer only when movement actually outruns
-        // that coverage, avoiding a visible "fog closes again" flash on every pan or pinch.
+        // Keep the detailed bitmap during ordinary movement, but reserve extra off-screen
+        // coverage while the camera is moving. Android 12 can present a native frame before the
+        // Java camera callback catches up; switching to the ready world layer early prevents a
+        // bitmap edge from flashing as a white rectangle without closing fog on every gesture.
         val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
-                FogCoverage.coversViewport(fogCoverageScreen, mapView.width, mapView.height)
+                FogCoverage.coversViewport(
+                    fogCoverageScreen,
+                    mapView.width,
+                    mapView.height,
+                    if (cameraMoving) FOG_MOVING_COVERAGE_MARGIN_FRACTION else 0.0
+                )
             }
         if (!force && detailed == showingDetailedFog) return
         showingDetailedFog = detailed
@@ -995,6 +1001,7 @@ class MapRenderer(
         private const val BOUNDS_EPSILON = 1e-9
         private const val RESUME_VISIBILITY_RETRY_MS = 16L
         private const val FOG_RENDER_INTERVAL_MS = 80L
+        private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.25
         private const val OVERLAY_UPDATE_BATCH = 4
     }
 }

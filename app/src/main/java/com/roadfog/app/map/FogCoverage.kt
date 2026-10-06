@@ -15,11 +15,20 @@ internal object FogCoverage {
             (512.0 * pixelRatio * availableWorld)).coerceIn(0.0, FogBitmapRenderer.MAX_ZOOM)
     }
 
-    fun coversViewport(quad: DoubleArray, width: Int, height: Int): Boolean {
-        if (quad.size != 8 || quad.any { !it.isFinite() } || width <= 0 || height <= 0) return false
+    fun coversViewport(
+        quad: DoubleArray,
+        width: Int,
+        height: Int,
+        marginFraction: Double = 0.0
+    ): Boolean {
+        if (quad.size != 8 || quad.any { !it.isFinite() } || width <= 0 || height <= 0 ||
+            !marginFraction.isFinite() || marginFraction < 0.0
+        ) return false
+        val marginX = 2.0 + width * marginFraction
+        val marginY = 2.0 + height * marginFraction
         for (corner in 0..3) {
-            val x = if (corner == 0 || corner == 3) -2.0 else width + 2.0
-            val y = if (corner < 2) -2.0 else height + 2.0
+            val x = if (corner == 0 || corner == 3) -marginX else width + marginX
+            val y = if (corner < 2) -marginY else height + marginY
             var orientation = 0
             for (edge in 0..3) {
                 val i = edge * 2
