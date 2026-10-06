@@ -256,7 +256,7 @@ class SettingsActivity : Activity() {
             hint = "Type the confirmation phrase exactly"
             isSingleLine = false
             maxLines = 3
-            filters = arrayOf(android.text.InputFilter.LengthFilter(DELETE_LOCAL_DATA_CONFIRMATION.length))
+            filters = arrayOf(android.text.InputFilter.LengthFilter(128))
             isSaveEnabled = false
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             contentDescription = "Delete all data confirmation phrase"
