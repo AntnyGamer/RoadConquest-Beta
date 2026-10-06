@@ -72,6 +72,14 @@ test("signup/login/privacy/logout are server-enforced and duplicate usernames ar
   const baseUrl = "http://127.0.0.1:" + port;
   try {
     await waitForHealth(baseUrl, child);
+    const privacyPage = await fetch(baseUrl + "/privacy");
+    assert.equal(privacyPage.status, 200);
+    assert.match(privacyPage.headers.get("content-type"), /^text\/html/u);
+    assert.match(await privacyPage.text(), /Road Conquest Privacy Policy/u);
+    const deletionPage = await fetch(baseUrl + "/delete-account");
+    assert.equal(deletionPage.status, 200);
+    assert.match(deletionPage.headers.get("content-security-policy"), /default-src 'none'/u);
+    assert.match(await deletionPage.text(), /Delete Road Conquest Account/u);
     await pool.query("TRUNCATE auth_rate_limits, sessions, users RESTART IDENTITY CASCADE");
 
     const tooShort = await json(baseUrl, "/v1/signup", "POST", {
