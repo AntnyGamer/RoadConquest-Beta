@@ -181,6 +181,7 @@ class AccountActivityTest {
             assertEquals(0L, repository.getSummary().trackPointCount)
             assertTrue(Prefs.isManualOnly(context))
             assertFalse(Prefs.isTrackingPaused(context))
+            assertFalse(Prefs.isDeviceDataDeletionPending(context))
             assertFalse(Prefs.isDriveVerificationEnabled(context))
             assertTrue(context.cacheDir.listFiles().orEmpty().none {
                 it.name.startsWith("roadconquest-export-")
@@ -216,10 +217,14 @@ class AccountActivityTest {
         activity.findViewById<Button>(R.id.deleteDeviceDataButton).performClick()
         org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
             .getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        assertTrue(Prefs.isDeviceDataDeletionPending(context))
+        assertTrue(Prefs.isTrackingPaused(context))
+        assertFalse(Prefs.shouldResumePausedTracking(context))
 
         // Close Settings while the authorized deletion is deliberately queued behind work.
         // Graceful executor shutdown must keep that queued deletion alive.
         controller.pause().stop().destroy()
+        assertTrue(Prefs.isDeviceDataDeletionPending(context))
         releaseBlocker.countDown()
 
         assertTrue(
@@ -229,6 +234,7 @@ class AccountActivityTest {
         assertEquals(0L, repository.getSummary().trackPointCount)
         assertTrue(Prefs.isManualOnly(context))
         assertFalse(Prefs.isTrackingPaused(context))
+        assertFalse(Prefs.isDeviceDataDeletionPending(context))
         assertFalse(Prefs.isDriveVerificationEnabled(context))
     }
 
