@@ -27,7 +27,7 @@ class OsrmNetworkTest {
             assertEquals("Rue cité", result.roads.single().name)
             val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
             assertEquals("100;101", request.queryParameter("timestamps"))
-            assertEquals("5;75", request.queryParameter("radiuses"))
+            assertEquals("10;75", request.queryParameter("radiuses"))
             assertEquals("0;1", request.queryParameter("waypoints"))
             assertEquals("false", request.queryParameter("tidy"))
             assertEquals("ignore", request.queryParameter("gaps"))

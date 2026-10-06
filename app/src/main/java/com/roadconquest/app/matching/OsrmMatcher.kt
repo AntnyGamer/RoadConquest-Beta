@@ -35,7 +35,14 @@ class OsrmMatcher(
             normalizedSecond.toString()
         }
         val radiuses = points.joinToString(";") {
-            it.accuracyMeters.coerceIn(5f, 75f).toInt().toString()
+            // Very small reported GNSS accuracy is common on modern phones, but the fix can
+            // still cut across a corner by several meters while the map road centerline is
+            // offset the other way. A 5 m OSRM search radius was leaving otherwise excellent
+            // turn samples unmatched. Give every fix a modest 10 m search envelope; parseLeg()
+            // still applies the stricter recorded-accuracy distance check before any geometry
+            // can become permanent road credit, so this improves candidate discovery without
+            // blindly accepting a nearby parallel road.
+            it.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toInt().toString()
         }
         // Keep a leg per surviving fix so an ambiguous batch tail can be withheld without
         // persisting its guessed junction spur. Named-road counts do not count these legs.
@@ -317,6 +324,8 @@ class OsrmMatcher(
         // on both sides constrain the route. Keep this identical to TrackingService's road
         // acceptance threshold; otherwise a 0.45-0.79 contextual match can retry forever.
         internal const val MIN_ACCEPTABLE_CONFIDENCE = 0.45
+        private const val MIN_MATCH_RADIUS_M = 10f
+        private const val MAX_MATCH_RADIUS_M = 75f
         private const val EARTH_RADIUS_M = 6_371_008.8
         private const val MIN_GEOMETRY_LENGTH_M = 0.001
         private const val DUPLICATE_POINT_TOLERANCE_M = 0.01

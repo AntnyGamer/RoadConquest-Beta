@@ -84,6 +84,57 @@ class PlaceOverlayTest {
         assertFalse(PlaceOverlayCache.read(context, place).cached)
     }
 
+    @Test fun sameNamedTownUsesTheBoundaryNearestTheDiscoveredLocation() {
+        val place = PlaceDiscovery(
+            PlaceKind.TOWN,
+            "us|new jersey|washington township",
+            "Washington Township",
+            "New Jersey",
+            "United States",
+            1L,
+            40.0000,
+            -75.0000
+        )
+        val body = """
+            [
+              {
+                "name":"Washington Township",
+                "lat":"41.0000",
+                "lon":"-74.0000",
+                "addresstype":"administrative",
+                "address":{
+                  "township":"Washington Township",
+                  "state":"New Jersey",
+                  "country":"United States"
+                },
+                "extratags":{"population":"111"},
+                "geojson":{"type":"Polygon","coordinates":[[
+                  [-74.01,40.99],[-73.99,40.99],[-73.99,41.01],[-74.01,41.01],[-74.01,40.99]
+                ]]}
+              },
+              {
+                "name":"Washington Township",
+                "lat":"40.0100",
+                "lon":"-75.0100",
+                "addresstype":"administrative",
+                "address":{
+                  "township":"Washington Township",
+                  "state":"New Jersey",
+                  "country":"United States"
+                },
+                "extratags":{"population":"222"},
+                "geojson":{"type":"Polygon","coordinates":[[
+                  [-75.02,40.00],[-75.00,40.00],[-75.00,40.02],[-75.02,40.02],[-75.02,40.00]
+                ]]}
+              }
+            ]
+        """.trimIndent()
+
+        val data = PlaceOverlayClient.parseResponse(place, body)
+        assertNotNull(data)
+        assertEquals(222L, data!!.population)
+    }
+
     @Test fun wrongAdministrativeResultIsRejected() {
         val place = PlaceDiscovery(
             PlaceKind.STATE, "us|new jersey", "New Jersey", "United States", "United States",

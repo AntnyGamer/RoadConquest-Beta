@@ -121,6 +121,24 @@ class TrackingRepositoryTest {
         assertEquals(1L, repository.getSummary().roadsUnlockedCount)
     }
 
+    @Test fun turnRetryGetsTwoNewerContextPointsAtProductionBatchSize() {
+        val ids = (0..6).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.markMatched(listOf(ids[0], ids[1], ids[3], ids[4], ids[5], ids[6]))
+
+        val retry = repository.loadMatchingWindow(limit = com.roadconquest.app.matching.OsrmMatcher.MAX_MATCH_POINTS)
+        assertEquals(setOf(ids[2]), retry.markableIds)
+        assertEquals(listOf(ids[1], ids[2], ids[3], ids[4]), retry.points.map { it.id })
+    }
+
+    @Test fun finalizationMakesDeferredTurnPointsImmediatelyEligible() {
+        val ids = (0..2).map { point(1_000_000L + it * 3_000L) }
+        repository.deferMatching(ids, System.currentTimeMillis() + 300_000L)
+        assertTrue(repository.loadMatchingWindow().points.isEmpty())
+
+        repository.makePendingMatchingEligibleNow()
+        assertEquals(ids, repository.loadMatchingWindow().points.map { it.id })
+    }
+
     @Test fun separatedUnmatchedIslandsRetryWithResolvedNeighbors() {
         val ids = (0..5).map { point(1_000_000L + it * 3_000L) }
         repository.markMatched(listOf(ids[1], ids[3], ids[5]))

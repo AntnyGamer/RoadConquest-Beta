@@ -137,14 +137,17 @@ class TrackingRepository(context: Context) {
     )
 
     /**
-     * Returns the newest contiguous group of pending points with up to two adjacent raw points
-     * as unmarkable context. Live batches overlap by a full segment; retries inside an already
-     * matched drive also get a newer-side anchor when one is available.
+     * Returns the newest contiguous group of pending points with adjacent raw points as
+     * unmarkable context. Production windows reserve up to three context slots; hole retries
+     * keep at least one approach point and can use two exit-side points around a junction.
      */
     @Synchronized
     fun loadMatchingWindow(limit: Int = 50, nowMillis: Long = System.currentTimeMillis()): MatchingWindow {
         val maxPoints = limit.coerceAtLeast(2)
-        val anchorSlots = minOf(2, maxPoints - 1)
+        // At production batch sizes reserve one extra context slot. Turn retries benefit much
+        // more from seeing two points after the junction than from sending one additional
+        // unresolved point. Keep tiny test/debug windows on the old two-anchor behavior.
+        val anchorSlots = minOf(if (maxPoints >= 6) 3 else 2, maxPoints - 1)
         val pending = ArrayList<TrackPoint>(maxPoints - anchorSlots)
         dbHelper.readableDatabase.query(
             "track_points",
@@ -181,10 +184,15 @@ class TrackingRepository(context: Context) {
         val earliest = newestFirst.first()
         val latest = newestFirst.last()
 
-        // When retrying a hole inside an otherwise matched drive, keep one point on the newer
-        // side so OSRM has context in both directions. For a live newest batch this is absent,
-        // leaving both anchor slots for older points and a two-point overlap with the next batch.
-        val newerAnchor = dbHelper.readableDatabase.query(
+        // When retrying a hole inside an otherwise matched drive, keep up to two points on
+        // the newer side so OSRM sees the exit direction as well as the junction itself. For a
+        // live newest batch these are absent, so the available context slots come from behind.
+        // Always reserve at least one slot for the older side of a retry hole. Without
+        // that incoming anchor, a tiny retry window can know the road after an intersection
+        // but not the road we approached it on, which is exactly the ambiguity we are fixing.
+        val newerAnchorLimit = minOf(2, (anchorSlots - 1).coerceAtLeast(0))
+        val newerAnchors = ArrayList<TrackPoint>(newerAnchorLimit)
+        dbHelper.readableDatabase.query(
             "track_points",
             TRACK_COLUMNS,
             "id > ?",
@@ -192,11 +200,22 @@ class TrackingRepository(context: Context) {
             null,
             null,
             "id ASC",
-            "1"
-        ).use { cursor -> if (cursor.moveToFirst()) cursor.toTrackPoint() else null }
-            ?.takeIf { isMatchingContinuation(latest, it, MATCH_ANCHOR_MAX_GAP_MS) }
+            newerAnchorLimit.toString()
+        ).use { cursor ->
+            var boundary = latest
+            while (cursor.moveToNext()) {
+                val anchor = cursor.toTrackPoint()
+                if (!isMatchingContinuation(boundary, anchor, MATCH_ANCHOR_MAX_GAP_MS)) break
+                newerAnchors += anchor
+                boundary = anchor
+            }
+        }
 
-        val olderSlots = anchorSlots - if (newerAnchor == null) 0 else 1
+        // Once a newer-side anchor exists this is a hole retry, not a live batch.
+        // One incoming anchor preserves the approach direction; spend the additional context
+        // budget on the exit side instead of unnecessarily reaching farther back in history.
+        // Live newest batches have no newer anchor, so they still keep the full older overlap.
+        val olderSlots = if (newerAnchors.isNotEmpty()) 1 else anchorSlots
         val olderAnchors = ArrayList<TrackPoint>(olderSlots)
         if (olderSlots > 0) {
             dbHelper.readableDatabase.query(
@@ -223,8 +242,26 @@ class TrackingRepository(context: Context) {
         return MatchingWindow(buildList {
             addAll(olderAnchors)
             addAll(newestFirst)
-            if (newerAnchor != null) add(newerAnchor)
+            addAll(newerAnchors)
         }, markableIds)
+    }
+
+    /**
+     * A finalization event (for example Android Location being switched off) is new information:
+     * no additional GPS fixes are coming right now. Let deferred turn holes retry immediately
+     * instead of leaving visible provisional gaps for a stale 30 s / 5 min backoff.
+     */
+    @Synchronized
+    fun makePendingMatchingEligibleNow() {
+        synchronized(dbHelper.historyLock) {
+            if (historyGeneration != dbHelper.historyGeneration) return
+            dbHelper.writableDatabase.update(
+                "track_points",
+                ContentValues().apply { put("next_match_attempt_ms", 0L) },
+                "matched = 0 AND next_match_attempt_ms > 0",
+                null
+            )
+        }
     }
 
     @Synchronized

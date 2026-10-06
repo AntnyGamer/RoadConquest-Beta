@@ -56,8 +56,8 @@ data class PlaceOverlayData(
 data class PlaceOverlayCacheResult(val cached: Boolean, val data: PlaceOverlayData?)
 
 object PlaceOverlayCache {
-    private const val DIRECTORY = "place-overlays-v2"
-    private const val NEGATIVE_CACHE_MS = 24L * 60L * 60L * 1000L
+    private const val DIRECTORY = "place-overlays-v3"
+    private const val NEGATIVE_CACHE_MS = 15L * 60L * 1000L
     private val generation = AtomicLong()
     private val mutationLock = Any()
 
@@ -310,17 +310,60 @@ class PlaceOverlayClient(
                     if (addressType in setOf("state", "region", "state_district")) score += 3
                 }
                 PlaceKind.TOWN -> {
-                    val locality = listOf("city", "town", "village", "municipality", "locality")
-                        .any { canonical(address.optString(it)) == expectedName }
+                    val locality = listOf(
+                        "city", "town", "village", "municipality", "township", "locality"
+                    ).any { canonical(address.optString(it)) == expectedName }
                     if (locality) score += 7
                     if (expectedParent.isNotBlank() &&
                         canonical(address.optString("state")) == expectedParent) score += 2
                     if (expectedCountry.isNotBlank() &&
                         canonical(address.optString("country")) == expectedCountry) score += 1
-                    if (addressType in setOf("city", "town", "village", "municipality", "locality")) score += 3
+                    if (addressType in setOf(
+                            "city", "town", "village", "municipality", "township", "locality", "administrative"
+                        )
+                    ) score += 3
+
+                    // Names such as "Washington Township" are not unique even inside one
+                    // state. Prefer the boundary whose Nominatim centroid is near the exact
+                    // place where this town was discovered, rather than whichever duplicate
+                    // happens to be returned first.
+                    val candidateLatitude = candidate.optString("lat").toDoubleOrNull()
+                    val candidateLongitude = candidate.optString("lon").toDoubleOrNull()
+                    if (candidateLatitude != null && candidateLongitude != null &&
+                        candidateLatitude in -90.0..90.0 && candidateLongitude in -180.0..180.0
+                    ) {
+                        val meters = distanceMeters(
+                            place.latitude, place.longitude,
+                            candidateLatitude, candidateLongitude
+                        )
+                        score += when {
+                            meters <= 10_000.0 -> 8
+                            meters <= 30_000.0 -> 5
+                            meters <= 75_000.0 -> 2
+                            else -> -8
+                        }
+                    }
                 }
             }
             return score
+        }
+
+        private fun distanceMeters(
+            latitude1: Double,
+            longitude1: Double,
+            latitude2: Double,
+            longitude2: Double
+        ): Double {
+            val lat1 = Math.toRadians(latitude1)
+            val lat2 = Math.toRadians(latitude2)
+            val deltaLat = lat2 - lat1
+            var deltaLon = Math.toRadians(longitude2 - longitude1)
+            while (deltaLon > PI) deltaLon -= 2 * PI
+            while (deltaLon < -PI) deltaLon += 2 * PI
+            val a = kotlin.math.sin(deltaLat / 2).let { it * it } +
+                kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+                kotlin.math.sin(deltaLon / 2).let { it * it }
+            return EARTH_RADIUS_M * 2 * kotlin.math.asin(kotlin.math.sqrt(a.coerceIn(0.0, 1.0)))
         }
 
         private fun parsePopulation(value: String?): Long? {
