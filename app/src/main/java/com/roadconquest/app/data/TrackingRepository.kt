@@ -144,7 +144,10 @@ class TrackingRepository(context: Context) {
     @Synchronized
     fun loadMatchingWindow(limit: Int = 50, nowMillis: Long = System.currentTimeMillis()): MatchingWindow {
         val maxPoints = limit.coerceAtLeast(2)
-        val anchorSlots = minOf(2, maxPoints - 1)
+        // At production batch sizes reserve one extra context slot. Turn retries benefit much
+        // more from seeing two points after the junction than from sending one additional
+        // unresolved point. Keep tiny test/debug windows on the old two-anchor behavior.
+        val anchorSlots = minOf(if (maxPoints >= 6) 3 else 2, maxPoints - 1)
         val pending = ArrayList<TrackPoint>(maxPoints - anchorSlots)
         dbHelper.readableDatabase.query(
             "track_points",
@@ -184,7 +187,8 @@ class TrackingRepository(context: Context) {
         // When retrying a hole inside an otherwise matched drive, keep one point on the newer
         // side so OSRM has context in both directions. For a live newest batch this is absent,
         // leaving both anchor slots for older points and a two-point overlap with the next batch.
-        val newerAnchor = dbHelper.readableDatabase.query(
+        val newerAnchors = ArrayList<TrackPoint>(minOf(2, anchorSlots))
+        dbHelper.readableDatabase.query(
             "track_points",
             TRACK_COLUMNS,
             "id > ?",
@@ -192,11 +196,18 @@ class TrackingRepository(context: Context) {
             null,
             null,
             "id ASC",
-            "1"
-        ).use { cursor -> if (cursor.moveToFirst()) cursor.toTrackPoint() else null }
-            ?.takeIf { isMatchingContinuation(latest, it, MATCH_ANCHOR_MAX_GAP_MS) }
+            minOf(2, anchorSlots).toString()
+        ).use { cursor ->
+            var boundary = latest
+            while (cursor.moveToNext()) {
+                val anchor = cursor.toTrackPoint()
+                if (!isMatchingContinuation(boundary, anchor, MATCH_ANCHOR_MAX_GAP_MS)) break
+                newerAnchors += anchor
+                boundary = anchor
+            }
+        }
 
-        val olderSlots = anchorSlots - if (newerAnchor == null) 0 else 1
+        val olderSlots = anchorSlots - newerAnchors.size
         val olderAnchors = ArrayList<TrackPoint>(olderSlots)
         if (olderSlots > 0) {
             dbHelper.readableDatabase.query(
@@ -223,8 +234,26 @@ class TrackingRepository(context: Context) {
         return MatchingWindow(buildList {
             addAll(olderAnchors)
             addAll(newestFirst)
-            if (newerAnchor != null) add(newerAnchor)
+            addAll(newerAnchors)
         }, markableIds)
+    }
+
+    /**
+     * A finalization event (for example Android Location being switched off) is new information:
+     * no additional GPS fixes are coming right now. Let deferred turn holes retry immediately
+     * instead of leaving visible provisional gaps for a stale 30 s / 5 min backoff.
+     */
+    @Synchronized
+    fun makePendingMatchingEligibleNow() {
+        synchronized(dbHelper.historyLock) {
+            if (historyGeneration != dbHelper.historyGeneration) return
+            dbHelper.writableDatabase.update(
+                "track_points",
+                ContentValues().apply { put("next_match_attempt_ms", 0L) },
+                "matched = 0 AND next_match_attempt_ms > 0",
+                null
+            )
+        }
     }
 
     @Synchronized
