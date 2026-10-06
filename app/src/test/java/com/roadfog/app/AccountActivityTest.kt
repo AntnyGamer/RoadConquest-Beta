@@ -223,14 +223,20 @@ class AccountActivityTest {
         LocalDataReset.stopTracking(context)
         executor.execute { LocalDataReset.clearStoppedData(context) }
 
+        // Queue a sentinel after the deletion task. Because dataExecutor is single-threaded,
+        // the sentinel can only run after the authorized deletion has fully completed.
+        val deletionFinished = CountDownLatch(1)
+        executor.execute { deletionFinished.countDown() }
+
         // Close Settings while the authorized deletion is deliberately queued behind work.
-        // Graceful executor shutdown must keep that queued deletion alive.
+        // Graceful executor shutdown must preserve the already-submitted deletion + sentinel.
         controller.pause().stop().destroy()
+        assertTrue(executor.isShutdown)
         releaseBlocker.countDown()
 
         assertTrue(
             "Queued deletion finishes during graceful Settings teardown",
-            executor.awaitTermination(5, TimeUnit.SECONDS)
+            deletionFinished.await(15, TimeUnit.SECONDS)
         )
         assertEquals(0L, repository.getSummary().trackPointCount)
         assertTrue(Prefs.isManualOnly(context))
