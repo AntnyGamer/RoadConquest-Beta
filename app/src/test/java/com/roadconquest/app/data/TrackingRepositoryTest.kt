@@ -392,6 +392,35 @@ class TrackingRepositoryTest {
             assertEquals(0f, it.getFloat(1), 0f)
         }
     }
+    @Test fun poorSpeedAccuracyIsNotPersistedAsTrustedMatcherSpeed() {
+        repository.insertLocation(Location("gps").apply {
+            latitude = 40.0
+            longitude = -74.0
+            accuracy = 5f
+            speed = 9f
+            speedAccuracyMetersPerSecond = 10f
+            time = 1_000_000L
+        })
+        repository.insertLocation(Location("gps").apply {
+            latitude = 40.0002
+            longitude = -74.0
+            accuracy = 5f
+            speed = 9f
+            speedAccuracyMetersPerSecond = 1f
+            time = 1_003_000L
+        })
+
+        repository.readableDatabase().rawQuery(
+            "SELECT speed_mps FROM track_points ORDER BY id ASC",
+            null
+        ).use {
+            assertTrue(it.moveToFirst())
+            assertEquals(0f, it.getFloat(0), 0f)
+            assertTrue(it.moveToNext())
+            assertEquals(9f, it.getFloat(0), 0f)
+        }
+    }
+
     @Test fun boundedRoadQueryReportsWhetherViewportCoverageIsComplete() {
         repository.upsertRoads(listOf(
             MatchedRoad("One", "[[-74.0000,40.0000],[-74.0001,40.0000]]", 100, 200, 1.0),
