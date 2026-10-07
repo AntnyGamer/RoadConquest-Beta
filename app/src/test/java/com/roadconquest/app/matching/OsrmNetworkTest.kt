@@ -37,6 +37,20 @@ class OsrmNetworkTest {
         }
     }
 
+    @Test fun fractionalAccuracyRadiusNeverRoundsBelowReportedUncertainty() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val fractional = listOf(
+                points[0].copy(accuracyMeters = 10.1f),
+                points[1].copy(accuracyMeters = 74.1f)
+            )
+            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(fractional))
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertEquals("11;75", request.queryParameter("radiuses"))
+        }
+    }
+
     @Test fun storedMissingBearingSentinelCannotForceNorthboundMatching() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(valid))
