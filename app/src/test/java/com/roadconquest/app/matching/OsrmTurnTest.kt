@@ -100,6 +100,35 @@ class OsrmTurnTest {
         assertEquals("Approach", result.roads.single().name)
     }
 
+    @Test fun confidentSameRoadSplitGetsASmallContinuousBridge() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p2 = coord(-74.0, 40.00010)
+        val p3 = coord(-74.0, 40.00000)
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(
+                        trace(0, 0, p0), trace(0, 1, p1),
+                        trace(1, 0, p2), trace(1, 1, p3)
+                    ),
+                    matching(leg("Main Road", p0, p1)),
+                    matching(leg("Main Road", p2, p3))
+                ),
+                points(p0, p1, p2, p3)
+            )
+        )
+
+        assertEquals(setOf(1L, 2L, 3L, 4L), result.matchedPointConfidences.keys)
+        assertEquals(3, result.roads.size)
+        val bridge = result.roads.single {
+            it.firstTimestamp == 1_003_000L && it.lastTimestamp == 1_006_000L
+        }
+        val coordinates = JSONArray(bridge.coordinatesJson)
+        assertEquals(p1.toString(), coordinates.getJSONArray(0).toString())
+        assertEquals(p2.toString(), coordinates.getJSONArray(1).toString())
+    }
+
     @Test fun splitTraceStartKeepsTheMissingIncomingIntervalPending() {
         val result = requireNotNull(OsrmMatcher().parse(response(listOf(
             trace(0, 0, a), trace(0, 1, b), trace(1, 0, d), trace(1, 1, e)
