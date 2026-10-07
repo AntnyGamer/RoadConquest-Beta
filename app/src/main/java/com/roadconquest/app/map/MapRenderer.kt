@@ -116,6 +116,7 @@ class MapRenderer(
     private val fogCoverageScreen = DoubleArray(8)
     private var showingDetailedFog = false
     private var fogHandoffGeneration = 0
+    private var fogHandoffFrameListener: MapView.OnDidFinishRenderingFrameListener? = null
     private var lastFogRenderAt = 0L
     private var minimumZoom = Double.NaN
     private val renderFog = Runnable { scheduleFogRender() }
@@ -676,6 +677,7 @@ class MapRenderer(
 
     private fun installFogLayer(style: Style) {
         detailedFogCoordinates = null
+        cancelFogHandoff()
         showingDetailedFog = false
         // Keep a ready native world layer behind the detailed viewport. A fast pinch can
         // outrun even a padded bitmap; it must never reveal an unrendered rectangle.
@@ -736,35 +738,78 @@ class MapRenderer(
                     if (cameraMoving) FOG_MOVING_COVERAGE_MARGIN_FRACTION else 0.0
                 )
             }
-        if (!force && detailed == showingDetailedFog) return
-        showingDetailedFog = detailed
-        val generation = ++fogHandoffGeneration
+        val changed = detailed != showingDetailedFog
+        if (!force && !changed) return
         val detailedLayer = map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer
         val worldLayer = map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer
-        // Keep both native raster layers enabled for one rendered frame during a handoff.
-        // MapLibre can otherwise coalesce two same-frame opacity writes and briefly present
-        // neither source during a rapid zoom. One overlap frame can only make fog darker;
-        // it cannot expose an uncovered rectangle.
         if (!fogEnabled) {
+            cancelFogHandoff()
+            showingDetailedFog = false
             worldLayer?.setProperties(rasterOpacity(0f))
             detailedLayer?.setProperties(rasterOpacity(0f))
-        } else if (detailed) {
-            detailedLayer?.setProperties(rasterOpacity(1f))
-            mapView.postOnAnimation {
-                if (!destroyed && generation == fogHandoffGeneration && showingDetailedFog) {
-                    (map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer)
-                        ?.setProperties(rasterOpacity(0f))
-                }
+            return
+        }
+        if (!changed) {
+            // A completed handoff already has the correct native layer state. During a pending
+            // handoff, a fresh detailed bitmap must not prematurely hide the safety layer.
+            if (fogHandoffFrameListener == null) {
+                detailedLayer?.setProperties(rasterOpacity(if (detailed) 1f else 0f))
+                worldLayer?.setProperties(rasterOpacity(if (detailed) 0f else 1f))
             }
+            return
+        }
+
+        cancelFogHandoff()
+        showingDetailedFog = detailed
+        val generation = fogHandoffGeneration
+        // Enable the incoming raster immediately, but keep the outgoing raster until MapLibre
+        // has actually completed two native rendered frames. An Android Choreographer frame is
+        // not sufficient: MapLibre's renderer can run on a different cadence and briefly show
+        // neither source during a rapid animated zoom. Two native frames cover an in-flight
+        // frame plus the first frame guaranteed to include the new opacity.
+        if (detailed) {
+            detailedLayer?.setProperties(rasterOpacity(1f))
         } else {
             worldLayer?.setProperties(rasterOpacity(1f))
-            mapView.postOnAnimation {
-                if (!destroyed && generation == fogHandoffGeneration && !showingDetailedFog) {
-                    (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)
-                        ?.setProperties(rasterOpacity(0f))
-                }
+        }
+        awaitFogHandoffFrames(generation, detailed)
+    }
+
+    private fun cancelFogHandoff() {
+        fogHandoffGeneration++
+        fogHandoffFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
+        fogHandoffFrameListener = null
+    }
+
+    private fun awaitFogHandoffFrames(generation: Int, detailed: Boolean) {
+        var renderedFrames = 0
+        lateinit var listener: MapView.OnDidFinishRenderingFrameListener
+        listener = MapView.OnDidFinishRenderingFrameListener { _, _, _ ->
+            if (destroyed || generation != fogHandoffGeneration ||
+                detailed != showingDetailedFog || !fogEnabled
+            ) {
+                mapView.removeOnDidFinishRenderingFrameListener(listener)
+                if (fogHandoffFrameListener === listener) fogHandoffFrameListener = null
+                return@OnDidFinishRenderingFrameListener
+            }
+            renderedFrames++
+            if (renderedFrames < FOG_HANDOFF_RENDERED_FRAMES) {
+                map.triggerRepaint()
+                return@OnDidFinishRenderingFrameListener
+            }
+            mapView.removeOnDidFinishRenderingFrameListener(listener)
+            if (fogHandoffFrameListener === listener) fogHandoffFrameListener = null
+            if (detailed) {
+                (map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer)
+                    ?.setProperties(rasterOpacity(0f))
+            } else {
+                (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)
+                    ?.setProperties(rasterOpacity(0f))
             }
         }
+        fogHandoffFrameListener = listener
+        mapView.addOnDidFinishRenderingFrameListener(listener)
+        map.triggerRepaint()
     }
 
     private fun installCarLayer(style: Style) {
@@ -1104,6 +1149,7 @@ class MapRenderer(
         mainHandler.removeCallbacksAndMessages(null)
         resumeFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
         resumeFrameListener = null
+        cancelFogHandoff()
         reusableFogBitmap?.recycle()
         reusableFogBitmap = null
         carIconBitmap?.recycle()
@@ -1152,6 +1198,7 @@ class MapRenderer(
         // off-screen bitmap redraws. Idle renders still happen immediately.
         private const val FOG_RENDER_INTERVAL_MS = 120L
         private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.50
+        private const val FOG_HANDOFF_RENDERED_FRAMES = 2
         private const val OVERLAY_UPDATE_BATCH = 4
         private const val STARTING_LOCATION_ZOOM = 15.0
     }
