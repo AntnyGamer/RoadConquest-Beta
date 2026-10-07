@@ -26,7 +26,6 @@ object AccountStore {
     private const val KEY_USERNAME = "username"
     private const val KEY_TOKEN = "token"
     private const val KEY_LEADERBOARD_VISIBLE = "leaderboard_visible"
-    @Volatile private var cachedKey: SecretKey? = null
 
     @Synchronized
     fun load(context: Context): Session? {
@@ -80,24 +79,18 @@ object AccountStore {
         return update(current).also { save(context, it) }
     }
 
-    private fun key(): SecretKey =
-        cachedKey ?: synchronized(this) {
-            cachedKey ?: run {
-                val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-                val key = (store.getKey(KEY_ALIAS, null) as? SecretKey) ?: KeyGenerator.getInstance(
-                    KeyProperties.KEY_ALGORITHM_AES,
-                    "AndroidKeyStore"
-                ).apply {
-                    init(
-                        KeyGenParameterSpec.Builder(
-                            KEY_ALIAS,
-                            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                        ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                            .build()
-                    )
-                }.generateKey()
-                key.also { cachedKey = it }
-            }
-        }
+    private fun key(): SecretKey {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+            init(
+                KeyGenParameterSpec.Builder(
+                    KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .build()
+            )
+        }.generateKey()
+    }
 }
