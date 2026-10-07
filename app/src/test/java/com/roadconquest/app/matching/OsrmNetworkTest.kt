@@ -35,14 +35,14 @@ class OsrmNetworkTest {
         }
     }
 
-    @Test fun inconsistentOrLowEvidenceBearingDoesNotConstrainMatching() {
+    @Test fun storedMissingBearingSentinelCannotForceNorthboundMatching() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(valid))
             server.start()
-            val unreliable = points.map { it.copy(bearingDegrees = 0f) }
-            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(unreliable))
+            val noDeviceBearing = points.map { it.copy(bearingDegrees = 0f) }
+            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(noDeviceBearing))
             val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
-            assertNull(request.queryParameter("bearings"))
+            assertEquals("270,65;270,65", request.queryParameter("bearings"))
         }
     }
 
