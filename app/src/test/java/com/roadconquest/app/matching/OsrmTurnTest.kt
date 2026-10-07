@@ -315,6 +315,33 @@ class OsrmTurnTest {
         assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
     }
 
+    @Test fun missingStoredSpeedDoesNotPretendNormalMovementIsStopped() {
+        val rawStart = coord(-74.0, 40.0)
+        val rawEnd = coord(-74.0, 40.0003)
+        val snappedStart = coord(-73.99981, 40.0)
+        val snappedEnd = coord(-73.99981, 40.0003)
+        val rawPoints = listOf(
+            // TrackingRepository stores 0 when Android did not provide a speed measurement.
+            TrackPoint(1, 40.0, -74.0, 10f, 0f, 0f, 1_000_000L, false),
+            TrackPoint(2, 40.0003, -74.0, 10f, 0f, 0f, 1_003_000L, false)
+        )
+
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, snappedStart), trace(0, 1, snappedEnd)),
+                    matching(leg("Main Road", snappedStart, snappedEnd))
+                ),
+                rawPoints
+            )
+        )
+
+        assertEquals(1, result.roads.size)
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
+        assertNotEquals(rawStart.toString(), snappedStart.toString())
+        assertNotEquals(rawEnd.toString(), snappedEnd.toString())
+    }
+
     @Test fun nearbyParallelRoadSnapBeyondReportedAccuracyStaysPending() {
         val rawStart = coord(-74.0, 40.0)
         val rawEnd = coord(-74.0, 40.0001)
