@@ -99,7 +99,7 @@ class TrackingService : Service(), LocationListener {
                 queueFinalMatchingFlush()
             }
             refreshForegroundNotification()
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         }
     }
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -154,7 +154,7 @@ class TrackingService : Service(), LocationListener {
         batteryReceiverRegistered = true
         ProgressionManager.recordBatteryFromSystem(this)
         Prefs.markEverStarted(this)
-        sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+        sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -164,7 +164,7 @@ class TrackingService : Service(), LocationListener {
             isRunning = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
             return START_NOT_STICKY
         }
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) {
@@ -311,7 +311,7 @@ class TrackingService : Service(), LocationListener {
     override fun onProviderEnabled(provider: String) {
         if (ready) {
             requestLocations()
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         }
     }
 
@@ -319,7 +319,7 @@ class TrackingService : Service(), LocationListener {
     // the user turns Location back on; re-registering while disabled can lose that callback.
     override fun onProviderDisabled(provider: String) {
         if (ready) {
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
             // No more fixes may arrive while Android Location is off. Flush any queued
             // accepted fixes first, then give unresolved corner/end-of-drive intervals a final
             // matcher pass. A single provider handoff does not need this.
@@ -388,7 +388,7 @@ class TrackingService : Service(), LocationListener {
         storageExecutor.shutdown()
         stopForeground(STOP_FOREGROUND_REMOVE)
         isRunning = false
-        sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+        sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         super.onDestroy()
     }
 
