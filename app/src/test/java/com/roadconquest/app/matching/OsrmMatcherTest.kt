@@ -127,4 +127,31 @@ class OsrmMatcherTest {
         assertEquals(waypoint, exit.getJSONArray(0).toString())
     }
 
+
+    @Test fun osrmRouteRefsAndRampManeuversFeedHumanRoadCounting() {
+        val routePoints = listOf(
+            TrackPoint(40, 40.0, -74.0, 5f, 8f, 0f, 400_000, false),
+            TrackPoint(41, 40.0001, -73.9998, 5f, 8f, 0f, 410_000, false)
+        )
+        val json = """
+            {"code":"Ok","tracepoints":[
+              {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},
+              {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-73.9998,40.0001]}],
+             "matchings":[{"confidence":0.95,"legs":[{"steps":[
+              {"name":"","ref":"I-295","distance":12,"maneuver":{"type":"continue"},
+               "geometry":{"type":"LineString","coordinates":[[-74,40],[-73.9999,40.00005]]}},
+              {"name":"","ref":"","distance":12,"maneuver":{"type":"off ramp"},
+               "geometry":{"type":"LineString","coordinates":[[-73.9999,40.00005],[-73.9998,40.0001]]}}
+             ]}]}]}
+        """.trimIndent()
+
+        val roads = requireNotNull(OsrmMatcher().parse(json, routePoints)).roads
+        assertEquals(2, roads.size)
+        assertEquals("I-295", roads[0].name)
+        assertEquals("I-295", roads[0].reference)
+        assertTrue(roads[0].countTowardsRoads)
+        assertEquals("Unnamed road", roads[1].name)
+        assertFalse(roads[1].countTowardsRoads)
+    }
+
 }
