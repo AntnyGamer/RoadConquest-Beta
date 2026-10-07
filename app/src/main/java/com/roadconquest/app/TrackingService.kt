@@ -458,12 +458,21 @@ class TrackingService : Service(), LocationListener {
         val inferredSpeed = distance / (ageMs / 1_000f)
         if (inferredSpeed > MAX_PLAUSIBLE_SPEED_MPS) return false
         val measuredSpeed = maxOf(
-            if (previous.hasSpeed()) previous.speed else 0f,
-            if (location.hasSpeed()) location.speed else 0f
+            reliableMeasuredSpeed(previous),
+            reliableMeasuredSpeed(location)
         )
         val movedBeyondAccuracy = distance > maxOf(5f, previous.accuracy + location.accuracy)
         return measuredSpeed >= MIN_DRIVING_SPEED_MPS ||
             (movedBeyondAccuracy && inferredSpeed >= MIN_DRIVING_SPEED_MPS)
+    }
+
+    private fun reliableMeasuredSpeed(location: Location): Float {
+        if (!location.hasSpeed() || !location.speed.isFinite() || location.speed < 0f) return 0f
+        if (location.hasSpeedAccuracy()) {
+            val uncertainty = location.speedAccuracyMetersPerSecond
+            if (!uncertainty.isFinite() || uncertainty > MAX_MEASURED_SPEED_ACCURACY_MPS) return 0f
+        }
+        return location.speed
     }
 
     private fun isFreshLocation(location: Location): Boolean {
@@ -720,6 +729,10 @@ class TrackingService : Service(), LocationListener {
         private const val MAX_ACCURACY_M = 50f
         private const val MAX_PREVIEW_ACCURACY_M = 100f
         private const val MIN_DRIVING_SPEED_MPS = 2.2f
+        // Only distrust measured speed when Android explicitly reports very poor uncertainty.
+        // Devices that do not provide speed accuracy keep the existing behavior, and movement
+        // inferred from two good fixes can still authorize driving either way.
+        private const val MAX_MEASURED_SPEED_ACCURACY_MPS = 4f
         private const val MAX_PLAUSIBLE_SPEED_MPS = 100f
         private const val MIN_BEARING_SPEED_MPS = 0.5f
         private const val MAX_MOTION_SAMPLE_AGE_MS = 30_000L
