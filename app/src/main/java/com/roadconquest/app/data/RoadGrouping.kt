@@ -14,6 +14,7 @@ import kotlin.math.*
  */
 internal object RoadGrouping {
     const val JOIN_TOLERANCE_M = 75.0
+    const val REF_JOIN_TOLERANCE_M = 120.0
     private const val UNNAMED_JOIN_TOLERANCE_M = 25.0
     private const val EARTH_RADIUS_M = 6_371_008.8
     private const val METERS_PER_DEGREE = 111_320.0
@@ -21,6 +22,7 @@ internal object RoadGrouping {
     data class Road(
         val segmentId: String,
         val name: String,
+        val reference: String = "",
         val geometryJson: String,
         val minLatitude: Double,
         val maxLatitude: Double,
@@ -29,31 +31,53 @@ internal object RoadGrouping {
         val groupId: String? = null
     ) {
         val nameKey: String = normalizeName(name)
+        val referenceKeys: Set<String> = normalizeReferences(reference)
         val coordinates: DoubleArray? by lazy(LazyThreadSafetyMode.NONE) { parseCoordinates(geometryJson) }
     }
 
-    fun normalizeName(name: String): String = name.trim().lowercase(Locale.US)
+    fun normalizeName(name: String): String = name.trim().lowercase(Locale.ROOT)
         .replace(Regex("\\s+"), " ").let { if (it == "unnamed road") "" else it }
+
+    /**
+     * OSRM refs can contain several concurrent route numbers separated by semicolons.
+     * Removing punctuation makes common formatting variants (I-295 / I 295) compare equally
+     * without applying risky language-specific street-name abbreviation rules.
+     */
+    fun normalizeReferences(reference: String): Set<String> =
+        reference.split(';')
+            .asSequence()
+            .map { it.trim().uppercase(Locale.ROOT).replace(Regex("[^A-Z0-9]"), "") }
+            .filter { it.isNotEmpty() }
+            .toCollection(linkedSetOf())
 
     fun isUnnamed(nameKey: String): Boolean =
         nameKey.isEmpty() || nameKey == "unnamed road"
 
+    fun sharedReference(first: Road, second: Road): Boolean =
+        first.referenceKeys.isNotEmpty() && second.referenceKeys.isNotEmpty() &&
+            first.referenceKeys.any(second.referenceKeys::contains)
 
     fun connected(first: Road, second: Road): Boolean {
-        if (first.nameKey != second.nameKey) return false
-        if (!boundsCanTouch(first, second)) return false
+        val sharedRef = sharedReference(first, second)
+        if (!sharedRef && first.nameKey != second.nameKey) return false
+        // Two unrelated unnamed fragments still need the tight access-road seam rule.
+        if (!sharedRef && isUnnamed(first.nameKey) != isUnnamed(second.nameKey)) return false
+        val tolerance = when {
+            sharedRef -> REF_JOIN_TOLERANCE_M
+            isUnnamed(first.nameKey) -> UNNAMED_JOIN_TOLERANCE_M
+            else -> JOIN_TOLERANCE_M
+        }
+        if (!boundsCanTouch(first, second, tolerance)) return false
         val a = first.coordinates ?: return false
         val b = second.coordinates ?: return false
         if (a.size < 4 || b.size < 4) return false
-        val tolerance = if (isUnnamed(first.nameKey)) UNNAMED_JOIN_TOLERANCE_M else JOIN_TOLERANCE_M
         return endpointToPolylineMeters(a[0], a[1], b) <= tolerance ||
             endpointToPolylineMeters(a[a.size - 2], a[a.size - 1], b) <= tolerance ||
             endpointToPolylineMeters(b[0], b[1], a) <= tolerance ||
             endpointToPolylineMeters(b[b.size - 2], b[b.size - 1], a) <= tolerance
     }
 
-    private fun boundsCanTouch(first: Road, second: Road): Boolean {
-        val tolerance = if (isUnnamed(first.nameKey)) UNNAMED_JOIN_TOLERANCE_M else JOIN_TOLERANCE_M
+    private fun boundsCanTouch(first: Road, second: Road, tolerance: Double): Boolean {
         val latitudePad = tolerance / METERS_PER_DEGREE
         if (first.maxLatitude + latitudePad < second.minLatitude ||
             second.maxLatitude + latitudePad < first.minLatitude
