@@ -432,11 +432,10 @@ class OsrmMatcher(
         internal const val MIN_ACCEPTABLE_CONFIDENCE = 0.45
         private const val MIN_MATCH_RADIUS_M = 10f
         private const val MAX_MATCH_RADIUS_M = 75f
-        // Treat OSRM's radius as candidate discovery, not proof. The user's export that exposed
-        // the false Lake Boulevard fragment had ~10 m reported accuracy but a ~16 m lateral snap;
-        // all confirmed road samples in the same drive were within ~7.1 m of saved geometry.
-        // This bound keeps ordinary centerline/GNSS offset room while rejecting that nearby-road
-        // class of false positive, especially when slowing or turning next to a parallel road.
+        // Treat OSRM's radius as candidate discovery, not proof. Keep a tighter post-match
+        // lateral bound for permanent geometry: this still leaves room for ordinary GNSS and
+        // map-centerline offset while rejecting nearby-road false positives, especially when
+        // slowing or turning beside a parallel road.
         private const val MIN_SNAP_TOLERANCE_M = 8.0
         private const val SNAP_TOLERANCE_EXTRA_M = 3.0
         private const val MAX_SNAP_TOLERANCE_M = 20.0
