@@ -28,7 +28,8 @@ class TrackingRepository(context: Context) {
         synchronized(dbHelper.historyLock) {
             if (historyGeneration != dbHelper.historyGeneration) return false
             if (location.isMock || !location.hasAccuracy() || location.accuracy !in 0.01f..25f ||
-                exploredCellKey(location.latitude, location.longitude) != cellKey
+                !location.latitude.isFinite() || !location.longitude.isFinite() ||
+                location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0
             ) return false
             val x = (cellKey shr 32).toInt().toLong()
             val y = cellKey.toInt().toLong()
