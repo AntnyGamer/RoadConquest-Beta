@@ -472,7 +472,7 @@ class TrackingRepository(context: Context) {
             arrayOf(segmentId),
             null,
             null,
-            null
+            "segment_id ASC"
         ).use { cursor ->
             if (!cursor.moveToFirst()) null
             else ExistingRoad(
@@ -569,12 +569,16 @@ class TrackingRepository(context: Context) {
         val groupIds = LinkedHashSet<String>()
         val ungroupedSegments = LinkedHashSet<String>()
         val canonicalSegments = linkedSetOf(segmentId)
-        val referenceKeys = linkedSetOf<String>().apply { addAll(current.referenceKeys) }
+        var referenceKeys = current.referenceKeys
         existingGroupId?.takeIf { it.isNotBlank() }?.let { group ->
             groupIds += group
             canonicalSegments += canonicalSegmentFromGroupId(group)
-            referenceKeys += referenceKeysFromGroupId(group)
+            referenceKeys = reconcileCurrentReferenceKeys(
+                current.referenceKeys,
+                referenceKeysFromGroupId(group)
+            )
         }
+        var identityRoad = current.copy(reference = referenceKeys.joinToString(";"))
 
         db.query(
             "roads",
@@ -607,8 +611,9 @@ class TrackingRepository(context: Context) {
                     maxLongitude = cursor.getDouble(6),
                     groupId = storedGroup
                 )
-                if (!RoadGrouping.connected(current, candidate)) continue
-                referenceKeys += candidate.referenceKeys
+                if (!RoadGrouping.connected(identityRoad, candidate)) continue
+                referenceKeys = mergeConnectedReferenceKeys(referenceKeys, candidate.referenceKeys)
+                identityRoad = identityRoad.copy(reference = referenceKeys.joinToString(";"))
                 if (storedGroup.isBlank()) {
                     ungroupedSegments += candidate.segmentId
                     canonicalSegments += candidate.segmentId
@@ -650,6 +655,29 @@ class TrackingRepository(context: Context) {
         val parts = groupId.split('|', limit = 4)
         if (parts.size != 4 || parts[1] != "r") return emptySet()
         return parts[2].split(',').filterTo(linkedSetOf()) { it.isNotBlank() }
+    }
+
+    private fun reconcileCurrentReferenceKeys(
+        observed: Set<String>,
+        stored: Set<String>
+    ): Set<String> {
+        if (observed.isEmpty()) return stored
+        if (stored.isEmpty()) return observed
+        val shared = observed intersect stored
+        return if (shared.isNotEmpty()) shared else observed
+    }
+
+    private fun mergeConnectedReferenceKeys(
+        current: Set<String>,
+        candidate: Set<String>
+    ): Set<String> {
+        if (current.isEmpty()) return candidate
+        if (candidate.isEmpty()) return current
+        // Keep only route identity supported by both connected pieces. This prevents a
+        // concurrent US-1/US-9 segment from transitively merging the separate routes after
+        // they diverge. If refs disagree but the street name itself connected them, fall back
+        // to the human street-name identity rather than inventing a route relationship.
+        return current intersect candidate
     }
 
     private fun humanRoadIdentityPrefix(name: String, referenceKeys: Set<String>): String {
