@@ -38,8 +38,9 @@ internal object RoadGrouping {
         val coordinates: DoubleArray? by lazy(LazyThreadSafetyMode.NONE) { parseCoordinates(geometryJson) }
     }
 
-    fun normalizeName(name: String): String = name.trim().lowercase(Locale.ROOT)
-        .replace(WHITESPACE_RE, " ").let { if (it == "unnamed road") "" else it }
+    fun normalizeName(name: String): String =
+        Normalizer.normalize(name, Normalizer.Form.NFKC).trim().lowercase(Locale.ROOT)
+            .replace(WHITESPACE_RE, " ").let { if (it == "unnamed road") "" else it }
 
     /**
      * OSRM refs can contain several concurrent route numbers separated by semicolons.
