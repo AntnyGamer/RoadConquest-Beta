@@ -18,6 +18,8 @@ internal object RoadGrouping {
     private const val UNNAMED_JOIN_TOLERANCE_M = 25.0
     private const val EARTH_RADIUS_M = 6_371_008.8
     private const val METERS_PER_DEGREE = 111_320.0
+    private val WHITESPACE_RE = Regex("\\s+")
+    private val NON_ALNUM_RE = Regex("[^\\p{L}\\p{N}]")
 
     data class Road(
         val segmentId: String,
@@ -36,7 +38,7 @@ internal object RoadGrouping {
     }
 
     fun normalizeName(name: String): String = name.trim().lowercase(Locale.ROOT)
-        .replace(Regex("\\s+"), " ").let { if (it == "unnamed road") "" else it }
+        .replace(WHITESPACE_RE, " ").let { if (it == "unnamed road") "" else it }
 
     /**
      * OSRM refs can contain several concurrent route numbers separated by semicolons.
@@ -46,7 +48,7 @@ internal object RoadGrouping {
     fun normalizeReferences(reference: String): Set<String> =
         reference.split(';')
             .asSequence()
-            .map { it.trim().uppercase(Locale.ROOT).replace(Regex("[^A-Z0-9]"), "") }
+            .map { it.trim().uppercase(Locale.ROOT).replace(NON_ALNUM_RE, "") }
             .filter { it.isNotEmpty() }
             .toCollection(linkedSetOf())
 
