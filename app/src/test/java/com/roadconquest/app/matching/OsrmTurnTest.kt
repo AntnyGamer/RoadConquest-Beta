@@ -259,6 +259,27 @@ class OsrmTurnTest {
         assertNotEquals(rawEnd.toString(), parallelEnd.toString())
     }
 
+    @Test fun ordinaryDrivingKeepsThePreviousSnapAllowance() {
+        val parallelStart = coord(-73.99981, 40.0)
+        val parallelEnd = coord(-73.99981, 40.0001)
+        val rawPoints = listOf(
+            TrackPoint(1, 40.0, -74.0, 10f, 8f, 0f, 1_000_000L, false),
+            TrackPoint(2, 40.0001, -74.0, 10f, 8f, 0f, 1_003_000L, false)
+        )
+
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, parallelStart), trace(0, 1, parallelEnd)),
+                    matching(leg("Main Road", parallelStart, parallelEnd))
+                ),
+                rawPoints
+            )
+        )
+        assertEquals(1, result.roads.size)
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
+    }
+
     @Test fun shortIntersectionEdgesRemainInTheDrawnRoute() {
         val tiny = coord(-74.0, 40.0000001)
         val result = requireNotNull(OsrmMatcher().parse(response(listOf(
