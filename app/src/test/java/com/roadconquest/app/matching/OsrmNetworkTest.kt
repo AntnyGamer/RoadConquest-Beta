@@ -37,6 +37,20 @@ class OsrmNetworkTest {
         }
     }
 
+    @Test fun fractionalAccuracyRadiusNeverRoundsBelowReportedUncertainty() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val fractional = listOf(
+                points[0].copy(accuracyMeters = 10.1f),
+                points[1].copy(accuracyMeters = 74.1f)
+            )
+            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(fractional))
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertEquals("11;75", request.queryParameter("radiuses"))
+        }
+    }
+
     @Test fun storedMissingBearingSentinelCannotForceNorthboundMatching() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(valid))
@@ -48,11 +62,44 @@ class OsrmNetworkTest {
         }
     }
 
+    @Test fun missingStoredSpeedStillUsesClearMovementForBearingGuidance() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val movingWithoutMeasuredSpeed = listOf(
+                points[0].copy(speedMps = 0f, timestampMillis = 100_000L),
+                points[1].copy(speedMps = 0f, timestampMillis = 103_000L, accuracyMeters = 3f)
+            )
+            requireNotNull(
+                OsrmMatcher(server.url("/").toString().trimEnd('/')).match(movingWithoutMeasuredSpeed)
+            )
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertEquals("270,65;270,65", request.queryParameter("bearings"))
+        }
+    }
+
+    @Test fun missingSpeedWithinCombinedAccuracyDoesNotInventBearingGuidance() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val uncertain = listOf(
+                points[0].copy(speedMps = 0f, accuracyMeters = 50f, timestampMillis = 100_000L),
+                points[1].copy(speedMps = 0f, accuracyMeters = 50f, timestampMillis = 103_000L)
+            )
+            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(uncertain))
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertNull(request.queryParameter("bearings"))
+        }
+    }
+
     @Test fun lowSpeedBearingDoesNotConstrainMatching() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(valid))
             server.start()
-            val slow = points.map { it.copy(speedMps = 1f) }
+            val slow = listOf(
+                points[0].copy(speedMps = 1f, timestampMillis = 100_000L),
+                points[1].copy(speedMps = 1f, timestampMillis = 103_000L)
+            )
             requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(slow))
             val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
             assertNull(request.queryParameter("bearings"))

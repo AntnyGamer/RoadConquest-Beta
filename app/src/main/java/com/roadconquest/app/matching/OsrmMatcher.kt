@@ -47,7 +47,9 @@ class OsrmMatcher(
             // still applies the stricter recorded-accuracy distance check before any geometry
             // can become permanent road credit, so this improves candidate discovery without
             // blindly accepting a nearby parallel road.
-            it.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toInt().toString()
+            kotlin.math.ceil(
+                it.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toDouble()
+            ).toInt().toString()
         }
         // Keep a leg per surviving fix so an ambiguous batch tail can be withheld without
         // persisting its guessed junction spur. Named-road counts do not count these legs.
@@ -265,8 +267,19 @@ class OsrmMatcher(
         val rawStart = JSONArray().put(points[start.input].longitude).put(points[start.input].latitude)
         val rawEnd = JSONArray().put(points[end.input].longitude).put(points[end.input].latitude)
         val uncertainty = points[start.input].accuracyMeters + points[end.input].accuracyMeters
-        require(coordinateDistanceMeters(rawStart, start.location) <= snapToleranceMeters(points[start.input]) &&
-            coordinateDistanceMeters(rawEnd, end.location) <= snapToleranceMeters(points[end.input])) {
+        val rawMeters = pointDistanceMeters(points[start.input], points[end.input])
+        val inferredSpeedMps = if (duration > 0L && rawMeters.isFinite() && rawMeters > uncertainty) {
+            // With no stored speed, Road Conquest only accepted this pair as driving when the
+            // displacement beat the two fixes' combined uncertainty. Preserve that same evidence
+            // requirement before using displacement to relax the low-speed snap gate.
+            rawMeters / (duration / 1_000.0)
+        } else {
+            0.0
+        }
+        require(coordinateDistanceMeters(rawStart, start.location) <=
+            snapToleranceMeters(points[start.input], inferredSpeedMps) &&
+            coordinateDistanceMeters(rawEnd, end.location) <=
+            snapToleranceMeters(points[end.input], inferredSpeedMps)) {
             "Matched road is too far from the recorded drive"
         }
         require(total <= coordinateDistanceMeters(rawStart, rawEnd) * 3 + uncertainty * 2 + 30 &&
@@ -369,15 +382,20 @@ class OsrmMatcher(
             val connectorMeters = coordinateDistanceMeters(start, end)
             val rawMeters = pointDistanceMeters(from, to)
             val uncertainty = from.accuracyMeters + to.accuracyMeters
+            val inferredSpeedMps = if (elapsed > 0L && rawMeters.isFinite() && rawMeters > uncertainty) {
+                rawMeters / (elapsed / 1_000.0)
+            } else {
+                0.0
+            }
             if (!connectorMeters.isFinite() || !rawMeters.isFinite() ||
                 connectorMeters > MAX_SPLIT_BRIDGE_M ||
                 connectorMeters > rawMeters * SPLIT_BRIDGE_DISTANCE_FACTOR + uncertainty + SPLIT_BRIDGE_DISTANCE_PAD_M ||
                 coordinateDistanceMeters(
                     JSONArray().put(from.longitude).put(from.latitude), start
-                ) > snapToleranceMeters(from) ||
+                ) > snapToleranceMeters(from, inferredSpeedMps) ||
                 coordinateDistanceMeters(
                     JSONArray().put(to.longitude).put(to.latitude), end
-                ) > snapToleranceMeters(to)
+                ) > snapToleranceMeters(to, inferredSpeedMps)
             ) continue
 
             val rawBearing = initialBearingDegrees(from, to)
@@ -414,10 +432,6 @@ class OsrmMatcher(
     private fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
-            if (!point.speedMps.isFinite() || point.speedMps < MIN_BEARING_GUIDANCE_SPEED_MPS) {
-                return@map ""
-            }
-
             val (from, to) = if (index < points.lastIndex) {
                 point to points[index + 1]
             } else {
@@ -431,6 +445,17 @@ class OsrmMatcher(
                 (fromAccuracy + toAccuracy) * BEARING_ACCURACY_DISTANCE_FACTOR
             )
             if (!distance.isFinite() || distance < minimumEvidenceDistance) return@map ""
+
+            val elapsedMs = to.timestampMillis - from.timestampMillis
+            val combinedAccuracy = fromAccuracy + toAccuracy
+            val inferredSpeedMps = if (elapsedMs > 0L && distance > combinedAccuracy) {
+                distance / (elapsedMs / 1_000.0)
+            } else {
+                0.0
+            }
+            val storedSpeed = point.speedMps.toDouble().takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+            val movementSpeedMps = if (storedSpeed > 0.0) storedSpeed else inferredSpeedMps
+            if (movementSpeedMps < MIN_BEARING_GUIDANCE_SPEED_MPS) return@map ""
 
             val movementBearing = initialBearingDegrees(from, to)
             "${movementBearing.roundToInt() % 360},$BEARING_GUIDANCE_RANGE_DEGREES"
@@ -447,9 +472,15 @@ class OsrmMatcher(
         return EARTH_RADIUS_M * sqrt(x * x + y * y)
     }
 
-    private fun snapToleranceMeters(point: TrackPoint): Double {
+    private fun snapToleranceMeters(point: TrackPoint, inferredSpeedMps: Double): Double {
         val accuracy = point.accuracyMeters.toDouble()
-        if (point.speedMps.isFinite() && point.speedMps >= STRICT_SNAP_MAX_SPEED_MPS) {
+        val storedSpeed = point.speedMps.toDouble().takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        // Stored track points use 0 m/s when Android did not provide speed. Only that
+        // ambiguous zero sentinel may fall back to displacement-derived speed; a real positive
+        // low-speed measurement stays authoritative so GPS jitter cannot loosen this gate.
+        val inferredSpeed = inferredSpeedMps.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        val movementSpeedMps = if (storedSpeed > 0.0) storedSpeed else inferredSpeed
+        if (movementSpeedMps >= STRICT_SNAP_MAX_SPEED_MPS) {
             // Preserve the old allowance at normal driving speed. The false nearby-road sample in
             // the supplied export happened while slowing/stopping, so this keeps the protection
             // targeted instead of creating fresh highway or arterial gaps from normal GNSS drift.

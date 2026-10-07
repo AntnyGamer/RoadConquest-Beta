@@ -32,6 +32,20 @@ object LocationProviders {
         }
     }
 
+    /**
+     * Return measured speed only when Android supplies usable speed metadata. This is shared by
+     * driving acceptance and persistence so the matcher never treats a speed value that the
+     * driving filter already rejected as authoritative evidence.
+     */
+    fun reliableMeasuredSpeed(location: Location): Float {
+        if (!location.hasSpeed() || !location.speed.isFinite() || location.speed < 0f) return 0f
+        if (location.hasSpeedAccuracy()) {
+            val uncertainty = location.speedAccuracyMetersPerSecond
+            if (!uncertainty.isFinite() || uncertainty > MAX_MEASURED_SPEED_ACCURACY_MPS) return 0f
+        }
+        return location.speed
+    }
+
     /** Compare near-contemporaneous fixes by reported accuracy, without holding a moving car stale. */
     fun isBetterFix(candidate: Location, previous: Location?): Boolean {
         if (previous == null) return true
@@ -62,4 +76,6 @@ object LocationProviders {
             }
         }
     }
+
+    private const val MAX_MEASURED_SPEED_ACCURACY_MPS = 4f
 }
