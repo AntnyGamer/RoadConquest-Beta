@@ -427,16 +427,23 @@ class OsrmMatcher(
     private fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
-            if (!point.speedMps.isFinite() || point.speedMps < MIN_BEARING_GUIDANCE_SPEED_MPS) {
-                return@map ""
-            }
-
             val (from, to) = if (index < points.lastIndex) {
                 point to points[index + 1]
             } else {
                 points.getOrNull(index - 1)?.let { it to point } ?: return@map ""
             }
             val distance = pointDistanceMeters(from, to)
+            val elapsedMs = to.timestampMillis - from.timestampMillis
+            val inferredSpeedMps = if (elapsedMs > 0L && distance.isFinite()) {
+                distance / (elapsedMs / 1_000.0)
+            } else {
+                0.0
+            }
+            val storedSpeed = point.speedMps.toDouble().takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+            if (maxOf(storedSpeed, inferredSpeedMps) < MIN_BEARING_GUIDANCE_SPEED_MPS) {
+                return@map ""
+            }
+
             val fromAccuracy = from.accuracyMeters.takeIf { it.isFinite() && it >= 0f } ?: MAX_MATCH_RADIUS_M
             val toAccuracy = to.accuracyMeters.takeIf { it.isFinite() && it >= 0f } ?: MAX_MATCH_RADIUS_M
             val minimumEvidenceDistance = maxOf(
