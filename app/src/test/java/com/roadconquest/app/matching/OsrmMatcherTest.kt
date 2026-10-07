@@ -127,4 +127,74 @@ class OsrmMatcherTest {
         assertEquals(waypoint, exit.getJSONArray(0).toString())
     }
 
+
+    @Test fun namedRotaryCountsButUnnamedRoundaboutDoesNot() {
+        val routePoints = listOf(
+            TrackPoint(50, 40.0, -74.0, 5f, 5f, 0f, 500_000, false),
+            TrackPoint(51, 40.0001, -73.9998, 5f, 5f, 0f, 510_000, false)
+        )
+        fun response(rotaryName: String) = """
+            {"code":"Ok","tracepoints":[
+              {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},
+              {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-73.9998,40.0001]}],
+             "matchings":[{"confidence":0.95,"legs":[{"steps":[
+              {"name":"","rotary_name":"$rotaryName","distance":24,"maneuver":{"type":"rotary"},
+               "geometry":{"type":"LineString","coordinates":[[-74,40],[-73.9998,40.0001]]}}
+             ]}]}]}
+        """.trimIndent()
+
+        val named = requireNotNull(OsrmMatcher().parse(response("Victory Circle"), routePoints)).roads.single()
+        assertEquals("Victory Circle", named.name)
+        assertTrue(named.countTowardsRoads)
+
+        val unnamed = requireNotNull(OsrmMatcher().parse(response(""), routePoints)).roads.single()
+        assertEquals("Unnamed road", unnamed.name)
+        assertFalse(unnamed.countTowardsRoads)
+    }
+
+    @Test fun unnamedRoundaboutTurnDoesNotCountAsASeparateRoad() {
+        val routePoints = listOf(
+            TrackPoint(60, 40.0, -74.0, 5f, 5f, 0f, 600_000, false),
+            TrackPoint(61, 40.0001, -73.9998, 5f, 5f, 0f, 610_000, false)
+        )
+        val json = """
+            {"code":"Ok","tracepoints":[
+              {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},
+              {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-73.9998,40.0001]}],
+             "matchings":[{"confidence":0.95,"legs":[{"steps":[
+              {"name":"","distance":24,"maneuver":{"type":"roundabout turn"},
+               "geometry":{"type":"LineString","coordinates":[[-74,40],[-73.9998,40.0001]]}}
+             ]}]}]}
+        """.trimIndent()
+
+        val road = requireNotNull(OsrmMatcher().parse(json, routePoints)).roads.single()
+        assertFalse(road.countTowardsRoads)
+    }
+
+    @Test fun osrmRouteRefsAndRampManeuversFeedHumanRoadCounting() {
+        val routePoints = listOf(
+            TrackPoint(40, 40.0, -74.0, 5f, 8f, 0f, 400_000, false),
+            TrackPoint(41, 40.0001, -73.9998, 5f, 8f, 0f, 410_000, false)
+        )
+        val json = """
+            {"code":"Ok","tracepoints":[
+              {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},
+              {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-73.9998,40.0001]}],
+             "matchings":[{"confidence":0.95,"legs":[{"steps":[
+              {"name":"","ref":"I-295","distance":12,"maneuver":{"type":"continue"},
+               "geometry":{"type":"LineString","coordinates":[[-74,40],[-73.9999,40.00005]]}},
+              {"name":"","ref":"","distance":12,"maneuver":{"type":"off ramp"},
+               "geometry":{"type":"LineString","coordinates":[[-73.9999,40.00005],[-73.9998,40.0001]]}}
+             ]}]}]}
+        """.trimIndent()
+
+        val roads = requireNotNull(OsrmMatcher().parse(json, routePoints)).roads
+        assertEquals(2, roads.size)
+        assertEquals("I-295", roads[0].name)
+        assertEquals("I-295", roads[0].reference)
+        assertTrue(roads[0].countTowardsRoads)
+        assertEquals("Unnamed road", roads[1].name)
+        assertFalse(roads[1].countTowardsRoads)
+    }
+
 }

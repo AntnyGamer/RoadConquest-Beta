@@ -64,6 +64,107 @@ class TravelStatsTest {
         assertEquals(2L, repo.getSummary().roadSegmentCount)
     }
 
+    @Test fun sameRouteRefMergesDifferentNamesAndDividedCarriageways() {
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "North Freeway", "[[-74.003,40.0000],[-74.000,40.0000]]",
+                1, 2, 1.0, reference = "I-295"
+            ),
+            MatchedRoad(
+                "South Freeway", "[[-74.003,40.0004],[-74.000,40.0004]]",
+                3, 4, 1.0, reference = "I 295"
+            )
+        ))
+        assertEquals(2L, repo.getSummary().roadSegmentCount)
+        assertEquals(1L, repo.getSummary().roadsUnlockedCount)
+    }
+
+    @Test fun multiplexedRouteDoesNotTransitivelyCollapseDistinctRoutes() {
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Interstate", "[[-74.0030,40],[-74.0020,40]]",
+                1, 2, 1.0, reference = "I-95"
+            ),
+            MatchedRoad(
+                "Overlap", "[[-74.0020,40],[-74.0010,40]]",
+                2, 3, 1.0, reference = "US-1; I-95"
+            ),
+            MatchedRoad(
+                "US Highway", "[[-74.0010,40],[-74.0000,40]]",
+                3, 4, 1.0, reference = "US-1"
+            )
+        ))
+        assertEquals(3L, repo.getSummary().roadSegmentCount)
+        assertEquals(2L, repo.getSummary().roadsUnlockedCount)
+    }
+
+    @Test fun concurrentRouteRefsDoNotMergeSeparateRoutesAfterTheyDiverge() {
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Shared Highway", "[[-74.002,40.0000],[-74.001,40.0000]]",
+                1, 2, 1.0, reference = "US 1;US 9"
+            )
+        ))
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Route 1", "[[-74.001,40.0000],[-74.000,40.0001]]",
+                3, 4, 1.0, reference = "US 1"
+            )
+        ))
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Route 9", "[[-74.001,40.0000],[-74.000,39.9999]]",
+                5, 6, 1.0, reference = "US 9"
+            )
+        ))
+        assertEquals(3L, repo.getSummary().roadSegmentCount)
+        assertEquals(2L, repo.getSummary().roadsUnlockedCount)
+    }
+
+    @Test fun identicalRouteRefsFarApartDoNotCollapseIntoOneRoad() {
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "A Road", "[[-74.001,40.0000],[-74.000,40.0000]]",
+                1, 2, 1.0, reference = "A1"
+            ),
+            MatchedRoad(
+                "Another A Road", "[[-74.001,41.0000],[-74.000,41.0000]]",
+                3, 4, 1.0, reference = "A1"
+            )
+        ))
+        assertEquals(2L, repo.getSummary().roadsUnlockedCount)
+    }
+
+    @Test fun connectorRampsStayVisibleWithoutInflatingHumanRoadCount() {
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Interstate 295", "[[-74.002,40],[-74.001,40]]",
+                1, 2, 1.0, reference = "I-295"
+            ),
+            MatchedRoad(
+                "Exit ramp", "[[-74.001,40],[-74.0005,40.0004]]",
+                2, 3, 1.0, countTowardsRoads = false
+            )
+        ))
+        assertEquals(2L, repo.getSummary().roadSegmentCount)
+        assertEquals(1L, repo.getSummary().roadsUnlockedCount)
+        assertEquals(2, repo.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).size)
+    }
+
+    @Test fun laterOrdinaryRoadEvidenceCanUpgradeAPreviouslyExcludedSegment() {
+        val geometry = "[[-74.001,40],[-74.0005,40.0004]]"
+        repo.upsertRoads(listOf(
+            MatchedRoad("Connector", geometry, 1, 2, 1.0, countTowardsRoads = false)
+        ))
+        assertEquals(0L, repo.getSummary().roadsUnlockedCount)
+
+        repo.upsertRoads(listOf(
+            MatchedRoad("Connector", geometry, 3, 4, 1.0)
+        ))
+        assertEquals(1L, repo.getSummary().roadsUnlockedCount)
+        assertEquals(1L, repo.getSummary().roadSegmentCount)
+    }
+
     @Test fun separateTripsClockChangesAndImpossibleJumpsDoNotAddMiles() {
         repo.insertLocations(listOf(point(0.0, 1_000), point(0.001, 11_000), point(1.0, 71_000), point(1.001, 81_000), point(2.0, 82_000), point(3.0, 80_000)))
         assertEquals(222.64, repo.getSummary().distanceMeters, 1.0)

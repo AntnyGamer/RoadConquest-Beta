@@ -1,26 +1,31 @@
 package com.roadconquest.app.data
 
 import org.json.JSONArray
+import java.text.Normalizer
 import java.util.Locale
 import kotlin.math.*
 
 /**
  * Groups locally saved matched fragments into user-facing road identities.
  *
- * Public OSRM does not expose authoritative OSM way IDs, so local counts remain estimates.
- * Count nearby fragments of the same street together despite GPS/matcher seams. Connected
- * unnamed access lanes form one local road network rather than one road per sampling fragment.
- * This groups identities only: it never invents geometry across an unrecorded gap.
+ * The local counter aims at human-perceived road identities rather than raw matcher fragments:
+ * signed route refs are strongest, continuous street names are next, and unnamed fragments use
+ * a deliberately tight topology rule. Ref-aware tolerance also joins nearby divided carriageways.
+ * This groups identities only; it never invents geometry across an unrecorded gap.
  */
 internal object RoadGrouping {
     const val JOIN_TOLERANCE_M = 75.0
+    const val REF_JOIN_TOLERANCE_M = 120.0
     private const val UNNAMED_JOIN_TOLERANCE_M = 25.0
     private const val EARTH_RADIUS_M = 6_371_008.8
     private const val METERS_PER_DEGREE = 111_320.0
+    private val WHITESPACE_RE = Regex("\\s+")
+    private val NON_ALNUM_RE = Regex("[^\\p{L}\\p{N}]")
 
     data class Road(
         val segmentId: String,
         val name: String,
+        val reference: String = "",
         val geometryJson: String,
         val minLatitude: Double,
         val maxLatitude: Double,
@@ -29,31 +34,62 @@ internal object RoadGrouping {
         val groupId: String? = null
     ) {
         val nameKey: String = normalizeName(name)
+        val referenceKeys: Set<String> = normalizeReferences(reference)
         val coordinates: DoubleArray? by lazy(LazyThreadSafetyMode.NONE) { parseCoordinates(geometryJson) }
     }
 
-    fun normalizeName(name: String): String = name.trim().lowercase(Locale.US)
-        .replace(Regex("\\s+"), " ").let { if (it == "unnamed road") "" else it }
+    fun normalizeName(name: String): String = name.trim().lowercase(Locale.ROOT)
+        .replace(WHITESPACE_RE, " ").let { if (it == "unnamed road") "" else it }
+
+    /**
+     * OSRM refs can contain several concurrent route numbers separated by semicolons.
+     * Removing punctuation makes common formatting variants (I-295 / I 295) compare equally
+     * without applying risky language-specific street-name abbreviation rules.
+     */
+    fun normalizeReferences(reference: String): Set<String> =
+        reference.split(';')
+            .asSequence()
+            .map {
+                Normalizer.normalize(it.trim(), Normalizer.Form.NFKC)
+                    .uppercase(Locale.ROOT)
+                    .replace(NON_ALNUM_RE, "")
+            }
+            .filter { it.isNotEmpty() }
+            .toCollection(linkedSetOf())
 
     fun isUnnamed(nameKey: String): Boolean =
         nameKey.isEmpty() || nameKey == "unnamed road"
 
+    /**
+     * Any shared signed route ref is strong local identity evidence. The repository narrows
+     * multiplexed refs to the overlap supported by each connected continuation, preventing a
+     * shared US-1/US-9 section from transitively merging the routes after they diverge.
+     */
+    fun sharedReference(first: Road, second: Road): Boolean =
+        first.referenceKeys.isNotEmpty() && second.referenceKeys.isNotEmpty() &&
+            first.referenceKeys.any(second.referenceKeys::contains)
 
     fun connected(first: Road, second: Road): Boolean {
-        if (first.nameKey != second.nameKey) return false
-        if (!boundsCanTouch(first, second)) return false
+        val sharedRef = sharedReference(first, second)
+        if (!sharedRef && first.nameKey != second.nameKey) return false
+        // Two unrelated unnamed fragments still need the tight access-road seam rule.
+        if (!sharedRef && isUnnamed(first.nameKey) != isUnnamed(second.nameKey)) return false
+        val tolerance = when {
+            sharedRef -> REF_JOIN_TOLERANCE_M
+            isUnnamed(first.nameKey) -> UNNAMED_JOIN_TOLERANCE_M
+            else -> JOIN_TOLERANCE_M
+        }
+        if (!boundsCanTouch(first, second, tolerance)) return false
         val a = first.coordinates ?: return false
         val b = second.coordinates ?: return false
         if (a.size < 4 || b.size < 4) return false
-        val tolerance = if (isUnnamed(first.nameKey)) UNNAMED_JOIN_TOLERANCE_M else JOIN_TOLERANCE_M
         return endpointToPolylineMeters(a[0], a[1], b) <= tolerance ||
             endpointToPolylineMeters(a[a.size - 2], a[a.size - 1], b) <= tolerance ||
             endpointToPolylineMeters(b[0], b[1], a) <= tolerance ||
             endpointToPolylineMeters(b[b.size - 2], b[b.size - 1], a) <= tolerance
     }
 
-    private fun boundsCanTouch(first: Road, second: Road): Boolean {
-        val tolerance = if (isUnnamed(first.nameKey)) UNNAMED_JOIN_TOLERANCE_M else JOIN_TOLERANCE_M
+    private fun boundsCanTouch(first: Road, second: Road, tolerance: Double): Boolean {
         val latitudePad = tolerance / METERS_PER_DEGREE
         if (first.maxLatitude + latitudePad < second.minLatitude ||
             second.maxLatitude + latitudePad < first.minLatitude

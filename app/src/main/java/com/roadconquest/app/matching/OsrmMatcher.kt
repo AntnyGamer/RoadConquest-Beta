@@ -1,6 +1,7 @@
 package com.roadconquest.app.matching
 
 import com.roadconquest.app.data.MatchedRoad
+import com.roadconquest.app.data.RoadGrouping
 import com.roadconquest.app.data.TrackPoint
 import org.json.JSONArray
 import org.json.JSONObject
@@ -8,6 +9,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -190,10 +192,26 @@ class OsrmMatcher(
             val connected = connectStart(previous, coordinates)
             val geometryMeters = lineLengthMeters(connected)
             if (geometryMeters >= MIN_GEOMETRY_LENGTH_M) {
+                val rawName = step.optString("name").trim()
+                val reference = step.optString("ref").trim()
+                val rotaryName = step.optString("rotary_name").trim()
+                val maneuverType = step.optJSONObject("maneuver")
+                    ?.optString("type")
+                    ?.trim()
+                    ?.lowercase(Locale.ROOT)
+                    .orEmpty()
+                val countTowardsRoads = when (maneuverType) {
+                    "ramp", "on ramp", "off ramp" -> false
+                    "roundabout", "roundabout turn", "rotary" ->
+                        rawName.isNotBlank() || rotaryName.isNotBlank() || reference.isNotBlank()
+                    else -> true
+                }
                 parsed += StepGeometry(
-                    step.optString("name").ifBlank { step.optString("ref").ifBlank { "Unnamed road" } },
-                    connected,
-                    geometryMeters
+                    name = rawName.ifBlank { rotaryName.ifBlank { reference.ifBlank { "Unnamed road" } } },
+                    reference = reference,
+                    countTowardsRoads = countTowardsRoads,
+                    coordinates = connected,
+                    meters = geometryMeters
                 )
             }
             previous = connected.getJSONArray(connected.length() - 1)
@@ -233,7 +251,9 @@ class OsrmMatcher(
                     coordinatesJson = step.coordinates.toString(),
                     firstTimestamp = firstTime,
                     lastTimestamp = lastTime,
-                    confidence = confidence
+                    confidence = confidence,
+                    reference = step.reference,
+                    countTowardsRoads = step.countTowardsRoads
                 ))
             }
         }
@@ -241,7 +261,7 @@ class OsrmMatcher(
 
     private fun appendRoad(roads: MutableList<MatchedRoad>, road: MatchedRoad) {
         val previous = roads.lastOrNull()
-        if (previous == null || !sameNamedRoad(previous.name, road.name)) {
+        if (previous == null || !sameMergeIdentity(previous, road)) {
             roads += road
             return
         }
@@ -267,15 +287,19 @@ class OsrmMatcher(
             coordinatesJson = merged.toString(),
             firstTimestamp = previous.firstTimestamp,
             lastTimestamp = road.lastTimestamp,
-            confidence = minOf(previous.confidence, road.confidence)
+            confidence = minOf(previous.confidence, road.confidence),
+            reference = previous.reference,
+            countTowardsRoads = previous.countTowardsRoads
         )
     }
 
-    private fun sameNamedRoad(a: String, b: String): Boolean {
-        val first = a.trim()
-        val second = b.trim()
-        return first.isNotEmpty() && !first.equals("Unnamed road", ignoreCase = true) &&
-            first.equals(second, ignoreCase = true)
+    private fun sameMergeIdentity(a: MatchedRoad, b: MatchedRoad): Boolean {
+        val first = RoadGrouping.normalizeName(a.name)
+        if (first.isEmpty() || first != RoadGrouping.normalizeName(b.name) ||
+            a.countTowardsRoads != b.countTowardsRoads
+        ) return false
+        return RoadGrouping.normalizeReferences(a.reference) ==
+            RoadGrouping.normalizeReferences(b.reference)
     }
 
     private fun buildBearingGuidance(points: List<TrackPoint>): String? {
@@ -326,7 +350,13 @@ class OsrmMatcher(
     private fun normalizeBearing(value: Double): Double =
         ((value % 360.0) + 360.0) % 360.0
 
-    private data class StepGeometry(val name: String, val coordinates: JSONArray, val meters: Double)
+    private data class StepGeometry(
+        val name: String,
+        val reference: String,
+        val countTowardsRoads: Boolean,
+        val coordinates: JSONArray,
+        val meters: Double
+    )
 
     private fun connectStart(start: JSONArray, coordinates: JSONArray): JSONArray {
         val connected = JSONArray().put(copyCoordinate(start))

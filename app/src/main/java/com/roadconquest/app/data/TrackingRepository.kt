@@ -438,6 +438,8 @@ class TrackingRepository(context: Context) {
                     upsertRoadInTransaction(
                         db = db,
                         name = road.name,
+                        reference = road.reference,
+                        countTowardsRoads = road.countTowardsRoads,
                         geometryJson = road.coordinatesJson,
                         firstTimestamp = road.firstTimestamp,
                         lastTimestamp = road.lastTimestamp
@@ -454,6 +456,8 @@ class TrackingRepository(context: Context) {
     private fun upsertRoadInTransaction(
         db: SQLiteDatabase,
         name: String,
+        reference: String,
+        countTowardsRoads: Boolean,
         geometryJson: String,
         firstTimestamp: Long,
         lastTimestamp: Long
@@ -477,7 +481,21 @@ class TrackingRepository(context: Context) {
                 groupId = cursor.getString(2)
             )
         }
-        val groupId = localRoadGroupId(db, segmentId, name, geometryJson, bounds, existing?.groupId)
+        val previousGroup = existing?.groupId.orEmpty()
+        val groupId = when {
+            !countTowardsRoads && previousGroup.isNotBlank() && !isExcludedRoadGroup(previousGroup) ->
+                previousGroup
+            !countTowardsRoads -> excludedRoadGroupId(segmentId)
+            else -> localRoadGroupId(
+                db = db,
+                segmentId = segmentId,
+                name = name,
+                reference = reference,
+                geometryJson = geometryJson,
+                bounds = bounds,
+                existingGroupId = previousGroup.takeUnless(::isExcludedRoadGroup)
+            )
+        }
 
         val values = ContentValues().apply {
             put("segment_id", segmentId)
@@ -503,6 +521,7 @@ class TrackingRepository(context: Context) {
         db: SQLiteDatabase,
         segmentId: String,
         name: String,
+        reference: String,
         geometryJson: String,
         bounds: RoadBounds,
         existingGroupId: String?
@@ -510,6 +529,7 @@ class TrackingRepository(context: Context) {
         val current = RoadGrouping.Road(
             segmentId = segmentId,
             name = name,
+            reference = reference,
             geometryJson = geometryJson,
             minLatitude = bounds.minLat,
             maxLatitude = bounds.maxLat,
@@ -517,9 +537,10 @@ class TrackingRepository(context: Context) {
             maxLongitude = bounds.maxLon,
             groupId = existingGroupId
         )
-        val latitudePad = RoadGrouping.JOIN_TOLERANCE_M / METERS_PER_DEGREE
+        val queryTolerance = maxOf(RoadGrouping.JOIN_TOLERANCE_M, RoadGrouping.REF_JOIN_TOLERANCE_M)
+        val latitudePad = queryTolerance / METERS_PER_DEGREE
         val centerLatitude = (bounds.minLat + bounds.maxLat) / 2.0
-        val longitudePad = RoadGrouping.JOIN_TOLERANCE_M /
+        val longitudePad = queryTolerance /
             (METERS_PER_DEGREE * cos(Math.toRadians(centerLatitude)).coerceAtLeast(0.01))
         val longitudeSpan = if (bounds.maxLon >= bounds.minLon) {
             bounds.maxLon - bounds.minLon
@@ -546,8 +567,18 @@ class TrackingRepository(context: Context) {
             else -> arrayOf(queryWest.toString(), queryEast.toString())
         }
         val groupIds = LinkedHashSet<String>()
-        val ungroupedSegments = ArrayList<String>()
-        existingGroupId?.takeIf { it.isNotBlank() }?.let(groupIds::add)
+        val ungroupedSegments = LinkedHashSet<String>()
+        val canonicalSegments = linkedSetOf(segmentId)
+        var referenceKeys = current.referenceKeys
+        existingGroupId?.takeIf { it.isNotBlank() }?.let { group ->
+            groupIds += group
+            canonicalSegments += canonicalSegmentFromGroupId(group)
+            referenceKeys = reconcileCurrentReferenceKeys(
+                current.referenceKeys,
+                referenceKeysFromGroupId(group)
+            )
+        }
+        var identityRoad = current.copy(reference = referenceKeys.joinToString(";"))
 
         db.query(
             "roads",
@@ -564,44 +595,106 @@ class TrackingRepository(context: Context) {
             ),
             null,
             null,
-            null
+            "segment_id ASC"
         ).use { cursor ->
             while (cursor.moveToNext()) {
+                val storedGroup = cursor.getString(7).orEmpty()
+                if (isExcludedRoadGroup(storedGroup)) continue
                 val candidate = RoadGrouping.Road(
                     segmentId = cursor.getString(0),
                     name = cursor.getString(1),
+                    reference = referenceKeysFromGroupId(storedGroup).joinToString(";"),
                     geometryJson = cursor.getString(2),
                     minLatitude = cursor.getDouble(3),
                     maxLatitude = cursor.getDouble(4),
                     minLongitude = cursor.getDouble(5),
                     maxLongitude = cursor.getDouble(6),
-                    groupId = cursor.getString(7)
+                    groupId = storedGroup
                 )
-                if (!RoadGrouping.connected(current, candidate)) continue
-                val storedGroup = candidate.groupId.orEmpty()
+                if (!RoadGrouping.connected(identityRoad, candidate)) continue
+                referenceKeys = mergeConnectedReferenceKeys(referenceKeys, candidate.referenceKeys)
+                identityRoad = identityRoad.copy(reference = referenceKeys.joinToString(";"))
                 if (storedGroup.isBlank()) {
-                    groupIds += candidate.segmentId
                     ungroupedSegments += candidate.segmentId
+                    canonicalSegments += candidate.segmentId
                 } else {
                     groupIds += storedGroup
+                    canonicalSegments += canonicalSegmentFromGroupId(storedGroup)
                 }
             }
         }
 
-        if (existingGroupId != null && existingGroupId.isBlank()) groupIds += segmentId
-        val canonical = groupIds.minOrNull() ?: segmentId
-        if (groupIds.isNotEmpty()) {
-            val values = ContentValues().apply { put("road_group_id", canonical) }
-            for (group in groupIds) {
-                if (group != canonical) {
-                    db.update("roads", values, "road_group_id = ?", arrayOf(group))
-                }
-            }
-            for (candidateId in ungroupedSegments) {
-                db.update("roads", values, "segment_id = ?", arrayOf(candidateId))
+        val identityPrefix = humanRoadIdentityPrefix(name, referenceKeys)
+        val canonicalSegment = canonicalSegments.minOrNull() ?: segmentId
+        val canonical = "$identityPrefix|$canonicalSegment"
+        val values = ContentValues().apply { put("road_group_id", canonical) }
+        for (group in groupIds) {
+            if (group != canonical) {
+                db.update("roads", values, "road_group_id = ?", arrayOf(group))
             }
         }
+        for (candidateId in ungroupedSegments) {
+            db.update("roads", values, "segment_id = ?", arrayOf(candidateId))
+        }
         return canonical
+    }
+
+    private fun excludedRoadGroupId(segmentId: String): String = "$EXCLUDED_ROAD_GROUP_PREFIX$segmentId"
+
+    private fun isExcludedRoadGroup(groupId: String): Boolean =
+        groupId.startsWith(EXCLUDED_ROAD_GROUP_PREFIX)
+
+    private fun canonicalSegmentFromGroupId(groupId: String): String {
+        if (!groupId.startsWith(HUMAN_ROAD_GROUP_PREFIX)) return groupId
+        val parts = groupId.split('|', limit = 4)
+        return parts.getOrNull(3).orEmpty().ifBlank { groupId }
+    }
+
+    private fun referenceKeysFromGroupId(groupId: String): Set<String> {
+        if (!groupId.startsWith(HUMAN_ROAD_GROUP_PREFIX)) return emptySet()
+        val parts = groupId.split('|', limit = 4)
+        if (parts.size != 4 || parts[1] != "r") return emptySet()
+        return parts[2].split(',').filterTo(linkedSetOf()) { it.isNotBlank() }
+    }
+
+    private fun reconcileCurrentReferenceKeys(
+        observed: Set<String>,
+        stored: Set<String>
+    ): Set<String> {
+        if (observed.isEmpty()) return stored
+        if (stored.isEmpty()) return observed
+        val shared = observed intersect stored
+        return if (shared.isNotEmpty()) shared else observed
+    }
+
+    private fun mergeConnectedReferenceKeys(
+        current: Set<String>,
+        candidate: Set<String>
+    ): Set<String> {
+        if (current.isEmpty()) return candidate
+        if (candidate.isEmpty()) return current
+        // Keep only route identity supported by both connected pieces. This prevents a
+        // concurrent US-1/US-9 segment from transitively merging the separate routes after
+        // they diverge. If refs disagree but the street name itself connected them, fall back
+        // to the human street-name identity rather than inventing a route relationship.
+        return current intersect candidate
+    }
+
+    private fun humanRoadIdentityPrefix(name: String, referenceKeys: Set<String>): String {
+        if (referenceKeys.isNotEmpty()) {
+            return HUMAN_ROAD_GROUP_PREFIX + "r|" + referenceKeys.sorted().joinToString(",")
+        }
+        val nameKey = RoadGrouping.normalizeName(name)
+        if (nameKey.isNotEmpty()) {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(nameKey.toByteArray(Charsets.UTF_8))
+            val shortHash = String(CharArray(16) { index ->
+                val byte = digest[index / 2].toInt() and 0xff
+                "0123456789abcdef"[if (index % 2 == 0) byte ushr 4 else byte and 0x0f]
+            })
+            return HUMAN_ROAD_GROUP_PREFIX + "n|$shortHash"
+        }
+        return HUMAN_ROAD_GROUP_PREFIX + "u|-"
     }
 
     private data class ExistingRoad(
@@ -1175,8 +1268,11 @@ class TrackingRepository(context: Context) {
         private fun roadSummaryOf(db: SQLiteDatabase): AppDatabase.RoadSummaryCache = db.rawQuery(
             """
             SELECT COUNT(*),
-                COUNT(DISTINCT CASE WHEN road_group_id IS NULL OR road_group_id = ''
-                    THEN segment_id ELSE road_group_id END)
+                COUNT(DISTINCT CASE
+                    WHEN road_group_id LIKE 'x2|%' THEN NULL
+                    WHEN road_group_id IS NULL OR road_group_id = '' THEN segment_id
+                    ELSE road_group_id
+                END)
             FROM roads
             """.trimIndent(),
             null
@@ -1201,6 +1297,8 @@ class TrackingRepository(context: Context) {
             )
         }
 
+        private const val HUMAN_ROAD_GROUP_PREFIX = "h2|"
+        private const val EXCLUDED_ROAD_GROUP_PREFIX = "x2|"
         private const val MATCH_CLUSTER_GAP_MS = 30_000L
         private const val MATCH_ANCHOR_MAX_GAP_MS = 30_000L
         private const val MAX_STOP_CONTINUATION_MS = 15 * 60_000L
