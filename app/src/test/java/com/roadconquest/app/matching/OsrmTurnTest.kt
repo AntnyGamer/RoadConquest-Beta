@@ -236,6 +236,85 @@ class OsrmTurnTest {
         assertFalse(3L in result.matchedPointConfidences)
     }
 
+    @Test fun rejectedMiddleLegCannotBeReintroducedBySameRoadBridge() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p2 = coord(-74.0, 40.00010)
+        val p3 = coord(-74.0, 40.00000)
+        val far = coord(-73.99, 40.01)
+
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(
+                        trace(0, 0, p0), trace(0, 1, p1),
+                        trace(0, 2, p2), trace(0, 3, p3)
+                    ),
+                    matching(
+                        leg("Main Road", p0, p1),
+                        leg("Main Road", p1, far, p2),
+                        leg("Main Road", p2, p3)
+                    )
+                ),
+                points(p0, p1, p2, p3)
+            )
+        )
+
+        assertEquals(2, result.roads.size)
+        assertEquals(setOf(1L, 2L, 4L), result.matchedPointConfidences.keys)
+        assertFalse(3L in result.matchedPointConfidences)
+        assertFalse(result.roads.any {
+            it.firstTimestamp == 1_003_000L && it.lastTimestamp == 1_006_000L
+        })
+    }
+
+    @Test fun sameRoadSplitTooLargeForTinySeamRepairStaysPending() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p2 = coord(-73.99890, 40.00020)
+        val p3 = coord(-73.99890, 40.00010)
+
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(
+                        trace(0, 0, p0), trace(0, 1, p1),
+                        trace(1, 0, p2), trace(1, 1, p3)
+                    ),
+                    matching(leg("Main Road", p0, p1)),
+                    matching(leg("Main Road", p2, p3))
+                ),
+                points(p0, p1, p2, p3)
+            )
+        )
+
+        assertEquals(2, result.roads.size)
+        assertEquals(setOf(1L, 2L, 4L), result.matchedPointConfidences.keys)
+        assertFalse(3L in result.matchedPointConfidences)
+    }
+
+    @Test fun legitimateLowSpeedCenterlineOffsetStillMatches() {
+        val snappedStart = coord(-73.99993, 40.0)
+        val snappedEnd = coord(-73.99993, 40.0001)
+        val rawPoints = listOf(
+            TrackPoint(1, 40.0, -74.0, 3.8f, 3.3f, 0f, 1_000_000L, false),
+            TrackPoint(2, 40.0001, -74.0, 3.8f, 3.3f, 0f, 1_003_000L, false)
+        )
+
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, snappedStart), trace(0, 1, snappedEnd)),
+                    matching(leg("Main Road", snappedStart, snappedEnd))
+                ),
+                rawPoints
+            )
+        )
+
+        assertEquals(1, result.roads.size)
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
+    }
+
     @Test fun nearbyParallelRoadSnapBeyondReportedAccuracyStaysPending() {
         val rawStart = coord(-74.0, 40.0)
         val rawEnd = coord(-74.0, 40.0001)
