@@ -145,14 +145,12 @@ class OsrmTurnTest {
         assertTrue(result.matchedPointConfidences.isEmpty())
     }
 
-    @Test fun disconnectedStepGeometryStaysPendingWithoutPoisoningTheBatch() {
+    @Test fun whollyDisconnectedStepGeometryKeepsTheLongFailureBackoff() {
         val badLeg = leg("Approach", a, b)
         badLeg.getJSONArray("steps").put(leg("Exit", d, e).getJSONArray("steps").getJSONObject(0))
-        val result = requireNotNull(
+        assertNull(
             OsrmMatcher().parse(response(listOf(trace(0, 0, a), trace(0, 1, e)), matching(badLeg)), points(a, e))
         )
-        assertTrue(result.roads.isEmpty())
-        assertTrue(result.matchedPointConfidences.isEmpty())
     }
 
     @Test fun missingAmbiguityOrShiftedWaypointIndexCannotResolveFixes() {
@@ -212,12 +210,10 @@ class OsrmTurnTest {
 
     @Test fun unsupportedDetourCannotTurnARecordedStraightDriveIntoAnInventedRoad() {
         val far = coord(-73.99, 40.01)
-        val result = requireNotNull(
+        assertNull(
             OsrmMatcher().parse(response(listOf(trace(0, 0, a), trace(0, 1, b)),
                 matching(leg("Detour", a, far, b))), points(a, b))
         )
-        assertTrue(result.roads.isEmpty())
-        assertTrue(result.matchedPointConfidences.isEmpty())
     }
 
     @Test fun oneBadLegKeepsOnlyThatIntervalPendingAndPreservesValidSiblingGeometry() {
@@ -250,7 +246,7 @@ class OsrmTurnTest {
             TrackPoint(2, 40.0001, -74.0, 10f, 3f, 0f, 1_003_000L, false)
         )
 
-        val result = requireNotNull(
+        assertNull(
             OsrmMatcher().parse(
                 response(
                     listOf(trace(0, 0, parallelStart), trace(0, 1, parallelEnd)),
@@ -259,9 +255,6 @@ class OsrmTurnTest {
                 rawPoints
             )
         )
-
-        assertTrue(result.roads.isEmpty())
-        assertTrue(result.matchedPointConfidences.isEmpty())
         assertNotEquals(rawStart.toString(), parallelStart.toString())
         assertNotEquals(rawEnd.toString(), parallelEnd.toString())
     }
