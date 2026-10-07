@@ -71,7 +71,7 @@ object DataExporter {
     ) {
         val metadata = JSONObject()
             .put("app", "Road Conquest")
-            .put("schema_version", 7)
+            .put("schema_version", 8)
             .put("explored_place_count", exploredCount)
             .put("road_visit_count", roadVisitCount)
             .put("points_balance", progression.balance)
