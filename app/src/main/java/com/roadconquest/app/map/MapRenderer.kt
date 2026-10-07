@@ -166,7 +166,7 @@ class MapRenderer(
     }
 
     fun setFogEnabled(enabled: Boolean) {
-        if (destroyed) return
+        if (destroyed || enabled == fogEnabled) return
         fogEnabled = enabled
         updateFogCoverage(force = true)
         if (enabled) scheduleFogRender()
