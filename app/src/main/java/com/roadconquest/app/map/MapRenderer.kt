@@ -122,7 +122,7 @@ class MapRenderer(
         val cameraPosition = map.cameraPosition
         updateCameraLimits(cameraPosition)
         updateFogCoverage(cameraPosition = cameraPosition)
-        scheduleFogRender(cameraPosition.zoom)
+        scheduleFogRender(cameraPosition)
     }
 
     private val expireLocation = Runnable {
@@ -143,7 +143,7 @@ class MapRenderer(
         updateCameraLimits(cameraPosition)
         updateFogCoverage(cameraPosition = cameraPosition)
         if (cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
-            scheduleFogRender(cameraPosition.zoom)
+            scheduleFogRender(cameraPosition)
         }
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
@@ -841,17 +841,16 @@ class MapRenderer(
         (style.getLayer(CAR_LAYER_ID) as? SymbolLayer)?.setProperties(iconRotate(fix.bearing.toFloat()))
     }
 
-    private fun scheduleFogRender(cameraZoom: Double? = null) {
+    private fun scheduleFogRender(cameraPosition: CameraPosition? = null) {
         if (destroyed || !fogEnabled) return
-        // Callers already handling a camera callback can pass that same snapshot to avoid
-        // another native camera-state read. Other callers still read the current zoom here.
-        val zoom = cameraZoom ?: map.cameraPosition.zoom
+        // Snapshot native camera state once when the caller did not already provide it.
+        val position = cameraPosition ?: map.cameraPosition
         // At overview zooms the static world fog already provides complete coverage. Do not
         // burn CPU/GPU time rebuilding detailed reveal bitmaps that are intentionally hidden.
-        if (zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
+        if (position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
             mainHandler.removeCallbacks(renderFog)
             fogAgain = false
-            updateFogCoverage()
+            updateFogCoverage(cameraPosition = position)
             return
         }
         if (fogRunning) {
