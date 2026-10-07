@@ -498,7 +498,9 @@ object FogBitmapRenderer {
             Shader.TileMode.CLAMP
         )
         val roadRadial = radial(ROAD_CLEAR_M / ROAD_FULL_M)
-        val locationRadial = radial(LOCATION_CLEAR_M / LOCATION_FULL_M)
+        // Road and place reveals intentionally use the same clear/full radii, so the exact
+        // same immutable shader can serve both instead of allocating a duplicate gradient.
+        val locationRadial = roadRadial
         private var revealBitmap: Bitmap? = null
 
         fun acquireRevealBitmap(width: Int, height: Int): Bitmap {

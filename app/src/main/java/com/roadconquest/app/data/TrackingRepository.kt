@@ -18,20 +18,29 @@ class TrackingRepository(context: Context) {
     /** A visited cell reveals fog only; it never enters driving history or road matching. */
     @Synchronized
     fun recordExploredPlace(location: Location): Boolean {
+        val cellKey = exploredCellKey(location.latitude, location.longitude) ?: return false
+        return recordExploredPlace(location, cellKey)
+    }
+
+    /** Same write path when the tracking service has already computed the exact 50 m cell. */
+    @Synchronized
+    internal fun recordExploredPlace(location: Location, cellKey: Long): Boolean {
         synchronized(dbHelper.historyLock) {
             if (historyGeneration != dbHelper.historyGeneration) return false
             if (location.isMock || !location.hasAccuracy() || location.accuracy !in 0.01f..25f ||
-                location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0) return false
-            val radius = 6378137.0
-            val longitude = ((location.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-            val x = floor(radius * Math.toRadians(longitude) / 50.0).toLong()
-            val y = floor(radius * ln(tan(PI / 4 + Math.toRadians(location.latitude.coerceIn(-85.05112878, 85.05112878)) / 2)) / 50.0).toLong()
+                !location.latitude.isFinite() || !location.longitude.isFinite() ||
+                location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0
+            ) return false
+            val x = (cellKey shr 32).toInt().toLong()
+            val y = cellKey.toInt().toLong()
             val values = ContentValues().apply {
                 put("cell_x", x); put("cell_y", y)
-                put("latitude", Math.toDegrees(atan(sinh((y + 0.5) * 50.0 / radius))))
-                put("longitude", Math.toDegrees((x + 0.5) * 50.0 / radius).coerceIn(-180.0, 180.0))
+                put("latitude", Math.toDegrees(atan(sinh((y + 0.5) * EXPLORED_CELL_SIZE_M / WEB_MERCATOR_RADIUS_M))))
+                put("longitude", Math.toDegrees((x + 0.5) * EXPLORED_CELL_SIZE_M / WEB_MERCATOR_RADIUS_M).coerceIn(-180.0, 180.0))
             }
-            return dbHelper.writableDatabase.insertWithOnConflict("explored_places", null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
+            return dbHelper.writableDatabase.insertWithOnConflict(
+                "explored_places", null, values, SQLiteDatabase.CONFLICT_IGNORE
+            ) != -1L
         }
     }
 
@@ -56,14 +65,26 @@ class TrackingRepository(context: Context) {
         synchronized(dbHelper.historyLock) {
             if (historyGeneration != dbHelper.historyGeneration) return -1L
             val db = dbHelper.writableDatabase
+            val delta = TrackInsertDelta()
+            var persistedPoint: LastPoint? = null
             db.beginTransaction()
-            try {
-                val id = insertLocationInTransaction(db, location, loadLastPoint(db))
-                db.setTransactionSuccessful()
-                return id
+            val id = try {
+                val previous = loadLastPoint(db)
+                insertLocationInTransaction(db, location, previous, delta).also {
+                    persistedPoint = previous
+                    db.setTransactionSuccessful()
+                }
             } finally {
                 db.endTransaction()
             }
+            dbHelper.applyTrackSummaryDelta(
+                delta.count,
+                delta.firstTimestamp,
+                delta.lastTimestamp,
+                delta.distanceMeters
+            )
+            persistedPoint?.let(::cacheLastPoint)
+            return id
         }
     }
 
@@ -73,18 +94,38 @@ class TrackingRepository(context: Context) {
         synchronized(dbHelper.historyLock) {
             if (historyGeneration != dbHelper.historyGeneration) return
             val db = dbHelper.writableDatabase
+            val delta = TrackInsertDelta()
+            var persistedPoint: LastPoint? = null
             db.beginTransaction()
             try {
                 val previous = loadLastPoint(db)
-                locations.forEach { insertLocationInTransaction(db, it, previous) }
+                locations.forEach { insertLocationInTransaction(db, it, previous, delta) }
+                persistedPoint = previous
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
             }
+            dbHelper.applyTrackSummaryDelta(
+                delta.count,
+                delta.firstTimestamp,
+                delta.lastTimestamp,
+                delta.distanceMeters
+            )
+            persistedPoint?.let(::cacheLastPoint)
         }
     }
 
     private fun loadLastPoint(db: SQLiteDatabase): LastPoint {
+        if (dbHelper.summaryCachingEnabled) {
+            dbHelper.lastTrackPointCache?.let { cached ->
+                return LastPoint(
+                    present = cached.present,
+                    latitude = cached.latitude,
+                    longitude = cached.longitude,
+                    timestamp = cached.timestamp
+                )
+            }
+        }
         val previous = LastPoint()
         db.query(
             "track_points", arrayOf("latitude", "longitude", "timestamp_ms"),
@@ -97,10 +138,26 @@ class TrackingRepository(context: Context) {
                 previous.timestamp = cursor.getLong(2)
             }
         }
+        if (dbHelper.summaryCachingEnabled) cacheLastPoint(previous)
         return previous
     }
 
-    private fun insertLocationInTransaction(db: SQLiteDatabase, location: Location, previous: LastPoint): Long {
+    private fun cacheLastPoint(point: LastPoint) {
+        if (!dbHelper.summaryCachingEnabled) return
+        dbHelper.lastTrackPointCache = AppDatabase.LastTrackPointCache(
+            present = point.present,
+            latitude = point.latitude,
+            longitude = point.longitude,
+            timestamp = point.timestamp
+        )
+    }
+
+    private fun insertLocationInTransaction(
+        db: SQLiteDatabase,
+        location: Location,
+        previous: LastPoint,
+        delta: TrackInsertDelta
+    ): Long {
         val timestamp = location.time.takeIf { it > 0L } ?: System.currentTimeMillis()
         val distance = if (previous.present) TravelDistance.between(
             previous.latitude, previous.longitude, previous.timestamp,
@@ -121,7 +178,26 @@ class TrackingRepository(context: Context) {
         previous.latitude = location.latitude
         previous.longitude = location.longitude
         previous.timestamp = timestamp
+        delta.add(timestamp, distance)
         return id
+    }
+
+    private class TrackInsertDelta {
+        var count = 0L
+            private set
+        var firstTimestamp: Long? = null
+            private set
+        var lastTimestamp: Long? = null
+            private set
+        var distanceMeters = 0.0
+            private set
+
+        fun add(timestamp: Long, distance: Double) {
+            count++
+            firstTimestamp = firstTimestamp?.let { minOf(it, timestamp) } ?: timestamp
+            lastTimestamp = lastTimestamp?.let { maxOf(it, timestamp) } ?: timestamp
+            distanceMeters += distance
+        }
     }
 
     private class LastPoint(
@@ -371,6 +447,7 @@ class TrackingRepository(context: Context) {
             } finally {
                 db.endTransaction()
             }
+            dbHelper.invalidateRoadSummary()
         }
     }
 
@@ -714,7 +791,26 @@ class TrackingRepository(context: Context) {
 
     @Synchronized
     fun getSummary(): DataSummary = synchronized(dbHelper.historyLock) {
-        summaryOf(dbHelper.readableDatabase).copy(historyGeneration = dbHelper.historyGeneration)
+        val db = dbHelper.readableDatabase
+        val track = if (dbHelper.summaryCachingEnabled) {
+            dbHelper.trackSummaryCache ?: trackSummaryOf(db).also { dbHelper.trackSummaryCache = it }
+        } else {
+            trackSummaryOf(db)
+        }
+        val roads = if (dbHelper.summaryCachingEnabled) {
+            dbHelper.roadSummaryCache ?: roadSummaryOf(db).also { dbHelper.roadSummaryCache = it }
+        } else {
+            roadSummaryOf(db)
+        }
+        DataSummary(
+            track.pointCount,
+            roads.segmentCount,
+            track.firstTrackAt,
+            track.lastTrackAt,
+            track.distanceMeters,
+            roads.unlockedCount,
+            dbHelper.historyGeneration
+        )
     }
 
     /** Copy history at one database revision, then release locks before slow ZIP I/O. */
@@ -777,10 +873,16 @@ class TrackingRepository(context: Context) {
                 db.endTransaction()
             }
             dbHelper.historyGeneration++
+            dbHelper.resetSummaryCaches()
         }
     }
 
-    fun readableDatabase() = dbHelper.readableDatabase
+    fun readableDatabase(): SQLiteDatabase = synchronized(dbHelper.historyLock) {
+        // Raw database access can mutate summary tables behind TrackingRepository's back.
+        // Production code does not need this escape hatch; tests/debug tooling do.
+        dbHelper.disableSummaryCaching()
+        dbHelper.readableDatabase
+    }
 
     private fun android.database.Cursor.toTrackPoint() = TrackPoint(
         id = getLong(0),
@@ -1036,30 +1138,66 @@ class TrackingRepository(context: Context) {
     }
 
     companion object {
-        internal fun summaryOf(db: SQLiteDatabase): DataSummary = db.rawQuery(
+        /**
+         * Stable 50 m Web-Mercator cell key shared by tracking and persistence. Keeping this
+         * calculation outside SQLite lets the foreground service suppress repeat writes to a
+         * cell it has already processed during the current tracking session.
+         */
+        internal fun exploredCellKey(latitude: Double, longitude: Double): Long? {
+            if (!latitude.isFinite() || !longitude.isFinite() ||
+                latitude !in -90.0..90.0 || longitude !in -180.0..180.0
+            ) return null
+            val wrappedLongitude = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+            val x = floor(
+                WEB_MERCATOR_RADIUS_M * Math.toRadians(wrappedLongitude) / EXPLORED_CELL_SIZE_M
+            ).toInt()
+            val y = floor(
+                WEB_MERCATOR_RADIUS_M *
+                    ln(tan(PI / 4 + Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878)) / 2)) /
+                    EXPLORED_CELL_SIZE_M
+            ).toInt()
+            return (x.toLong() shl 32) xor (y.toLong() and 0xffff_ffffL)
+        }
+
+        private fun trackSummaryOf(db: SQLiteDatabase): AppDatabase.TrackSummaryCache = db.rawQuery(
+            "SELECT COUNT(*), MIN(timestamp_ms), MAX(timestamp_ms), COALESCE(SUM(distance_m), 0) FROM track_points",
+            null
+        ).use {
+            check(it.moveToFirst())
+            AppDatabase.TrackSummaryCache(
+                pointCount = it.getLong(0),
+                firstTrackAt = if (it.isNull(1)) null else it.getLong(1),
+                lastTrackAt = if (it.isNull(2)) null else it.getLong(2),
+                distanceMeters = it.getDouble(3)
+            )
+        }
+
+        private fun roadSummaryOf(db: SQLiteDatabase): AppDatabase.RoadSummaryCache = db.rawQuery(
             """
-            SELECT p.point_count, r.road_count, p.first_track_at, p.last_track_at, p.distance_meters, r.unlocked_count
-            FROM (
-                SELECT COUNT(*) point_count, COALESCE(SUM(distance_m), 0) distance_meters,
-                    MIN(timestamp_ms) first_track_at, MAX(timestamp_ms) last_track_at
-                FROM track_points
-            ) p CROSS JOIN (
-                SELECT COUNT(*) road_count,
-                    COUNT(DISTINCT CASE WHEN road_group_id IS NULL OR road_group_id = ''
-                        THEN segment_id ELSE road_group_id END) unlocked_count
-                FROM roads
-            ) r
+            SELECT COUNT(*),
+                COUNT(DISTINCT CASE WHEN road_group_id IS NULL OR road_group_id = ''
+                    THEN segment_id ELSE road_group_id END)
+            FROM roads
             """.trimIndent(),
             null
         ).use {
             check(it.moveToFirst())
-            DataSummary(
-                it.getLong(0),
-                it.getLong(1),
-                if (it.isNull(2)) null else it.getLong(2),
-                if (it.isNull(3)) null else it.getLong(3),
-                it.getDouble(4),
-                it.getLong(5)
+            AppDatabase.RoadSummaryCache(
+                segmentCount = it.getLong(0),
+                unlockedCount = it.getLong(1)
+            )
+        }
+
+        internal fun summaryOf(db: SQLiteDatabase): DataSummary {
+            val track = trackSummaryOf(db)
+            val roads = roadSummaryOf(db)
+            return DataSummary(
+                track.pointCount,
+                roads.segmentCount,
+                track.firstTrackAt,
+                track.lastTrackAt,
+                track.distanceMeters,
+                roads.unlockedCount
             )
         }
 
@@ -1100,6 +1238,8 @@ class TrackingRepository(context: Context) {
         )
 
         private const val EARTH_RADIUS_M = 6_371_008.8
+        private const val WEB_MERCATOR_RADIUS_M = 6_378_137.0
+        private const val EXPLORED_CELL_SIZE_M = 50.0
         private const val METERS_PER_DEGREE = 111_320.0
     }
 }

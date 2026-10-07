@@ -7,6 +7,9 @@ import javax.net.ssl.HttpsURLConnection
 
 object AccountClient {
     @Volatile internal var endpointOverrideForTests: String? = null
+    @Volatile private var cachedEndpointConfig: EndpointConfig? = null
+
+    private data class EndpointConfig(val base: String, val root: URI?)
 
     data class Account(
         val username: String,
@@ -16,7 +19,7 @@ object AccountClient {
 
     class ApiException(message: String, val status: Int? = null) : Exception(message)
 
-    fun isConfigured(): Boolean = endpoint("/") != null
+    fun isConfigured(): Boolean = endpointConfig().root != null
 
     fun signup(username: String, password: String): Account =
         auth("/v1/signup", username, password)
@@ -134,13 +137,24 @@ object AccountClient {
         }
     }
 
-    private fun endpoint(path: String): URI? {
+    private fun endpointConfig(): EndpointConfig {
         val base = (endpointOverrideForTests ?: BuildConfig.ACCOUNT_API_URL).trim().trimEnd('/')
-        if (base.isEmpty()) return null
-        val root = runCatching { URI(base) }.getOrNull() ?: return null
-        if (!root.scheme.equals("https", ignoreCase = true) || root.host.isNullOrBlank() ||
-            root.userInfo != null || root.query != null || root.fragment != null
-        ) return null
-        return URI(base + if (path.startsWith('/')) path else "/$path")
+        cachedEndpointConfig?.takeIf { it.base == base }?.let { return it }
+
+        val root = if (base.isEmpty()) {
+            null
+        } else {
+            runCatching { URI(base) }.getOrNull()?.takeIf {
+                it.scheme.equals("https", ignoreCase = true) && !it.host.isNullOrBlank() &&
+                    it.userInfo == null && it.query == null && it.fragment == null
+            }
+        }
+        return EndpointConfig(base, root).also { cachedEndpointConfig = it }
+    }
+
+    private fun endpoint(path: String): URI? {
+        val config = endpointConfig()
+        if (config.root == null) return null
+        return URI(config.base + if (path.startsWith('/')) path else "/$path")
     }
 }

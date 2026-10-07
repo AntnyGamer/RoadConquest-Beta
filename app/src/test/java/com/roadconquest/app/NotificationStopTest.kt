@@ -3,6 +3,7 @@ package com.roadconquest.app
 import android.Manifest
 import android.app.Service
 import android.content.Intent
+import android.location.Location
 import android.location.LocationManager
 import com.roadconquest.app.util.ForegroundSession
 import com.roadconquest.app.util.Prefs
@@ -29,6 +30,45 @@ class NotificationStopTest {
         Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_BACKGROUND_LOCATION, "${app.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
         Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(true)
+    }
+
+    @Test fun liveUiBroadcastIsSkippedWhenMainMapReceiverIsStopped() {
+        val app = RuntimeEnvironment.getApplication()
+        val controller = Robolectric.buildService(TrackingService::class.java).create()
+        val service = controller.get()
+        val send = TrackingService::class.java.getDeclaredMethod(
+            "sendLocationUpdate",
+            Location::class.java,
+            Double::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        val location = Location("gps").apply {
+            latitude = 40.0
+            longitude = -74.0
+            accuracy = 5f
+            time = System.currentTimeMillis()
+        }
+        try {
+            MainActivity.trackingReceiverRegistered = false
+            val before = Shadows.shadowOf(app).broadcastIntents
+                .count { it.action == TrackingService.ACTION_LOCATION_UPDATE }
+            send.invoke(service, location, 90.0)
+            assertEquals(
+                before,
+                Shadows.shadowOf(app).broadcastIntents
+                    .count { it.action == TrackingService.ACTION_LOCATION_UPDATE }
+            )
+
+            MainActivity.trackingReceiverRegistered = true
+            send.invoke(service, location, 90.0)
+            assertEquals(
+                before + 1,
+                Shadows.shadowOf(app).broadcastIntents
+                    .count { it.action == TrackingService.ACTION_LOCATION_UPDATE }
+            )
+        } finally {
+            MainActivity.trackingReceiverRegistered = false
+            controller.destroy()
+        }
     }
 
     @Test fun notificationStopsWithoutOpeningAnActivityAndBlocksStickyAndBootRestarts() {

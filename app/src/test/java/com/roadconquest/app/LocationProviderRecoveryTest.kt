@@ -113,6 +113,7 @@ class LocationProviderRecoveryTest {
         field("ready").set(service, true)
         val receiver = field("providerReceiver").get(service) as BroadcastReceiver
         try {
+            MainActivity.trackingReceiverRegistered = true
             receiver.onReceive(service, Intent(LocationManager.PROVIDERS_CHANGED_ACTION))
             assertTrue(service in shadow.getLocationUpdateListeners("network"))
             shadow.setProviderEnabled("gps", true)
@@ -120,7 +121,10 @@ class LocationProviderRecoveryTest {
             assertTrue(service in shadow.getLocationUpdateListeners("gps"))
             assertFalse(service in shadow.getLocationUpdateListeners("network"))
             assertTrue(Shadows.shadowOf(app).broadcastIntents.any { it.action == TrackingService.ACTION_TRACKING_STATE_CHANGED })
-        } finally { controller.destroy() }
+        } finally {
+            MainActivity.trackingReceiverRegistered = false
+            controller.destroy()
+        }
     }
 
     @Test fun serviceStartedWhileLocationIsOffWaitsForFirstFixInsteadOfStopping() {

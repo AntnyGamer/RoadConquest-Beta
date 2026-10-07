@@ -31,6 +31,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
 
 class TrackingService : Service(), LocationListener {
     private lateinit var locationManager: LocationManager
@@ -58,6 +59,9 @@ class TrackingService : Service(), LocationListener {
     private var lastObserved: Location? = null
     private var lastAccepted: Location? = null
     private var lastExplored: Location? = null
+    // Avoid repeatedly hitting SQLite for the same 50 m fog cell during one service session.
+    // The concurrent set also prevents duplicate queued writes before storageExecutor catches up.
+    private val exploredCellsThisSession = ConcurrentHashMap.newKeySet<Long>()
     private var lastPlaceCandidate: Location? = null
     @Volatile private var baselineCandidateCaptured = false
     private var baselineRequestElapsedNanos = 0L
@@ -67,6 +71,27 @@ class TrackingService : Service(), LocationListener {
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
+    private var lowestBatteryPercentSeen = 101
+    private var lastNotificationLocationEnabled: Boolean? = null
+    private val notificationManager by lazy(LazyThreadSafetyMode.NONE) {
+        getSystemService(NotificationManager::class.java)
+    }
+    private val openAppPendingIntent by lazy(LazyThreadSafetyMode.NONE) {
+        PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+    private val stopTrackingPendingIntent by lazy(LazyThreadSafetyMode.NONE) {
+        PendingIntent.getService(
+            this,
+            1,
+            Intent(this, TrackingService::class.java).setAction(ACTION_STOP_UNTIL_OPEN),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
     private val providerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
@@ -76,7 +101,7 @@ class TrackingService : Service(), LocationListener {
                 queueFinalMatchingFlush()
             }
             refreshForegroundNotification()
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         }
     }
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -88,9 +113,13 @@ class TrackingService : Service(), LocationListener {
             val scale = intent.getIntExtra("scale", -1)
             if (level < 0 || scale <= 0) return
             val percent = (level * 100 / scale).coerceIn(0, 100)
-            // No progression I/O is needed for ordinary battery levels.
-            if (percent <= 5 && ProgressionManager.recordBatteryPercent(this@TrackingService, percent)) {
-                sendBroadcast(Intent(ACTION_STATS_UPDATED).setPackage(packageName))
+            // No progression I/O is needed for ordinary battery levels. Within one tracking
+            // session, a repeated or higher low-battery reading cannot lower the persisted
+            // minimum either, so avoid reopening SQLite for it.
+            if (percent <= 5 && percent < lowestBatteryPercentSeen) {
+                val changed = ProgressionManager.recordBatteryPercent(this@TrackingService, percent)
+                lowestBatteryPercentSeen = percent
+                if (changed) sendUiBroadcast(ACTION_STATS_UPDATED)
             }
         }
     }
@@ -131,7 +160,7 @@ class TrackingService : Service(), LocationListener {
         batteryReceiverRegistered = true
         ProgressionManager.recordBatteryFromSystem(this)
         Prefs.markEverStarted(this)
-        sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+        sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -141,7 +170,7 @@ class TrackingService : Service(), LocationListener {
             isRunning = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
             return START_NOT_STICKY
         }
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) {
@@ -177,7 +206,7 @@ class TrackingService : Service(), LocationListener {
             storageExecutor.execute {
                 try {
                     if (progressionRepository.recordBaselineCandidate(baseline)) {
-                        sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+                        sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
                     }
                 } catch (error: Exception) {
                     Log.e("RoadConquest", "Could not save starting place location", error)
@@ -185,13 +214,13 @@ class TrackingService : Service(), LocationListener {
                 }
             }
         }
-        if (previous != null && elapsedMillis(previous, location) == 0L) {
+        val elapsedFromPrevious = if (previous == null) Long.MIN_VALUE else elapsedMillis(previous, location)
+        if (elapsedFromPrevious == 0L) {
             // A better simultaneous source may improve the marker/next baseline, never add mileage twice.
             if (location.hasAccuracy() && location.accuracy <= MAX_ACCURACY_M) lastObserved = Location(location)
             if (location.hasAccuracy() && location.accuracy <= MAX_PREVIEW_ACCURACY_M) sendLocationUpdate(location, lastBearingDegrees)
             return
         }
-        val elapsedFromPrevious = if (previous == null) Long.MIN_VALUE else elapsedMillis(previous, location)
         val distanceFromPrevious = if (previous != null && elapsedFromPrevious in 1..MAX_MOTION_SAMPLE_AGE_MS) {
             previous.distanceTo(location)
         } else {
@@ -201,20 +230,37 @@ class TrackingService : Service(), LocationListener {
             distanceFromPrevious / (elapsedFromPrevious / 1_000f) > MAX_PLAUSIBLE_SPEED_MPS
         ) return
         if (!location.isMock && location.hasAccuracy() && location.accuracy in 0.01f..25f &&
-            (lastExplored?.distanceTo(location) ?: Float.POSITIVE_INFINITY) >= 20f) {
+            (lastExplored?.distanceTo(location) ?: Float.POSITIVE_INFINITY) >= 20f
+        ) {
+            // Keep the original 20 m acceptance gate exactly: the optimization only suppresses
+            // duplicate database work after a location would already have been processed.
             val visited = Location(location)
             lastExplored = visited
             val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
                 PLACE_CANDIDATE_MIN_DISTANCE_M
-            if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
-            storageExecutor.execute {
-                try {
-                    if (repository.recordExploredPlace(visited)) {
-                        if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
-                        sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+            // Preserve the original candidate-spacing state even when this exact fog cell was
+            // already persisted and its redundant SQLite insert can be skipped.
+            if (savePlaceCandidate) lastPlaceCandidate = visited
+            val exploredCell = TrackingRepository.exploredCellKey(visited.latitude, visited.longitude)
+            if (exploredCell != null) {
+                // Bound this purely opportunistic cache. Clearing it only restores the original
+                // conflict-ignore database behavior; it cannot change exploration or scoring.
+                if (exploredCellsThisSession.size >= MAX_EXPLORED_CELL_CACHE) {
+                    exploredCellsThisSession.clear()
+                }
+            }
+            if (exploredCell != null && exploredCellsThisSession.add(exploredCell)) {
+                storageExecutor.execute {
+                    try {
+                        if (repository.recordExploredPlace(visited, exploredCell)) {
+                            if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
+                            sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
+                        }
+                    } catch (error: Exception) {
+                        // A failed write must remain eligible for a later accepted fix in this cell.
+                        exploredCellsThisSession.remove(exploredCell)
+                        Log.e("RoadConquest", "Could not save explored place", error)
                     }
-                } catch (error: Exception) {
-                    Log.e("RoadConquest", "Could not save explored place", error)
                 }
             }
         }
@@ -243,21 +289,23 @@ class TrackingService : Service(), LocationListener {
 
         // Save one recent anchor before the first confirmed driving point so the beginning
         // of a drive is not lost merely because driving speed could only be confirmed later.
-        val toSave = ArrayList<Location>(2)
-        if (lastAccepted == null && previous != null &&
+        // Normal in-drive samples need only one insert, avoiding a temporary list allocation on
+        // every accepted fix while preserving the exact two-point transaction at drive start.
+        val startAnchor = if (lastAccepted == null && previous != null &&
             previous.hasAccuracy() && previous.accuracy <= MAX_ACCURACY_M &&
             elapsedFromPrevious in 1..MAX_START_ANCHOR_AGE_MS
-        ) {
-            toSave += previous
-        }
+        ) previous else null
 
         val accepted = requireNotNull(lastObserved)
-        toSave += accepted
         lastAccepted = accepted
         storageExecutor.execute {
             try {
-                repository.insertLocations(toSave)
-                sendBroadcast(Intent(ACTION_STATS_UPDATED).setPackage(packageName))
+                if (startAnchor == null) {
+                    repository.insertLocation(accepted)
+                } else {
+                    repository.insertLocations(listOf(startAnchor, accepted))
+                }
+                sendUiBroadcast(ACTION_STATS_UPDATED)
                 maybeRunMatching()
             } catch (error: Exception) {
                 Log.e("RoadConquest", "Could not save driving locations; stopping tracking", error)
@@ -269,7 +317,7 @@ class TrackingService : Service(), LocationListener {
     override fun onProviderEnabled(provider: String) {
         if (ready) {
             requestLocations()
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         }
     }
 
@@ -277,7 +325,7 @@ class TrackingService : Service(), LocationListener {
     // the user turns Location back on; re-registering while disabled can lose that callback.
     override fun onProviderDisabled(provider: String) {
         if (ready) {
-            sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
             // No more fixes may arrive while Android Location is off. Flush any queued
             // accepted fixes first, then give unresolved corner/end-of-drive intervals a final
             // matcher pass. A single provider handoff does not need this.
@@ -346,7 +394,7 @@ class TrackingService : Service(), LocationListener {
         storageExecutor.shutdown()
         stopForeground(STOP_FOREGROUND_REMOVE)
         isRunning = false
-        sendBroadcast(Intent(ACTION_TRACKING_STATE_CHANGED).setPackage(packageName))
+        sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         super.onDestroy()
     }
 
@@ -369,6 +417,7 @@ class TrackingService : Service(), LocationListener {
     }
 
     private fun sendLocationUpdate(location: Location, bearingDegrees: Double) {
+        if (!MainActivity.trackingReceiverRegistered) return
         sendBroadcast(
             Intent(ACTION_LOCATION_UPDATE)
                 .setPackage(packageName)
@@ -379,6 +428,11 @@ class TrackingService : Service(), LocationListener {
                     ((SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L).coerceAtLeast(0L)
                 } else (System.currentTimeMillis() - location.time).coerceAtLeast(0L))
         )
+    }
+
+    private fun sendUiBroadcast(action: String) {
+        if (!MainActivity.trackingReceiverRegistered) return
+        sendBroadcast(Intent(action).setPackage(packageName))
     }
 
     private fun isUsableDrivingLocation(location: Location, previous: Location?): Boolean {
@@ -518,7 +572,7 @@ class TrackingService : Service(), LocationListener {
 
                         val resolvedIds = if (acceptedRoads.isNotEmpty() && matchedIds.isNotEmpty()) {
                             repository.completeMatch(acceptedRoads, matchedIds)
-                            sendBroadcast(Intent(ACTION_ROADS_UPDATED).setPackage(packageName))
+                            sendUiBroadcast(ACTION_ROADS_UPDATED)
                             matchedIds.toSet()
                         } else {
                             emptySet()
@@ -594,49 +648,47 @@ class TrackingService : Service(), LocationListener {
     }
 
     private fun startAsForeground() {
+        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        lastNotificationLocationEnabled = locationEnabled
         startForeground(
             NOTIFICATION_ID,
-            buildForegroundNotification(),
+            buildForegroundNotification(locationEnabled),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         )
     }
 
     private fun refreshForegroundNotification() {
         if (!isRunning) return
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, buildForegroundNotification())
+        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        // Provider broadcasts can repeat while the visible notification state is unchanged.
+        // Avoid rebuilding the same notification and sending another system-service IPC.
+        if (lastNotificationLocationEnabled == locationEnabled) return
+        lastNotificationLocationEnabled = locationEnabled
+        notificationManager.notify(NOTIFICATION_ID, buildForegroundNotification(locationEnabled))
     }
 
-    private fun buildForegroundNotification(): Notification {
-        val openApp = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val stopTracking = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, TrackingService::class.java).setAction(ACTION_STOP_UNTIL_OPEN),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
-        return Notification.Builder(this, CHANNEL_ID)
+    private fun buildForegroundNotification(locationEnabled: Boolean): Notification =
+        Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle(if (locationEnabled) "Road Conquest is tracking" else "Road Conquest is ready")
             .setContentText(
                 if (locationEnabled) "Your driven roads are being saved locally"
                 else "Waiting for Android Location to be turned on"
             )
-            .setContentIntent(openApp)
-            .addAction(Notification.Action.Builder(null, getString(R.string.stop_tracking), stopTracking).build())
+            .setContentIntent(openAppPendingIntent)
+            .addAction(
+                Notification.Action.Builder(
+                    null,
+                    getString(R.string.stop_tracking),
+                    stopTrackingPendingIntent
+                ).build()
+            )
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
-    }
 
     private fun createNotificationChannel() {
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
+        notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
                 "Drive tracking",
@@ -676,6 +728,7 @@ class TrackingService : Service(), LocationListener {
         private const val MAX_START_ANCHOR_AGE_MS = 10_000L
         private const val MATCH_INTERVAL_MS = 10_000L
         private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 1_000f
+        private const val MAX_EXPLORED_CELL_CACHE = 4_096
         // A partial result usually means an intersection needs one or two newer fixes.
         // Retry on the normal matching cadence so turn holes close while the drive is still live.
         private const val MATCH_RETRY_AFTER_PARTIAL_MS = MATCH_INTERVAL_MS

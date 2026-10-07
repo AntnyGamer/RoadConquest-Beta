@@ -104,6 +104,13 @@ class MainActivity : Activity() {
     private var baselinePreviewCapturedForRegistration = false
     private var baselinePreviewRequestElapsedNanos = 0L
     private var baselinePreviewRequestWallMillis = 0L
+    private val previewLocationRequest by lazy(LazyThreadSafetyMode.NONE) {
+        LocationRequest.Builder(PREVIEW_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(PREVIEW_MIN_UPDATE_INTERVAL_MS)
+            .setMinUpdateDistanceMeters(PREVIEW_MIN_DISTANCE_M)
+            .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
+            .build()
+    }
     private val previewLocationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             if (Prefs.isTrackingPaused(this@MainActivity) || TrackingService.isRunning || !isFreshLocation(location) ||
@@ -283,6 +290,7 @@ class MainActivity : Activity() {
             filter,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        trackingReceiverRegistered = true
         mapView.onStart()
     }
 
@@ -302,10 +310,16 @@ class MainActivity : Activity() {
         }
         resumed = true
         mapView.onResume()
+        val overlayMode = Prefs.placeOverlayMode(this)
         renderer?.setFogEnabled(Prefs.isFogEnabled(this))
         renderer?.setMapMode(Prefs.mapMode(this))
-        renderer?.setPlaceOverlayMode(Prefs.placeOverlayMode(this))
-        if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
+        val overlayModeChanged = renderer?.placeOverlayMode() != overlayMode
+        renderer?.setPlaceOverlayMode(overlayMode)
+        // setPlaceOverlayMode already refreshes after an actual mode change. Only reload here
+        // when the mode stayed the same so returning to the app can still pick up new cache data.
+        if (!overlayModeChanged && overlayMode != PlaceOverlayMode.NONE) {
+            renderer?.refreshPlaceOverlays()
+        }
         renderer?.refreshCosmetics()
         if (!Prefs.isDeviceDataDeletionPending(this)) {
             ProgressionManager.recordBatteryFromSystem(this)
@@ -405,12 +419,15 @@ class MainActivity : Activity() {
         ForegroundSession.app.onStop(isChangingConfigurations || recreatingForAppearance)
         refreshRoadsAfterStop = true
         renderer?.cancelPlaceOverlayLoads()
+        trackingReceiverRegistered = false
         runCatching { unregisterReceiver(locationReceiver) }
         mapView.onStop()
         super.onStop()
     }
 
     override fun onDestroy() {
+        // onStop owns receiver registration state. Do not clear the process-wide flag here:
+        // during a configuration handoff a replacement MainActivity may already be started.
         accountPrompt?.dismiss()
         summaryGeneration++
         roadDetailsGeneration++
@@ -588,17 +605,25 @@ class MainActivity : Activity() {
     private fun refreshControls() {
         statsHandler.removeCallbacks(statsRefresh)
         statsRefreshScheduled = false
-        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
-            !hasLocationPermission() || !locationManager.isLocationEnabled
-        ) renderer?.clearCurrentLocation()
+        // Snapshot state once for this UI refresh. Besides avoiding repeated preference/permission
+        // lookups, this prevents one refresh from mixing values if Android changes state midway.
+        val deletionPending = Prefs.isDeviceDataDeletionPending(this)
+        val trackingPaused = Prefs.isTrackingPaused(this)
+        val hasPreciseLocation = hasLocationPermission()
+        val hasApproximateLocation = if (hasPreciseLocation) false else hasApproximateLocationPermission()
+        val locationEnabled = locationManager.isLocationEnabled
         val manualOnly = Prefs.isManualOnly(this)
         val active = TrackingService.isRunning
+
+        if (deletionPending || trackingPaused || !hasPreciseLocation || !locationEnabled) {
+            renderer?.clearCurrentLocation()
+        }
         statusText.text = when {
-            Prefs.isDeviceDataDeletionPending(this) -> "Finishing device data deletion…"
-            Prefs.isTrackingPaused(this) -> getString(R.string.tracking_paused)
-            !hasLocationPermission() && hasApproximateLocationPermission() -> "Precise location required"
-            !hasLocationPermission() -> "Location permission required"
-            !locationManager.isLocationEnabled -> if (active) "Tracking paused — Location is off" else "Location is off"
+            deletionPending -> "Finishing device data deletion…"
+            trackingPaused -> getString(R.string.tracking_paused)
+            !hasPreciseLocation && hasApproximateLocation -> "Precise location required"
+            !hasPreciseLocation -> "Location permission required"
+            !locationEnabled -> if (active) "Tracking paused — Location is off" else "Location is off"
             active -> "Tracking your driving"
             else -> "Not tracking"
         }
@@ -656,10 +681,10 @@ class MainActivity : Activity() {
             }
         }
 
-        if (Prefs.isDeviceDataDeletionPending(this)) {
+        if (deletionPending) {
             enableButton.text = "Deleting device data…"
             enableButton.isEnabled = false
-        } else if (Prefs.isTrackingPaused(this)) {
+        } else if (trackingPaused) {
             enableButton.text = getString(R.string.resume_tracking)
             enableButton.isEnabled = true
         } else if (!manualOnly) {
@@ -981,12 +1006,12 @@ class MainActivity : Activity() {
     private fun registerPreviewProvider(provider: String): Boolean {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return false
         return try {
-            val request = LocationRequest.Builder(PREVIEW_INTERVAL_MS)
-                .setMinUpdateIntervalMillis(PREVIEW_MIN_UPDATE_INTERVAL_MS)
-                .setMinUpdateDistanceMeters(PREVIEW_MIN_DISTANCE_M)
-                .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
-                .build()
-            locationManager.requestLocationUpdates(provider, request, mainExecutor, previewLocationListener)
+            locationManager.requestLocationUpdates(
+                provider,
+                previewLocationRequest,
+                mainExecutor,
+                previewLocationListener
+            )
             true
         } catch (_: SecurityException) {
             false
@@ -1026,6 +1051,14 @@ class MainActivity : Activity() {
         checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     companion object {
+        /**
+         * The high-frequency tracking broadcasts are consumed only by MainActivity's dynamic
+         * receiver. Tracking continues identically when this is false; it only lets the service
+         * avoid allocating and dispatching broadcasts that have no receiver while the map is
+         * stopped/backgrounded.
+         */
+        @Volatile internal var trackingReceiverRegistered = false
+
         private const val REQUEST_BASIC_PERMISSIONS = 100
         private const val STATE_START_AFTER_PERMISSION = "start_after_permission"
         private const val STATE_MAP_CENTERED = "map_centered"

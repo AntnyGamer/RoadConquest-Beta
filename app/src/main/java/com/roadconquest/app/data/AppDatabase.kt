@@ -10,6 +10,84 @@ class AppDatabase private constructor(context: Context) :
     internal val historyLock = Any()
     internal var historyGeneration = 0L
 
+    // Summary reads happen frequently while the UI is open. Keep exact in-memory aggregates
+    // between writes so large driving histories do not need to be rescanned just to redraw stats.
+    // Any caller that asks for the raw database disables this cache because it may mutate tables
+    // outside TrackingRepository's controlled write paths (tests/debug tooling do this).
+    internal data class TrackSummaryCache(
+        val pointCount: Long,
+        val firstTrackAt: Long?,
+        val lastTrackAt: Long?,
+        val distanceMeters: Double
+    )
+    internal data class RoadSummaryCache(
+        val segmentCount: Long,
+        val unlockedCount: Long
+    )
+    internal data class LastTrackPointCache(
+        val present: Boolean,
+        val latitude: Double = 0.0,
+        val longitude: Double = 0.0,
+        val timestamp: Long = 0L
+    )
+    internal var trackSummaryCache: TrackSummaryCache? = null
+    internal var roadSummaryCache: RoadSummaryCache? = null
+    internal var lastTrackPointCache: LastTrackPointCache? = null
+    internal var summaryCachingEnabled = true
+
+    internal fun invalidateTrackSummary() {
+        trackSummaryCache = null
+    }
+
+    internal fun invalidateRoadSummary() {
+        roadSummaryCache = null
+    }
+
+    internal fun applyTrackSummaryDelta(
+        count: Long,
+        firstTimestamp: Long?,
+        lastTimestamp: Long?,
+        distanceMeters: Double
+    ) {
+        if (!summaryCachingEnabled || count <= 0L) return
+        val current = trackSummaryCache ?: return
+        val first = when {
+            current.firstTrackAt == null -> firstTimestamp
+            firstTimestamp == null -> current.firstTrackAt
+            else -> minOf(current.firstTrackAt, firstTimestamp)
+        }
+        val last = when {
+            current.lastTrackAt == null -> lastTimestamp
+            lastTimestamp == null -> current.lastTrackAt
+            else -> maxOf(current.lastTrackAt, lastTimestamp)
+        }
+        trackSummaryCache = current.copy(
+            pointCount = current.pointCount + count,
+            firstTrackAt = first,
+            lastTrackAt = last,
+            distanceMeters = current.distanceMeters + distanceMeters
+        )
+    }
+
+    internal fun resetSummaryCaches() {
+        if (!summaryCachingEnabled) {
+            trackSummaryCache = null
+            roadSummaryCache = null
+            lastTrackPointCache = null
+            return
+        }
+        trackSummaryCache = TrackSummaryCache(0L, null, null, 0.0)
+        roadSummaryCache = RoadSummaryCache(0L, 0L)
+        lastTrackPointCache = LastTrackPointCache(present = false)
+    }
+
+    internal fun disableSummaryCaching() {
+        summaryCachingEnabled = false
+        trackSummaryCache = null
+        roadSummaryCache = null
+        lastTrackPointCache = null
+    }
+
     init {
         setWriteAheadLoggingEnabled(true)
     }

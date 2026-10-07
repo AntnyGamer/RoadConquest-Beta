@@ -119,9 +119,10 @@ class MapRenderer(
     private var minimumZoom = Double.NaN
     private val renderFog = Runnable { scheduleFogRender() }
     private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-        updateCameraLimits()
-        updateFogCoverage()
-        scheduleFogRender()
+        val cameraPosition = map.cameraPosition
+        updateCameraLimits(cameraPosition)
+        updateFogCoverage(cameraPosition = cameraPosition)
+        scheduleFogRender(cameraPosition)
     }
 
     private val expireLocation = Runnable {
@@ -136,15 +137,21 @@ class MapRenderer(
     private val cameraMoveListener = MapLibreMap.OnCameraMoveListener {
         cameraMoving = true
         viewportRevision++
-        updateCameraLimits()
-        updateFogCoverage()
-        if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) scheduleFogRender()
+        // CameraPosition crosses the MapLibre/native boundary. Snapshot it once per move callback
+        // and share that exact frame between the limit and coverage calculations.
+        val cameraPosition = map.cameraPosition
+        updateCameraLimits(cameraPosition)
+        updateFogCoverage(cameraPosition = cameraPosition)
+        if (cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
+            scheduleFogRender(cameraPosition)
+        }
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
         cameraMoving = false
-        updateFogCoverage()
+        val cameraPosition = map.cameraPosition
+        updateFogCoverage(cameraPosition = cameraPosition)
         refreshViewport()
-        scheduleFogRender()
+        scheduleFogRender(cameraPosition)
     }
 
     fun initialize(onReady: () -> Unit) {
@@ -168,8 +175,9 @@ class MapRenderer(
     fun setFogEnabled(enabled: Boolean) {
         if (destroyed) return
         fogEnabled = enabled
-        updateFogCoverage(force = true)
-        if (enabled) scheduleFogRender()
+        val cameraPosition = map.cameraPosition
+        updateFogCoverage(force = true, cameraPosition = cameraPosition)
+        if (enabled) scheduleFogRender(cameraPosition)
     }
 
     fun placeOverlayMode(): PlaceOverlayMode = overlayMode
@@ -287,11 +295,31 @@ class MapRenderer(
     fun updateCar(latitude: Double, longitude: Double, bearing: Double, ageMillis: Long = 0L) {
         if (destroyed) return
         val now = SystemClock.elapsedRealtime()
+        val previousVisual = liveLocation.current(now)
         if (!liveLocation.update(latitude, longitude, bearing, now, ageMillis)) return
         mainHandler.removeCallbacks(expireLocation)
         mainHandler.postDelayed(expireLocation, LiveLocation.MAX_AGE_MS - ageMillis)
-        updateCarLayer()
-        scheduleFogRender()
+
+        // Equal live fixes can still be newer and must extend expiry, but they do not need
+        // another MapLibre source upload or fog bitmap render. Only skip work when every
+        // user-visible value is exactly unchanged.
+        val currentVisual = liveLocation.current(now)
+        val positionChanged = previousVisual == null || currentVisual == null ||
+            previousVisual.latitude != currentVisual.latitude ||
+            previousVisual.longitude != currentVisual.longitude
+        val bearingChanged = previousVisual == null || currentVisual == null ||
+            previousVisual.bearing != currentVisual.bearing
+        if (positionChanged) {
+            updateCarLayer()
+            scheduleFogRender()
+        } else if (bearingChanged) {
+            // Heading-only updates still rotate the marker, but do not re-upload identical
+            // GeoJSON or rebuild fog because neither depends on bearing.
+            currentVisual?.let { fix ->
+                (map.style?.getLayer(CAR_LAYER_ID) as? SymbolLayer)
+                    ?.setProperties(iconRotate(fix.bearing.toFloat()))
+            }
+        }
         if (!centeredOnce) {
             centeredOnce = true
             centerOnCar()
@@ -302,9 +330,10 @@ class MapRenderer(
         if (destroyed) return false
         val fix = liveLocation.current(SystemClock.elapsedRealtime()) ?: return false
         centeredOnce = true
-        val camera = CameraPosition.Builder(map.cameraPosition)
+        val currentCamera = map.cameraPosition
+        val camera = CameraPosition.Builder(currentCamera)
             .target(LatLng(fix.latitude, fix.longitude))
-            .zoom(map.cameraPosition.zoom.coerceIn(FogBitmapRenderer.CENTER_ZOOM, FogBitmapRenderer.MAX_ZOOM))
+            .zoom(currentCamera.zoom.coerceIn(FogBitmapRenderer.CENTER_ZOOM, FogBitmapRenderer.MAX_ZOOM))
             .tilt(0.0)
             .build()
         map.animateCamera(CameraUpdateFactory.newCameraPosition(camera))
@@ -678,8 +707,8 @@ class MapRenderer(
         style.addLayer(layer)
     }
 
-    private fun updateCameraLimits() {
-        val target = map.cameraPosition.target ?: return
+    private fun updateCameraLimits(cameraPosition: CameraPosition = map.cameraPosition) {
+        val target = cameraPosition.target ?: return
         val next = FogCoverage.minimumZoom(mapView.width, mapView.height, mapView.pixelRatio, target.latitude)
         if (!minimumZoom.isFinite() || abs(next - minimumZoom) > 0.001) {
             minimumZoom = next
@@ -687,13 +716,16 @@ class MapRenderer(
         }
     }
 
-    private fun updateFogCoverage(force: Boolean = false) {
+    private fun updateFogCoverage(
+        force: Boolean = false,
+        cameraPosition: CameraPosition = map.cameraPosition
+    ) {
         val coordinates = detailedFogCoordinates
         // Keep the detailed bitmap during ordinary movement, but reserve extra off-screen
         // coverage while the camera is moving. Android 12 can present a native frame before the
         // Java camera callback catches up; switching to the ready world layer early prevents a
         // bitmap edge from flashing as a white rectangle without closing fog on every gesture.
-        val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM &&
+        val detailed = fogEnabled && cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
                 FogCoverage.coversViewport(
@@ -811,14 +843,16 @@ class MapRenderer(
         (style.getLayer(CAR_LAYER_ID) as? SymbolLayer)?.setProperties(iconRotate(fix.bearing.toFloat()))
     }
 
-    private fun scheduleFogRender() {
+    private fun scheduleFogRender(cameraPosition: CameraPosition? = null) {
         if (destroyed || !fogEnabled) return
+        // Snapshot native camera state once when the caller did not already provide it.
+        val position = cameraPosition ?: map.cameraPosition
         // At overview zooms the static world fog already provides complete coverage. Do not
         // burn CPU/GPU time rebuilding detailed reveal bitmaps that are intentionally hidden.
-        if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
+        if (position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
             mainHandler.removeCallbacks(renderFog)
             fogAgain = false
-            updateFogCoverage()
+            updateFogCoverage(cameraPosition = position)
             return
         }
         if (fogRunning) {
