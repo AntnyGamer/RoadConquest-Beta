@@ -7,10 +7,10 @@ import kotlin.math.*
 /**
  * Groups locally saved matched fragments into user-facing road identities.
  *
- * Public OSRM does not expose authoritative OSM way IDs, so local counts remain estimates.
- * Count nearby fragments of the same street together despite GPS/matcher seams. Connected
- * unnamed access lanes form one local road network rather than one road per sampling fragment.
- * This groups identities only: it never invents geometry across an unrecorded gap.
+ * The local counter aims at human-perceived road identities rather than raw matcher fragments:
+ * signed route refs are strongest, continuous street names are next, and unnamed fragments use
+ * a deliberately tight topology rule. Ref-aware tolerance also joins nearby divided carriageways.
+ * This groups identities only; it never invents geometry across an unrecorded gap.
  */
 internal object RoadGrouping {
     const val JOIN_TOLERANCE_M = 75.0
