@@ -58,6 +58,7 @@ class TrackingService : Service(), LocationListener {
     private val finalMatchingFlushScheduled = AtomicBoolean(false)
     private var lastObserved: Location? = null
     private var lastAccepted: Location? = null
+    private var lastExplored: Location? = null
     // Avoid repeatedly hitting SQLite for the same 50 m fog cell during one service session.
     // The concurrent set also prevents duplicate queued writes before storageExecutor catches up.
     private val exploredCellsThisSession = ConcurrentHashMap.newKeySet<Long>()
@@ -203,10 +204,15 @@ class TrackingService : Service(), LocationListener {
         if (elapsedFromPrevious in 1..MAX_MOTION_SAMPLE_AGE_MS &&
             distanceFromPrevious / (elapsedFromPrevious / 1_000f) > MAX_PLAUSIBLE_SPEED_MPS
         ) return
-        if (!location.isMock && location.hasAccuracy() && location.accuracy in 0.01f..25f) {
-            val exploredCell = TrackingRepository.exploredCellKey(location.latitude, location.longitude)
+        if (!location.isMock && location.hasAccuracy() && location.accuracy in 0.01f..25f &&
+            (lastExplored?.distanceTo(location) ?: Float.POSITIVE_INFINITY) >= 20f
+        ) {
+            // Keep the original 20 m acceptance gate exactly: the optimization only suppresses
+            // duplicate database work after a location would already have been processed.
+            val visited = Location(location)
+            lastExplored = visited
+            val exploredCell = TrackingRepository.exploredCellKey(visited.latitude, visited.longitude)
             if (exploredCell != null && exploredCellsThisSession.add(exploredCell)) {
-                val visited = Location(location)
                 val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
                     PLACE_CANDIDATE_MIN_DISTANCE_M
                 if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
@@ -217,7 +223,7 @@ class TrackingService : Service(), LocationListener {
                             sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
                         }
                     } catch (error: Exception) {
-                        // A failed write must remain eligible for a later fix in the same cell.
+                        // A failed write must remain eligible for a later accepted fix in this cell.
                         exploredCellsThisSession.remove(exploredCell)
                         Log.e("RoadConquest", "Could not save explored place", error)
                     }
