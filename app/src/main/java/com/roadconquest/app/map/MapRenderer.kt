@@ -296,13 +296,21 @@ class MapRenderer(
         // another MapLibre source upload or fog bitmap render. Only skip work when every
         // user-visible value is exactly unchanged.
         val currentVisual = liveLocation.current(now)
-        val visuallyChanged = previousVisual == null || currentVisual == null ||
+        val positionChanged = previousVisual == null || currentVisual == null ||
             previousVisual.latitude != currentVisual.latitude ||
-            previousVisual.longitude != currentVisual.longitude ||
+            previousVisual.longitude != currentVisual.longitude
+        val bearingChanged = previousVisual == null || currentVisual == null ||
             previousVisual.bearing != currentVisual.bearing
-        if (visuallyChanged) {
+        if (positionChanged) {
             updateCarLayer()
             scheduleFogRender()
+        } else if (bearingChanged) {
+            // Heading-only updates still rotate the marker, but do not re-upload identical
+            // GeoJSON or rebuild fog because neither depends on bearing.
+            currentVisual?.let { fix ->
+                (map.style?.getLayer(CAR_LAYER_ID) as? SymbolLayer)
+                    ?.setProperties(iconRotate(fix.bearing.toFloat()))
+            }
         }
         if (!centeredOnce) {
             centeredOnce = true
