@@ -441,9 +441,17 @@ class OsrmMatcher(
         return EARTH_RADIUS_M * sqrt(x * x + y * y)
     }
 
-    private fun snapToleranceMeters(point: TrackPoint): Double =
-        (point.accuracyMeters.toDouble() + SNAP_TOLERANCE_EXTRA_M)
+    private fun snapToleranceMeters(point: TrackPoint): Double {
+        val accuracy = point.accuracyMeters.toDouble()
+        if (point.speedMps.isFinite() && point.speedMps >= STRICT_SNAP_MAX_SPEED_MPS) {
+            // Preserve the old allowance at normal driving speed. The false nearby-road sample in
+            // the supplied export happened while slowing/stopping, so this keeps the protection
+            // targeted instead of creating fresh highway or arterial gaps from normal GNSS drift.
+            return accuracy * 2 + 10
+        }
+        return (accuracy + SNAP_TOLERANCE_EXTRA_M)
             .coerceIn(MIN_SNAP_TOLERANCE_M, MAX_SNAP_TOLERANCE_M)
+    }
 
     private fun initialBearingDegrees(a: TrackPoint, b: TrackPoint): Double {
         val lat1 = Math.toRadians(a.latitude)
@@ -519,10 +527,10 @@ class OsrmMatcher(
         internal const val MIN_ACCEPTABLE_CONFIDENCE = 0.45
         private const val MIN_MATCH_RADIUS_M = 10f
         private const val MAX_MATCH_RADIUS_M = 75f
-        // Treat OSRM's radius as candidate discovery, not proof. Keep a tighter post-match
-        // lateral bound for permanent geometry: this still leaves room for ordinary GNSS and
-        // map-centerline offset while rejecting nearby-road false positives, especially when
-        // slowing or turning beside a parallel road.
+        // Treat OSRM's radius as candidate discovery, not proof. Tighten permanent
+        // geometry only while the vehicle is moving slowly enough for a nearby-road snap to be
+        // especially plausible; normal driving keeps the previous distance allowance.
+        private const val STRICT_SNAP_MAX_SPEED_MPS = 4f
         private const val MIN_SNAP_TOLERANCE_M = 8.0
         private const val SNAP_TOLERANCE_EXTRA_M = 3.0
         private const val MAX_SNAP_TOLERANCE_M = 30.0
