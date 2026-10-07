@@ -268,7 +268,10 @@ class OsrmMatcher(
         val rawEnd = JSONArray().put(points[end.input].longitude).put(points[end.input].latitude)
         val uncertainty = points[start.input].accuracyMeters + points[end.input].accuracyMeters
         val rawMeters = pointDistanceMeters(points[start.input], points[end.input])
-        val inferredSpeedMps = if (duration > 0L && rawMeters.isFinite()) {
+        val inferredSpeedMps = if (duration > 0L && rawMeters.isFinite() && rawMeters > uncertainty) {
+            // With no stored speed, Road Conquest only accepted this pair as driving when the
+            // displacement beat the two fixes' combined uncertainty. Preserve that same evidence
+            // requirement before using displacement to relax the low-speed snap gate.
             rawMeters / (duration / 1_000.0)
         } else {
             0.0
@@ -378,12 +381,12 @@ class OsrmMatcher(
             val end = rightCoordinates.getJSONArray(0)
             val connectorMeters = coordinateDistanceMeters(start, end)
             val rawMeters = pointDistanceMeters(from, to)
-            val inferredSpeedMps = if (elapsed > 0L && rawMeters.isFinite()) {
+            val uncertainty = from.accuracyMeters + to.accuracyMeters
+            val inferredSpeedMps = if (elapsed > 0L && rawMeters.isFinite() && rawMeters > uncertainty) {
                 rawMeters / (elapsed / 1_000.0)
             } else {
                 0.0
             }
-            val uncertainty = from.accuracyMeters + to.accuracyMeters
             if (!connectorMeters.isFinite() || !rawMeters.isFinite() ||
                 connectorMeters > MAX_SPLIT_BRIDGE_M ||
                 connectorMeters > rawMeters * SPLIT_BRIDGE_DISTANCE_FACTOR + uncertainty + SPLIT_BRIDGE_DISTANCE_PAD_M ||
@@ -435,16 +438,6 @@ class OsrmMatcher(
                 points.getOrNull(index - 1)?.let { it to point } ?: return@map ""
             }
             val distance = pointDistanceMeters(from, to)
-            val elapsedMs = to.timestampMillis - from.timestampMillis
-            val inferredSpeedMps = if (elapsedMs > 0L && distance.isFinite()) {
-                distance / (elapsedMs / 1_000.0)
-            } else {
-                0.0
-            }
-            val storedSpeed = point.speedMps.toDouble().takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
-            val movementSpeedMps = if (storedSpeed > 0.0) storedSpeed else inferredSpeedMps
-            if (movementSpeedMps < MIN_BEARING_GUIDANCE_SPEED_MPS) return@map ""
-
             val fromAccuracy = from.accuracyMeters.takeIf { it.isFinite() && it >= 0f } ?: MAX_MATCH_RADIUS_M
             val toAccuracy = to.accuracyMeters.takeIf { it.isFinite() && it >= 0f } ?: MAX_MATCH_RADIUS_M
             val minimumEvidenceDistance = maxOf(
@@ -452,6 +445,17 @@ class OsrmMatcher(
                 (fromAccuracy + toAccuracy) * BEARING_ACCURACY_DISTANCE_FACTOR
             )
             if (!distance.isFinite() || distance < minimumEvidenceDistance) return@map ""
+
+            val elapsedMs = to.timestampMillis - from.timestampMillis
+            val combinedAccuracy = fromAccuracy + toAccuracy
+            val inferredSpeedMps = if (elapsedMs > 0L && distance > combinedAccuracy) {
+                distance / (elapsedMs / 1_000.0)
+            } else {
+                0.0
+            }
+            val storedSpeed = point.speedMps.toDouble().takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+            val movementSpeedMps = if (storedSpeed > 0.0) storedSpeed else inferredSpeedMps
+            if (movementSpeedMps < MIN_BEARING_GUIDANCE_SPEED_MPS) return@map ""
 
             val movementBearing = initialBearingDegrees(from, to)
             "${movementBearing.roundToInt() % 360},$BEARING_GUIDANCE_RANGE_DEGREES"
