@@ -148,9 +148,10 @@ class MapRenderer(
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
         cameraMoving = false
-        updateFogCoverage()
+        val cameraPosition = map.cameraPosition
+        updateFogCoverage(cameraPosition = cameraPosition)
         refreshViewport()
-        scheduleFogRender()
+        scheduleFogRender(cameraPosition)
     }
 
     fun initialize(onReady: () -> Unit) {
@@ -174,8 +175,9 @@ class MapRenderer(
     fun setFogEnabled(enabled: Boolean) {
         if (destroyed) return
         fogEnabled = enabled
-        updateFogCoverage(force = true)
-        if (enabled) scheduleFogRender()
+        val cameraPosition = map.cameraPosition
+        updateFogCoverage(force = true, cameraPosition = cameraPosition)
+        if (enabled) scheduleFogRender(cameraPosition)
     }
 
     fun placeOverlayMode(): PlaceOverlayMode = overlayMode
