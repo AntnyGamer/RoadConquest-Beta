@@ -71,6 +71,26 @@ class TrackingService : Service(), LocationListener {
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
+    private var lastNotificationLocationEnabled: Boolean? = null
+    private val notificationManager by lazy(LazyThreadSafetyMode.NONE) {
+        getSystemService(NotificationManager::class.java)
+    }
+    private val openAppPendingIntent by lazy(LazyThreadSafetyMode.NONE) {
+        PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+    private val stopTrackingPendingIntent by lazy(LazyThreadSafetyMode.NONE) {
+        PendingIntent.getService(
+            this,
+            1,
+            Intent(this, TrackingService::class.java).setAction(ACTION_STOP_UNTIL_OPEN),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
     private val providerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
@@ -615,49 +635,47 @@ class TrackingService : Service(), LocationListener {
     }
 
     private fun startAsForeground() {
+        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        lastNotificationLocationEnabled = locationEnabled
         startForeground(
             NOTIFICATION_ID,
-            buildForegroundNotification(),
+            buildForegroundNotification(locationEnabled),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         )
     }
 
     private fun refreshForegroundNotification() {
         if (!isRunning) return
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, buildForegroundNotification())
+        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        // Provider broadcasts can repeat without changing anything the notification displays.
+        // Skip rebuilding PendingIntents/Notification objects unless the visible state changed.
+        if (lastNotificationLocationEnabled == locationEnabled) return
+        lastNotificationLocationEnabled = locationEnabled
+        notificationManager.notify(NOTIFICATION_ID, buildForegroundNotification(locationEnabled))
     }
 
-    private fun buildForegroundNotification(): Notification {
-        val openApp = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val stopTracking = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, TrackingService::class.java).setAction(ACTION_STOP_UNTIL_OPEN),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
-        return Notification.Builder(this, CHANNEL_ID)
+    private fun buildForegroundNotification(locationEnabled: Boolean): Notification =
+        Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle(if (locationEnabled) "Road Conquest is tracking" else "Road Conquest is ready")
             .setContentText(
                 if (locationEnabled) "Your driven roads are being saved locally"
                 else "Waiting for Android Location to be turned on"
             )
-            .setContentIntent(openApp)
-            .addAction(Notification.Action.Builder(null, getString(R.string.stop_tracking), stopTracking).build())
+            .setContentIntent(openAppPendingIntent)
+            .addAction(
+                Notification.Action.Builder(
+                    null,
+                    getString(R.string.stop_tracking),
+                    stopTrackingPendingIntent
+                ).build()
+            )
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
-    }
 
     private fun createNotificationChannel() {
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
+        notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
                 "Drive tracking",
