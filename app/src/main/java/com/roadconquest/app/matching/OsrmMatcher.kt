@@ -121,6 +121,7 @@ class OsrmMatcher(
 
         val roads = mutableListOf<MatchedRoad>()
         val resolved = mutableMapOf<Long, Double>()
+        val blockedBridgeEndIds = HashSet<Long>()
         var rejectedLeg = false
         for (m in traces.indices) {
             val trace = traces[m]
@@ -168,6 +169,9 @@ class OsrmMatcher(
                         if (legRoads.isEmpty()) {
                             // One locally implausible OSRM leg should stay pending, but must not
                             // turn every valid sibling leg in the batch into a 5-minute failure.
+                            // Also remember this exact interval so the seam-repair fallback cannot
+                            // immediately synthesize a connector across geometry we just rejected.
+                            blockedBridgeEndIds += points[trace[l + 1].input].id
                             flushBlock(l)
                             blockStart = l + 1
                             continue
@@ -183,7 +187,7 @@ class OsrmMatcher(
         // separate matchings. That leaves a short raw/pending seam even though both sides are
         // confidently mapped. Close only small, directionally consistent same-road seams using
         // the already-snapped endpoints; turns and different-road boundaries remain pending.
-        bridgeConfidentSameRoadSplits(roads, resolved, points)
+        bridgeConfidentSameRoadSplits(roads, resolved, points, blockedBridgeEndIds)
 
         // Salvage valid sibling legs, but preserve the longer failure backoff when every
         // candidate leg failed local plausibility checks. That avoids hammering the matcher every
@@ -334,7 +338,8 @@ class OsrmMatcher(
     private fun bridgeConfidentSameRoadSplits(
         roads: MutableList<MatchedRoad>,
         resolved: MutableMap<Long, Double>,
-        points: List<TrackPoint>
+        points: List<TrackPoint>,
+        blockedBridgeEndIds: Set<Long>
     ) {
         if (roads.size < 2 || points.size < 2) return
         val ordered = roads.sortedWith(compareBy<MatchedRoad> { it.firstTimestamp }.thenBy { it.lastTimestamp })
@@ -352,6 +357,7 @@ class OsrmMatcher(
             if (leftPoint < 0 || rightPoint != leftPoint + 1) continue
             val from = points[leftPoint]
             val to = points[rightPoint]
+            if (to.id in blockedBridgeEndIds) continue
             val elapsed = to.timestampMillis - from.timestampMillis
             if (elapsed !in 1..MAX_SPLIT_BRIDGE_GAP_MS || !bridged.add(to.id)) continue
 
