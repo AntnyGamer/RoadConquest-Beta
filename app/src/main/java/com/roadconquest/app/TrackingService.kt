@@ -212,7 +212,7 @@ class TrackingService : Service(), LocationListener {
                 if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
                 storageExecutor.execute {
                     try {
-                        if (repository.recordExploredPlace(visited)) {
+                        if (repository.recordExploredPlace(visited, exploredCell)) {
                             if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
                             sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
                         }
