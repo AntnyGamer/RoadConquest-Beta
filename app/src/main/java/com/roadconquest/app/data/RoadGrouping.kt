@@ -1,6 +1,7 @@
 package com.roadconquest.app.data
 
 import org.json.JSONArray
+import java.text.Normalizer
 import java.util.Locale
 import kotlin.math.*
 
