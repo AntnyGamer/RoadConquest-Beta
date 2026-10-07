@@ -49,7 +49,11 @@ internal object RoadGrouping {
     fun normalizeReferences(reference: String): Set<String> =
         reference.split(';')
             .asSequence()
-            .map { it.trim().uppercase(Locale.ROOT).replace(NON_ALNUM_RE, "") }
+            .map {
+                Normalizer.normalize(it.trim(), Normalizer.Form.NFKC)
+                    .uppercase(Locale.ROOT)
+                    .replace(NON_ALNUM_RE, "")
+            }
             .filter { it.isNotEmpty() }
             .toCollection(linkedSetOf())
 
