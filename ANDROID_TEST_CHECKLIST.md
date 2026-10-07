@@ -61,7 +61,7 @@ This checklist is for final device-level validation on supported Android 12+ pho
 2. Open the ZIP and verify `metadata.json`, `track_points.csv`, `roads.csv`,
    `explored_places.csv`, `visited_places.csv`, `place_candidates.csv`,
    `progression_rewards.csv`, `progression_purchases.csv`, and
-   `progression_counters.csv` are present. Metadata schema version is 7.
+   `progression_counters.csv` are present. Metadata schema version is 8.
 3. Verify metadata point/discovery counts agree with their CSVs and equipped car/road/gold settings
    match the app.
 4. Verify road rows contain segment ID, road name, first-unlocked time, last-driven time, and the
