@@ -48,6 +48,22 @@ class OsrmNetworkTest {
         }
     }
 
+    @Test fun missingStoredSpeedStillUsesClearMovementForBearingGuidance() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val movingWithoutMeasuredSpeed = listOf(
+                points[0].copy(speedMps = 0f, timestampMillis = 100_000L),
+                points[1].copy(speedMps = 0f, timestampMillis = 103_000L, accuracyMeters = 3f)
+            )
+            requireNotNull(
+                OsrmMatcher(server.url("/").toString().trimEnd('/')).match(movingWithoutMeasuredSpeed)
+            )
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertEquals("270,65;270,65", request.queryParameter("bearings"))
+        }
+    }
+
     @Test fun lowSpeedBearingDoesNotConstrainMatching() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(valid))
