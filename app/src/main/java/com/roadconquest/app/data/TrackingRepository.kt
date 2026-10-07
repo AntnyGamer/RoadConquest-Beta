@@ -20,16 +20,14 @@ class TrackingRepository(context: Context) {
     fun recordExploredPlace(location: Location): Boolean {
         synchronized(dbHelper.historyLock) {
             if (historyGeneration != dbHelper.historyGeneration) return false
-            if (location.isMock || !location.hasAccuracy() || location.accuracy !in 0.01f..25f ||
-                location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0) return false
-            val radius = 6378137.0
-            val longitude = ((location.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-            val x = floor(radius * Math.toRadians(longitude) / 50.0).toLong()
-            val y = floor(radius * ln(tan(PI / 4 + Math.toRadians(location.latitude.coerceIn(-85.05112878, 85.05112878)) / 2)) / 50.0).toLong()
+            if (location.isMock || !location.hasAccuracy() || location.accuracy !in 0.01f..25f) return false
+            val cellKey = exploredCellKey(location.latitude, location.longitude) ?: return false
+            val x = (cellKey shr 32).toInt().toLong()
+            val y = cellKey.toInt().toLong()
             val values = ContentValues().apply {
                 put("cell_x", x); put("cell_y", y)
-                put("latitude", Math.toDegrees(atan(sinh((y + 0.5) * 50.0 / radius))))
-                put("longitude", Math.toDegrees((x + 0.5) * 50.0 / radius).coerceIn(-180.0, 180.0))
+                put("latitude", Math.toDegrees(atan(sinh((y + 0.5) * EXPLORED_CELL_SIZE_M / WEB_MERCATOR_RADIUS_M))))
+                put("longitude", Math.toDegrees((x + 0.5) * EXPLORED_CELL_SIZE_M / WEB_MERCATOR_RADIUS_M).coerceIn(-180.0, 180.0))
             }
             return dbHelper.writableDatabase.insertWithOnConflict("explored_places", null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
         }
@@ -1036,6 +1034,27 @@ class TrackingRepository(context: Context) {
     }
 
     companion object {
+        /**
+         * Stable 50 m Web-Mercator cell key shared by tracking and persistence. Keeping this
+         * calculation outside SQLite lets the foreground service suppress repeat writes to a
+         * cell it has already processed during the current tracking session.
+         */
+        internal fun exploredCellKey(latitude: Double, longitude: Double): Long? {
+            if (!latitude.isFinite() || !longitude.isFinite() ||
+                latitude !in -90.0..90.0 || longitude !in -180.0..180.0
+            ) return null
+            val wrappedLongitude = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+            val x = floor(
+                WEB_MERCATOR_RADIUS_M * Math.toRadians(wrappedLongitude) / EXPLORED_CELL_SIZE_M
+            ).toInt()
+            val y = floor(
+                WEB_MERCATOR_RADIUS_M *
+                    ln(tan(PI / 4 + Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878)) / 2)) /
+                    EXPLORED_CELL_SIZE_M
+            ).toInt()
+            return (x.toLong() shl 32) xor (y.toLong() and 0xffff_ffffL)
+        }
+
         internal fun summaryOf(db: SQLiteDatabase): DataSummary = db.rawQuery(
             """
             SELECT p.point_count, r.road_count, p.first_track_at, p.last_track_at, p.distance_meters, r.unlocked_count
@@ -1100,6 +1119,8 @@ class TrackingRepository(context: Context) {
         )
 
         private const val EARTH_RADIUS_M = 6_371_008.8
+        private const val WEB_MERCATOR_RADIUS_M = 6_378_137.0
+        private const val EXPLORED_CELL_SIZE_M = 50.0
         private const val METERS_PER_DEGREE = 111_320.0
     }
 }
