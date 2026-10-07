@@ -12,7 +12,7 @@ concurrency:
 jobs:
   account-server:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17-alpine
@@ -99,6 +99,15 @@ jobs:
           fi
       - name: Test, lint and build
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon --console=plain
+      - name: Verify Play deobfuscation metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapping="app/build/outputs/mapping/release/mapping.txt"
+          bundle="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$mapping"
+          unzip -Z1 "$bundle" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
+
       - name: Verify 16 KB native-library compatibility
         shell: bash
         run: |
@@ -155,6 +164,7 @@ jobs:
           path: |
             app/build/outputs/apk/release/app-release-unsigned.apk
             app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/mapping/release/mapping.txt
           retention-days: 14
   map-integration:
     runs-on: ubuntu-latest
@@ -307,13 +317,15 @@ jobs:
           gh run download "$GITHUB_RUN_ID" -n android-apks -D "$build_dir"
           mapfile -t unsigned_apks < <(find "$build_dir" -type f -name 'app-release-unsigned.apk' -print)
           mapfile -t app_bundles < <(find "$build_dir" -type f -name 'app-release.aab' -print)
-          if [ "${#unsigned_apks[@]}" -ne 1 ] || [ "${#app_bundles[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one verified release APK and one AAB artifact."
-            find "$build_dir" -maxdepth 6 -type f -print
+          mapfile -t mappings < <(find "$build_dir" -type f -name 'mapping.txt' -print)
+          if [ "${#unsigned_apks[@]}" -ne 1 ] || [ "${#app_bundles[@]}" -ne 1 ] || [ "${#mappings[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one verified release APK, AAB and R8 mapping artifact."
+            find "$build_dir" -maxdepth 8 -type f -print
             exit 1
           fi
           cp "${unsigned_apks[0]}" "$out/RoadConquest-$version-unsigned.apk"
           cp "${app_bundles[0]}" "$out/RoadConquest-$version.aab"
+          cp "${mappings[0]}" "$out/RoadConquest-$version-mapping.txt"
           git archive --format=zip --prefix="RoadConquest/" HEAD > "$out/RoadConquest-AndroidStudio-$version.zip"
           cp RELEASE_NOTES.md "$out/Release-notes.md"
           function_dir="$RUNNER_TEMP/roadconquest-account-function"
@@ -324,6 +336,59 @@ jobs:
             exit 1
           fi
           cp "${account_bundles[0]}" "$out/RoadConquest-account-function-$version.mjs"
+
+          # MapLibre's Maven release contains stripped native libraries, so AGP cannot recover
+          # their symbols by itself. Download the exact symbol archive published from the same
+          # 13.6.1 OpenGL release, pin its checksum, verify ELF Build IDs against every packaged
+          # ABI, then embed the matching unstripped library as Play AAB debug metadata.
+          maplibre_version=$(sed -n 's/.*org\.maplibre\.gl:android-sdk-opengl:\([^"]*\).*/\1/p' app/build.gradle.kts)
+          if [ "$maplibre_version" != "13.6.1" ]; then
+            echo "::error::Update the pinned MapLibre symbol archive/checksum for version $maplibre_version."
+            exit 1
+          fi
+          symbols_archive="$RUNNER_TEMP/maplibre-opengl-release-symbols.tar.gz"
+          symbols_url="https://github.com/maplibre/maplibre-native/releases/download/android-v13.6.1/debug-symbols-maplibre-android-opengl-release-android-v13.6.1.tar.gz"
+          curl --fail --location --retry 3 --retry-delay 2 "$symbols_url" --output "$symbols_archive"
+          echo "dafa34c93eb73e14a34f16ccd15412ed3164eb1bc87a6d0811083d40a8e1a173  $symbols_archive" | sha256sum -c -
+
+          symbols_dir="$RUNNER_TEMP/maplibre-symbols"
+          rm -rf "$symbols_dir"
+          mkdir -p "$symbols_dir"
+          tar -xzf "$symbols_archive" -C "$symbols_dir"
+          mapfile -t symbol_libs < <(find "$symbols_dir" -type f -name 'libmaplibre.so' | sort)
+          if [ "${#symbol_libs[@]}" -ne 4 ]; then
+            echo "::error::Expected four MapLibre ABI symbol libraries, found ${#symbol_libs[@]}."
+            find "$symbols_dir" -maxdepth 4 -type f -print
+            exit 1
+          fi
+
+          aab="$out/RoadConquest-$version.aab"
+          metadata_root="$RUNNER_TEMP/roadconquest-aab-metadata"
+          metadata_dir="$metadata_root/BUNDLE-METADATA/com.android.tools.build.debugsymbols"
+          rm -rf "$metadata_root"
+          mkdir -p "$metadata_dir"
+          for symbol_so in "${symbol_libs[@]}"; do
+            abi=$(basename "$(dirname "$symbol_so")")
+            packaged_so="$RUNNER_TEMP/roadconquest-$abi-libmaplibre.so"
+            unzip -p "$aab" "base/lib/$abi/libmaplibre.so" > "$packaged_so"
+            test -s "$packaged_so"
+            symbol_build_id=$(readelf -n "$symbol_so" | sed -n 's/.*Build ID: //p' | head -n 1)
+            packaged_build_id=$(readelf -n "$packaged_so" | sed -n 's/.*Build ID: //p' | head -n 1)
+            if [ -z "$symbol_build_id" ] || [ "$symbol_build_id" != "$packaged_build_id" ]; then
+              echo "::error::MapLibre symbol Build ID mismatch for $abi (symbols=$symbol_build_id packaged=$packaged_build_id)."
+              exit 1
+            fi
+            mkdir -p "$metadata_dir/$abi"
+            cp "$symbol_so" "$metadata_dir/$abi/libmaplibre.so.dbg"
+          done
+
+          (cd "$metadata_root" && zip -q -r "$aab" BUNDLE-METADATA)
+          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+            unzip -Z1 "$aab" | grep -qx "BUNDLE-METADATA/com.android.tools.build.debugsymbols/$abi/libmaplibre.so.dbg"
+          done
+          unzip -Z1 "$aab" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
+          (cd "$symbols_dir" && zip -q -r "$out/RoadConquest-$version-native-debug-symbols.zip" .)
+
           # Sign the direct-install APK and the Play upload bundle with the permanent upload identity.
           build_tools="$ANDROID_HOME/build-tools/36.0.0"
           if [ ! -x "$build_tools/apksigner" ] || [ ! -x "$build_tools/zipalign" ]; then
@@ -345,10 +410,10 @@ jobs:
           # treating trust-chain warnings as a corrupt bundle.
           jarsigner -verify "$out/RoadConquest-$version.aab"
           rm "$out/RoadConquest-$version-unsigned.apk"
-          (cd "$out" && sha256sum *.apk *.aab *.zip *.mjs > "RoadConquest-$version-SHA256SUMS.txt")
+          (cd "$out" && sha256sum *.apk *.aab *.zip *.mjs *-mapping.txt > "RoadConquest-$version-SHA256SUMS.txt")
           release_flags=()
           if [[ "$version" == *-beta* ]]; then release_flags+=(--prerelease); fi
           release_title="${version/-beta./ Beta }"
           release_title="${release_title/-beta/ Beta}"
           gh release create "$tag" --target "$GITHUB_SHA" --title "Road Conquest $release_title" "${release_flags[@]}" \
-            --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.aab "$out"/*.zip "$out"/*.mjs "$out"/*SHA256SUMS.txt
+            --notes-file "$out/Release-notes.md" "$out"/*.apk "$out"/*.aab "$out"/*.zip "$out"/*.mjs "$out"/*-mapping.txt "$out"/*SHA256SUMS.txt
