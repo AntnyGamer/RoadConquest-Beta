@@ -30,6 +30,18 @@ class DrivingFilterTest {
         assertTrue(accepts(point(40.0002, 13), point(40.0, 10)))
     }
 
+    @Test fun explicitlyUnreliableMeasuredSpeedCannotAuthorizeGpsDrift() {
+        val previous = point(40.0, 10).apply { speedAccuracyMetersPerSecond = 10f }
+        val current = point(40.00005, 13).apply { speedAccuracyMetersPerSecond = 10f }
+        assertFalse(accepts(current, previous))
+    }
+
+    @Test fun poorSpeedAccuracyStillAllowsClearMovementEvidence() {
+        val previous = point(40.0, 10).apply { speedAccuracyMetersPerSecond = 10f }
+        val current = point(40.0003, 13).apply { speedAccuracyMetersPerSecond = 10f }
+        assertTrue(accepts(current, previous))
+    }
+
     @Test fun stationaryDriftAndOutOfOrderFixesAreRejected() {
         assertFalse(accepts(point(40.000001, 13, 0f), point(40.0, 10, 0f)))
         assertFalse(accepts(point(40.0002, 9), point(40.0, 10)))
