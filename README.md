@@ -51,9 +51,12 @@ before it can resume.
 
 Mileage estimates distance between accepted driving fixes, including repeat drives. GPS speed is
 a heuristic and cannot prove you are in a car. Long gaps, reversed timestamps and implausible jumps
-are excluded. Local road totals group nearby fragments of the same normalized street name and connected
-unnamed access lanes. Distant same-name roads remain separate. These totals are personal estimates;
-public matching does not provide authoritative street identities.
+are excluded. Local road totals use a human-road identity layer: signed route refs from the existing
+OSRM match response take priority, connected same-name fragments are joined, nearby divided
+carriageways with the same route ref are treated as one road, and anonymous on/off ramps do not
+inflate the count. Distant same-name or same-ref roads remain separate unless driven geometry
+establishes a local connection. The counter is intentionally human-oriented rather than a raw
+OSM-way or matcher-fragment count.
 
 ## Accounts and leaderboards
 
