@@ -31,6 +31,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
 
 class TrackingService : Service(), LocationListener {
     private lateinit var locationManager: LocationManager
@@ -57,7 +58,9 @@ class TrackingService : Service(), LocationListener {
     private val finalMatchingFlushScheduled = AtomicBoolean(false)
     private var lastObserved: Location? = null
     private var lastAccepted: Location? = null
-    private var lastExplored: Location? = null
+    // Avoid repeatedly hitting SQLite for the same 50 m fog cell during one service session.
+    // The concurrent set also prevents duplicate queued writes before storageExecutor catches up.
+    private val exploredCellsThisSession = ConcurrentHashMap.newKeySet<Long>()
     private var lastPlaceCandidate: Location? = null
     @Volatile private var baselineCandidateCaptured = false
     private var baselineRequestElapsedNanos = 0L
@@ -200,21 +203,24 @@ class TrackingService : Service(), LocationListener {
         if (elapsedFromPrevious in 1..MAX_MOTION_SAMPLE_AGE_MS &&
             distanceFromPrevious / (elapsedFromPrevious / 1_000f) > MAX_PLAUSIBLE_SPEED_MPS
         ) return
-        if (!location.isMock && location.hasAccuracy() && location.accuracy in 0.01f..25f &&
-            (lastExplored?.distanceTo(location) ?: Float.POSITIVE_INFINITY) >= 20f) {
-            val visited = Location(location)
-            lastExplored = visited
-            val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
-                PLACE_CANDIDATE_MIN_DISTANCE_M
-            if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
-            storageExecutor.execute {
-                try {
-                    if (repository.recordExploredPlace(visited)) {
-                        if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
-                        sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+        if (!location.isMock && location.hasAccuracy() && location.accuracy in 0.01f..25f) {
+            val exploredCell = TrackingRepository.exploredCellKey(location.latitude, location.longitude)
+            if (exploredCell != null && exploredCellsThisSession.add(exploredCell)) {
+                val visited = Location(location)
+                val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
+                    PLACE_CANDIDATE_MIN_DISTANCE_M
+                if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
+                storageExecutor.execute {
+                    try {
+                        if (repository.recordExploredPlace(visited)) {
+                            if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
+                            sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+                        }
+                    } catch (error: Exception) {
+                        // A failed write must remain eligible for a later fix in the same cell.
+                        exploredCellsThisSession.remove(exploredCell)
+                        Log.e("RoadConquest", "Could not save explored place", error)
                     }
-                } catch (error: Exception) {
-                    Log.e("RoadConquest", "Could not save explored place", error)
                 }
             }
         }
