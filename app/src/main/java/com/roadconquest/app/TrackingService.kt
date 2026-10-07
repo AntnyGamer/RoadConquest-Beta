@@ -208,13 +208,13 @@ class TrackingService : Service(), LocationListener {
                 }
             }
         }
-        if (previous != null && elapsedMillis(previous, location) == 0L) {
+        val elapsedFromPrevious = if (previous == null) Long.MIN_VALUE else elapsedMillis(previous, location)
+        if (elapsedFromPrevious == 0L) {
             // A better simultaneous source may improve the marker/next baseline, never add mileage twice.
             if (location.hasAccuracy() && location.accuracy <= MAX_ACCURACY_M) lastObserved = Location(location)
             if (location.hasAccuracy() && location.accuracy <= MAX_PREVIEW_ACCURACY_M) sendLocationUpdate(location, lastBearingDegrees)
             return
         }
-        val elapsedFromPrevious = if (previous == null) Long.MIN_VALUE else elapsedMillis(previous, location)
         val distanceFromPrevious = if (previous != null && elapsedFromPrevious in 1..MAX_MOTION_SAMPLE_AGE_MS) {
             previous.distanceTo(location)
         } else {
