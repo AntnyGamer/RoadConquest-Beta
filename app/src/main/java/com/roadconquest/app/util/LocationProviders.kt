@@ -18,10 +18,11 @@ object LocationProviders {
      * location work on devices that expose both. Fall through to GPS/network only when the
      * preferred provider cannot be registered.
      */
-    fun registerHighAccuracy(locationManager: LocationManager, register: (String) -> Boolean) {
+    fun registerHighAccuracy(locationManager: LocationManager, register: (String) -> Boolean): String? {
         for (provider in candidates(locationManager)) {
-            if (register(provider)) return
+            if (register(provider)) return provider
         }
+        return null
     }
 
     /** A baseline must come from a fix produced after the current location request began. */
