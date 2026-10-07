@@ -342,6 +342,29 @@ class OsrmTurnTest {
         assertNotEquals(rawEnd.toString(), snappedEnd.toString())
     }
 
+    @Test fun measuredLowSpeedKeepsStrictSnapDespiteLargePositionDelta() {
+        val rawStart = coord(-74.0, 40.0)
+        val rawEnd = coord(-74.0, 40.0003)
+        val parallelStart = coord(-73.99981, 40.0)
+        val parallelEnd = coord(-73.99981, 40.0003)
+        val rawPoints = listOf(
+            TrackPoint(1, 40.0, -74.0, 10f, 3f, 0f, 1_000_000L, false),
+            TrackPoint(2, 40.0003, -74.0, 10f, 3f, 0f, 1_003_000L, false)
+        )
+
+        assertNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, parallelStart), trace(0, 1, parallelEnd)),
+                    matching(leg("Nearby Parallel Road", parallelStart, parallelEnd))
+                ),
+                rawPoints
+            )
+        )
+        assertNotEquals(rawStart.toString(), parallelStart.toString())
+        assertNotEquals(rawEnd.toString(), parallelEnd.toString())
+    }
+
     @Test fun nearbyParallelRoadSnapBeyondReportedAccuracyStaysPending() {
         val rawStart = coord(-74.0, 40.0)
         val rawEnd = coord(-74.0, 40.0001)
