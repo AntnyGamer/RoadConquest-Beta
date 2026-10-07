@@ -119,8 +119,9 @@ class MapRenderer(
     private var minimumZoom = Double.NaN
     private val renderFog = Runnable { scheduleFogRender() }
     private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-        updateCameraLimits()
-        updateFogCoverage()
+        val cameraPosition = map.cameraPosition
+        updateCameraLimits(cameraPosition)
+        updateFogCoverage(cameraPosition = cameraPosition)
         scheduleFogRender()
     }
 
@@ -136,9 +137,12 @@ class MapRenderer(
     private val cameraMoveListener = MapLibreMap.OnCameraMoveListener {
         cameraMoving = true
         viewportRevision++
-        updateCameraLimits()
-        updateFogCoverage()
-        if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) scheduleFogRender()
+        // CameraPosition crosses the MapLibre/native boundary. Snapshot it once per move callback
+        // and share that exact frame between the limit and coverage calculations.
+        val cameraPosition = map.cameraPosition
+        updateCameraLimits(cameraPosition)
+        updateFogCoverage(cameraPosition = cameraPosition)
+        if (cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) scheduleFogRender()
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
         cameraMoving = false
@@ -699,8 +703,8 @@ class MapRenderer(
         style.addLayer(layer)
     }
 
-    private fun updateCameraLimits() {
-        val target = map.cameraPosition.target ?: return
+    private fun updateCameraLimits(cameraPosition: CameraPosition = map.cameraPosition) {
+        val target = cameraPosition.target ?: return
         val next = FogCoverage.minimumZoom(mapView.width, mapView.height, mapView.pixelRatio, target.latitude)
         if (!minimumZoom.isFinite() || abs(next - minimumZoom) > 0.001) {
             minimumZoom = next
@@ -708,13 +712,16 @@ class MapRenderer(
         }
     }
 
-    private fun updateFogCoverage(force: Boolean = false) {
+    private fun updateFogCoverage(
+        force: Boolean = false,
+        cameraPosition: CameraPosition = map.cameraPosition
+    ) {
         val coordinates = detailedFogCoordinates
         // Keep the detailed bitmap during ordinary movement, but reserve extra off-screen
         // coverage while the camera is moving. Android 12 can present a native frame before the
         // Java camera callback catches up; switching to the ready world layer early prevents a
         // bitmap edge from flashing as a white rectangle without closing fog on every gesture.
-        val detailed = fogEnabled && map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM &&
+        val detailed = fogEnabled && cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
                 FogCoverage.coversViewport(
