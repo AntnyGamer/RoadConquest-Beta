@@ -595,7 +595,7 @@ class TrackingRepository(context: Context) {
             ),
             null,
             null,
-            null
+            "segment_id ASC"
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 val storedGroup = cursor.getString(7).orEmpty()
