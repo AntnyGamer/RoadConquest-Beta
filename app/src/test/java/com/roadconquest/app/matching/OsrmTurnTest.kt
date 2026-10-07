@@ -100,6 +100,35 @@ class OsrmTurnTest {
         assertEquals("Approach", result.roads.single().name)
     }
 
+    @Test fun confidentSameRoadSplitGetsASmallContinuousBridge() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p2 = coord(-74.0, 40.00010)
+        val p3 = coord(-74.0, 40.00000)
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(
+                        trace(0, 0, p0), trace(0, 1, p1),
+                        trace(1, 0, p2), trace(1, 1, p3)
+                    ),
+                    matching(leg("Main Road", p0, p1)),
+                    matching(leg("Main Road", p2, p3))
+                ),
+                points(p0, p1, p2, p3)
+            )
+        )
+
+        assertEquals(setOf(1L, 2L, 3L, 4L), result.matchedPointConfidences.keys)
+        assertEquals(3, result.roads.size)
+        val bridge = result.roads.single {
+            it.firstTimestamp == 1_003_000L && it.lastTimestamp == 1_006_000L
+        }
+        val coordinates = JSONArray(bridge.coordinatesJson)
+        assertEquals(p1.toString(), coordinates.getJSONArray(0).toString())
+        assertEquals(p2.toString(), coordinates.getJSONArray(1).toString())
+    }
+
     @Test fun splitTraceStartKeepsTheMissingIncomingIntervalPending() {
         val result = requireNotNull(OsrmMatcher().parse(response(listOf(
             trace(0, 0, a), trace(0, 1, b), trace(1, 0, d), trace(1, 1, e)
@@ -116,12 +145,12 @@ class OsrmTurnTest {
         assertTrue(result.matchedPointConfidences.isEmpty())
     }
 
-    @Test fun disconnectedStepGeometryCannotLeaveACompletedGap() {
+    @Test fun whollyDisconnectedStepGeometryKeepsTheLongFailureBackoff() {
         val badLeg = leg("Approach", a, b)
         badLeg.getJSONArray("steps").put(leg("Exit", d, e).getJSONArray("steps").getJSONObject(0))
-        assertThrows(IllegalArgumentException::class.java) {
+        assertNull(
             OsrmMatcher().parse(response(listOf(trace(0, 0, a), trace(0, 1, e)), matching(badLeg)), points(a, e))
-        }
+        )
     }
 
     @Test fun missingAmbiguityOrShiftedWaypointIndexCannotResolveFixes() {
@@ -181,10 +210,74 @@ class OsrmTurnTest {
 
     @Test fun unsupportedDetourCannotTurnARecordedStraightDriveIntoAnInventedRoad() {
         val far = coord(-73.99, 40.01)
-        assertThrows(IllegalArgumentException::class.java) {
+        assertNull(
             OsrmMatcher().parse(response(listOf(trace(0, 0, a), trace(0, 1, b)),
                 matching(leg("Detour", a, far, b))), points(a, b))
-        }
+        )
+    }
+
+    @Test fun oneBadLegKeepsOnlyThatIntervalPendingAndPreservesValidSiblingGeometry() {
+        val far = coord(-73.99, 40.01)
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, a), trace(0, 1, b), trace(0, 2, c)),
+                    matching(
+                        leg("Approach", a, b),
+                        leg("Bad sibling", b, far, c)
+                    )
+                ),
+                points(a, b, c)
+            )
+        )
+
+        assertEquals(listOf("Approach"), result.roads.map { it.name })
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
+        assertFalse(3L in result.matchedPointConfidences)
+    }
+
+    @Test fun nearbyParallelRoadSnapBeyondReportedAccuracyStaysPending() {
+        val rawStart = coord(-74.0, 40.0)
+        val rawEnd = coord(-74.0, 40.0001)
+        val parallelStart = coord(-73.99981, 40.0)
+        val parallelEnd = coord(-73.99981, 40.0001)
+        val rawPoints = listOf(
+            TrackPoint(1, 40.0, -74.0, 10f, 3f, 0f, 1_000_000L, false),
+            TrackPoint(2, 40.0001, -74.0, 10f, 3f, 0f, 1_003_000L, false)
+        )
+
+        assertNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, parallelStart), trace(0, 1, parallelEnd)),
+                    matching(leg("Nearby Parallel Road", parallelStart, parallelEnd))
+                ),
+                rawPoints
+            )
+        )
+        assertNotEquals(rawStart.toString(), parallelStart.toString())
+        assertNotEquals(rawEnd.toString(), parallelEnd.toString())
+    }
+
+    @Test fun ordinaryDrivingKeepsThePreviousSnapAllowance() {
+        val parallelStart = coord(-73.99981, 40.0)
+        val parallelEnd = coord(-73.99981, 40.0001)
+        val rawPoints = listOf(
+            TrackPoint(1, 40.0, -74.0, 10f, 8f, 0f, 1_000_000L, false),
+            TrackPoint(2, 40.0001, -74.0, 10f, 8f, 0f, 1_003_000L, false)
+        )
+
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, parallelStart), trace(0, 1, parallelEnd)),
+                    matching(leg("Main Road", parallelStart, parallelEnd))
+                ),
+                rawPoints
+            )
+        )
+        assertEquals(1, result.roads.size)
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
     }
 
     @Test fun shortIntersectionEdgesRemainInTheDrawnRoute() {

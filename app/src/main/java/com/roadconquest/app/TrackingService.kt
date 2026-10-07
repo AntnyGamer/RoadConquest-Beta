@@ -531,7 +531,11 @@ class TrackingService : Service(), LocationListener {
                 var needsRecovery = false
                 try {
                     repeat(MAX_MATCH_BATCHES_PER_RUN) { batchIndex ->
-                        val window = repository.loadMatchingWindow(MATCH_BATCH_SIZE)
+                        // Keep the first batch focused on the freshest drive for responsive live
+                        // updates. Spare slots preferentially revisit expired retries so isolated
+                        // old holes cannot stay thin/provisional forever while new fixes arrive.
+                        val retryCap = if (batchIndex == 0) null else repository.oldestEligibleRetryId()
+                        val window = repository.loadMatchingWindow(MATCH_BATCH_SIZE, maxPendingId = retryCap)
                         val points = window.points
                         if (points.isEmpty()) return@execute
 

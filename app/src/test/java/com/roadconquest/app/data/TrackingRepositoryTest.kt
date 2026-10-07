@@ -253,6 +253,21 @@ class TrackingRepositoryTest {
         assertEquals(newer, repository.loadMatchingWindow(nowMillis = 11_000_000).points.map { it.id })
     }
 
+    @Test fun expiredRetryCanBeSelectedWithoutGivingUpFreshFirstBatchOrdering() {
+        val ids = (0..5).map { point(1_000_000L + it * 3_000L) }
+        repository.markMatched(listOf(ids[0], ids[2], ids[3], ids[5]))
+        repository.deferMatching(listOf(ids[1]), 100L)
+
+        val fresh = repository.loadMatchingWindow(limit = 4, nowMillis = 200L)
+        assertEquals(setOf(ids[4]), fresh.markableIds)
+
+        val retryCap = repository.oldestEligibleRetryId(nowMillis = 200L)
+        assertEquals(ids[1], retryCap)
+        val retry = repository.loadMatchingWindow(limit = 4, nowMillis = 200L, maxPendingId = retryCap)
+        assertEquals(setOf(ids[1]), retry.markableIds)
+        assertEquals(listOf(ids[0], ids[1], ids[2]), retry.points.map { it.id })
+    }
+
     @Test fun reverseDriveUpdatesTheSameSegmentAndKeepsFirstUnlockTime() {
         repository.upsertRoads(listOf(MatchedRoad("Main St", "[[-74,40],[-74.001,40]]", 100, 200, 1.0)))
         repository.upsertRoads(listOf(MatchedRoad("Main St", "[[-74.001,40],[-74,40]]", 300, 400, 1.0)))
