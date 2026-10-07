@@ -234,7 +234,7 @@ class TrackingService : Service(), LocationListener {
                 PLACE_CANDIDATE_MIN_DISTANCE_M
             // Preserve the original candidate-spacing state even when this exact fog cell was
             // already persisted and its redundant SQLite insert can be skipped.
-            if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
+            if (savePlaceCandidate) lastPlaceCandidate = visited
             val exploredCell = TrackingRepository.exploredCellKey(visited.latitude, visited.longitude)
             if (exploredCell != null) {
                 // Bound this purely opportunistic cache. Clearing it only restores the original
@@ -283,20 +283,22 @@ class TrackingService : Service(), LocationListener {
 
         // Save one recent anchor before the first confirmed driving point so the beginning
         // of a drive is not lost merely because driving speed could only be confirmed later.
-        val toSave = ArrayList<Location>(2)
-        if (lastAccepted == null && previous != null &&
+        // Normal in-drive samples need only one insert, avoiding a temporary list allocation on
+        // every accepted fix while preserving the exact two-point transaction at drive start.
+        val startAnchor = if (lastAccepted == null && previous != null &&
             previous.hasAccuracy() && previous.accuracy <= MAX_ACCURACY_M &&
             elapsedFromPrevious in 1..MAX_START_ANCHOR_AGE_MS
-        ) {
-            toSave += previous
-        }
+        ) previous else null
 
         val accepted = requireNotNull(lastObserved)
-        toSave += accepted
         lastAccepted = accepted
         storageExecutor.execute {
             try {
-                repository.insertLocations(toSave)
+                if (startAnchor == null) {
+                    repository.insertLocation(accepted)
+                } else {
+                    repository.insertLocations(listOf(startAnchor, accepted))
+                }
                 sendUiBroadcast(ACTION_STATS_UPDATED)
                 maybeRunMatching()
             } catch (error: Exception) {
