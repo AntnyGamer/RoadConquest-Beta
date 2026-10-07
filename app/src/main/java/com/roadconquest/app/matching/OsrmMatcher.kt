@@ -121,6 +121,7 @@ class OsrmMatcher(
 
         val roads = mutableListOf<MatchedRoad>()
         val resolved = mutableMapOf<Long, Double>()
+        var rejectedLeg = false
         for (m in traces.indices) {
             val trace = traces[m]
             if (trace.size < 2) continue
@@ -161,6 +162,7 @@ class OsrmMatcher(
                         val legRoads = try {
                             parseLeg(legs.getJSONObject(l), trace[l], trace[l + 1], points, confidences[m])
                         } catch (_: IllegalArgumentException) {
+                            rejectedLeg = true
                             emptyList()
                         }
                         if (legRoads.isEmpty()) {
@@ -182,6 +184,11 @@ class OsrmMatcher(
         // confidently mapped. Close only small, directionally consistent same-road seams using
         // the already-snapped endpoints; turns and different-road boundaries remain pending.
         bridgeConfidentSameRoadSplits(roads, resolved, points)
+
+        // Salvage valid sibling legs, but preserve the longer failure backoff when every
+        // candidate leg failed local plausibility checks. That avoids hammering the matcher every
+        // ten seconds on a persistently bad nearby-road candidate with no trustworthy geometry.
+        if (roads.isEmpty() && rejectedLeg) return null
 
         // A valid but ambiguous response is a partial match, not a network failure. It should
         // retry soon with more context and must not save provisional blue lines or road credit.
