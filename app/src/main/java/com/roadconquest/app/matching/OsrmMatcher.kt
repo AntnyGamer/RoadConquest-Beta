@@ -47,7 +47,9 @@ class OsrmMatcher(
             // still applies the stricter recorded-accuracy distance check before any geometry
             // can become permanent road credit, so this improves candidate discovery without
             // blindly accepting a nearby parallel road.
-            it.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toInt().toString()
+            kotlin.math.ceil(
+                it.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toDouble()
+            ).toInt().toString()
         }
         // Keep a leg per surviving fix so an ambiguous batch tail can be withheld without
         // persisting its guessed junction spur. Named-road counts do not count these legs.
