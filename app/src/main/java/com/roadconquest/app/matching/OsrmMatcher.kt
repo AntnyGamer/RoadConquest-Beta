@@ -202,7 +202,7 @@ class OsrmMatcher(
                     .orEmpty()
                 val countTowardsRoads = when (maneuverType) {
                     "ramp", "on ramp", "off ramp" -> false
-                    "roundabout", "rotary" ->
+                    "roundabout", "roundabout turn", "rotary" ->
                         rawName.isNotBlank() || rotaryName.isNotBlank() || reference.isNotBlank()
                     else -> true
                 }
