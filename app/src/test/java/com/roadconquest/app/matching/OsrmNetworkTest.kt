@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit
 @Config(sdk = [31, 37], manifest = Config.NONE)
 class OsrmNetworkTest {
     private val points = listOf(
-        TrackPoint(1, 40.0, -74.0, 3f, 5f, 0f, 100_000, false),
-        TrackPoint(2, 40.0, -74.001, 99f, 5f, 0f, 100_000, false)
+        TrackPoint(1, 40.0, -74.0, 3f, 5f, 270f, 100_000, false),
+        TrackPoint(2, 40.0, -74.001, 99f, 5f, 270f, 100_000, false)
     )
     private val valid = """{"code":"Ok","tracepoints":[{"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},{"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-74.001,40]}],"matchings":[{"confidence":0.9,"legs":[{"steps":[{"name":"Rue cité","distance":100,"geometry":{"type":"LineString","coordinates":[[-74,40],[-74.001,40]]}}]}]}]}"""
 
@@ -31,6 +31,29 @@ class OsrmNetworkTest {
             assertEquals("0;1", request.queryParameter("waypoints"))
             assertEquals("false", request.queryParameter("tidy"))
             assertEquals("ignore", request.queryParameter("gaps"))
+            assertEquals("270,65;270,65", request.queryParameter("bearings"))
+        }
+    }
+
+    @Test fun inconsistentOrLowEvidenceBearingDoesNotConstrainMatching() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val unreliable = points.map { it.copy(bearingDegrees = 0f) }
+            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(unreliable))
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertNull(request.queryParameter("bearings"))
+        }
+    }
+
+    @Test fun lowSpeedBearingDoesNotConstrainMatching() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val slow = points.map { it.copy(speedMps = 1f) }
+            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(slow))
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertNull(request.queryParameter("bearings"))
         }
     }
 
