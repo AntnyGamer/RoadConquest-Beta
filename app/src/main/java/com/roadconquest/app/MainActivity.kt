@@ -101,7 +101,6 @@ class MainActivity : Activity() {
     }
 
     private var lastPreviewLocation: Location? = null
-    private var previewProvider: String? = null
     private var baselinePreviewCapturedForRegistration = false
     private var baselinePreviewRequestElapsedNanos = 0L
     private var baselinePreviewRequestWallMillis = 0L
@@ -972,16 +971,11 @@ class MainActivity : Activity() {
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) || !resumed ||
             !hasLocationPermission() || TrackingService.isRunning || !locationManager.isLocationEnabled
         ) return
-        val preferred = LocationProviders.preferred(locationManager)
-        val current = previewProvider
-        if (current != null && current == preferred &&
-            runCatching { locationManager.isProviderEnabled(current) }.getOrDefault(false)
-        ) return
         stopPreviewLocation()
         baselinePreviewCapturedForRegistration = false
         baselinePreviewRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()
         baselinePreviewRequestWallMillis = System.currentTimeMillis()
-        previewProvider = LocationProviders.registerHighAccuracy(locationManager, ::registerPreviewProvider)
+        LocationProviders.registerHighAccuracy(locationManager, ::registerPreviewProvider)
     }
 
     private fun registerPreviewProvider(provider: String): Boolean {
@@ -1019,7 +1013,6 @@ class MainActivity : Activity() {
 
     private fun stopPreviewLocation() {
         if (::locationManager.isInitialized) runCatching { locationManager.removeUpdates(previewLocationListener) }
-        previewProvider = null
         lastPreviewLocation = null
     }
 
