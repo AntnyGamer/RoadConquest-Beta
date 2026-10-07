@@ -230,6 +230,19 @@ class TrackingRepositoryTest {
         assertEquals(current.toSet(), window.markableIds)
     }
 
+    @Test fun missingSpeedSentinelCannotMakeMovingLongGapLookStationary() {
+        val old = point(1_000_000L, 40.0, speed = 0f)
+        val current = listOf(
+            point(1_045_000L, 40.00095, speed = 0f),
+            point(1_048_000L, 40.00115, speed = 5f)
+        )
+
+        val window = repository.loadMatchingWindow()
+        assertEquals(current, window.points.map { it.id })
+        assertEquals(current.toSet(), window.markableIds)
+        assertFalse(old in window.markableIds)
+    }
+
     @Test fun fortyFiveSecondGpsBlackoutCannotInventAConnectingRoad() {
         point(1_000_000L, 40.0)
         val current = listOf(
