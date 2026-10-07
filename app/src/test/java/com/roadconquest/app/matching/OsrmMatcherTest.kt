@@ -152,6 +152,25 @@ class OsrmMatcherTest {
         assertFalse(unnamed.countTowardsRoads)
     }
 
+    @Test fun unnamedRoundaboutTurnDoesNotCountAsASeparateRoad() {
+        val routePoints = listOf(
+            TrackPoint(60, 40.0, -74.0, 5f, 5f, 0f, 600_000, false),
+            TrackPoint(61, 40.0001, -73.9998, 5f, 5f, 0f, 610_000, false)
+        )
+        val json = """
+            {"code":"Ok","tracepoints":[
+              {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},
+              {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-73.9998,40.0001]}],
+             "matchings":[{"confidence":0.95,"legs":[{"steps":[
+              {"name":"","distance":24,"maneuver":{"type":"roundabout turn"},
+               "geometry":{"type":"LineString","coordinates":[[-74,40],[-73.9998,40.0001]]}}
+             ]}]}]}
+        """.trimIndent()
+
+        val road = requireNotNull(OsrmMatcher().parse(json, routePoints)).roads.single()
+        assertFalse(road.countTowardsRoads)
+    }
+
     @Test fun osrmRouteRefsAndRampManeuversFeedHumanRoadCounting() {
         val routePoints = listOf(
             TrackPoint(40, 40.0, -74.0, 5f, 8f, 0f, 400_000, false),
