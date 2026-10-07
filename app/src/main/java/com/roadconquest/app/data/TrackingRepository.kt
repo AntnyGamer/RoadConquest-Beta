@@ -218,18 +218,31 @@ class TrackingRepository(context: Context) {
      * keep at least one approach point and can use two exit-side points around a junction.
      */
     @Synchronized
-    fun loadMatchingWindow(limit: Int = 50, nowMillis: Long = System.currentTimeMillis()): MatchingWindow {
+    fun loadMatchingWindow(
+        limit: Int = 50,
+        nowMillis: Long = System.currentTimeMillis(),
+        maxPendingId: Long? = null
+    ): MatchingWindow {
         val maxPoints = limit.coerceAtLeast(2)
         // At production batch sizes reserve one extra context slot. Turn retries benefit much
         // more from seeing two points after the junction than from sending one additional
         // unresolved point. Keep tiny test/debug windows on the old two-anchor behavior.
         val anchorSlots = minOf(if (maxPoints >= 6) 3 else 2, maxPoints - 1)
         val pending = ArrayList<TrackPoint>(maxPoints - anchorSlots)
+        val pendingSelection = buildString {
+            append("matched = 0 AND next_match_attempt_ms <= ?")
+            if (maxPendingId != null) append(" AND id <= ?")
+        }
+        val pendingArgs = if (maxPendingId == null) {
+            arrayOf(nowMillis.toString())
+        } else {
+            arrayOf(nowMillis.toString(), maxPendingId.toString())
+        }
         dbHelper.readableDatabase.query(
             "track_points",
             TRACK_COLUMNS,
-            "matched = 0 AND next_match_attempt_ms <= ?",
-            arrayOf(nowMillis.toString()),
+            pendingSelection,
+            pendingArgs,
             null,
             null,
             "id DESC",
@@ -347,6 +360,20 @@ class TrackingRepository(context: Context) {
                 "WHERE matched = 0 AND next_match_attempt_ms <= ? AND id < ? LIMIT 1",
             arrayOf(nowMillis.toString(), beforeId.toString())
         ).use { it.moveToFirst() }
+
+    /**
+     * Returns the oldest retry whose backoff has expired. Matching normally favors fresh driving
+     * for low latency; callers can use this id as a window cap to spend spare batch slots on old
+     * holes so a continuous stream of new fixes cannot starve them indefinitely.
+     */
+    @Synchronized
+    fun oldestEligibleRetryId(nowMillis: Long = System.currentTimeMillis()): Long? =
+        dbHelper.readableDatabase.rawQuery(
+            "SELECT id FROM track_points " +
+                "WHERE matched = 0 AND next_match_attempt_ms > 0 AND next_match_attempt_ms <= ? " +
+                "ORDER BY next_match_attempt_ms ASC, id ASC LIMIT 1",
+            arrayOf(nowMillis.toString())
+        ).use { if (it.moveToFirst()) it.getLong(0) else null }
 
     @Synchronized
     fun nextDeferredMatchAttempt(nowMillis: Long = System.currentTimeMillis()): Long? =
