@@ -617,7 +617,7 @@ class MainActivity : Activity() {
         if (deletionPending || trackingPaused || !hasPreciseLocation || !locationEnabled) {
             renderer?.clearCurrentLocation()
         }
-        statusText.text = when {
+        val nextStatus = when {
             deletionPending -> "Finishing device data deletion…"
             trackingPaused -> getString(R.string.tracking_paused)
             !hasPreciseLocation && hasApproximateLocation -> "Precise location required"
@@ -626,6 +626,7 @@ class MainActivity : Activity() {
             active -> "Tracking your driving"
             else -> "Not tracking"
         }
+        if (statusText.text.toString() != nextStatus) statusText.text = nextStatus
 
         val generation = ++summaryGeneration
         summaryExecutor.execute {
@@ -653,8 +654,10 @@ class MainActivity : Activity() {
                 if (isDestroyed || generation != summaryGeneration) return@runOnUiThread
                 result.fold(
                     onSuccess = { (value, progression, unlocked) ->
-                        statsText.text = StatsText.format(this, value)
-                        pointsText.text = String.format(Locale.getDefault(), "⚔ %,d points", progression.balance)
+                        val nextStats = StatsText.format(this, value)
+                        if (statsText.text.toString() != nextStats) statsText.text = nextStats
+                        val nextPoints = String.format(Locale.getDefault(), "⚔ %,d points", progression.balance)
+                        if (pointsText.text.toString() != nextPoints) pointsText.text = nextPoints
                         if (unlocked.isNotEmpty()) {
                             val reward = unlocked.sumOf { it.rewardPoints }
                             val message = if (unlocked.size == 1) {
@@ -673,26 +676,33 @@ class MainActivity : Activity() {
                     },
                     onFailure = { error ->
                         Log.e("RoadConquest", "Could not load data summary", error)
-                        statsText.text = getString(R.string.saved_data_unavailable)
-                        pointsText.text = "Points unavailable"
+                        val unavailable = getString(R.string.saved_data_unavailable)
+                        if (statsText.text.toString() != unavailable) statsText.text = unavailable
+                        if (pointsText.text.toString() != "Points unavailable") {
+                            pointsText.text = "Points unavailable"
+                        }
                     }
                 )
             }
         }
 
+        val nextButtonText: CharSequence
+        val nextButtonEnabled: Boolean
         if (deletionPending) {
-            enableButton.text = "Deleting device data…"
-            enableButton.isEnabled = false
+            nextButtonText = "Deleting device data…"
+            nextButtonEnabled = false
         } else if (trackingPaused) {
-            enableButton.text = getString(R.string.resume_tracking)
-            enableButton.isEnabled = true
+            nextButtonText = getString(R.string.resume_tracking)
+            nextButtonEnabled = true
         } else if (!manualOnly) {
-            enableButton.text = "Enabled automatically"
-            enableButton.isEnabled = false
+            nextButtonText = "Enabled automatically"
+            nextButtonEnabled = false
         } else {
-            enableButton.isEnabled = true
-            enableButton.text = if (active) getString(R.string.disable) else getString(R.string.enable)
+            nextButtonText = if (active) getString(R.string.disable) else getString(R.string.enable)
+            nextButtonEnabled = true
         }
+        if (enableButton.text.toString() != nextButtonText.toString()) enableButton.text = nextButtonText
+        if (enableButton.isEnabled != nextButtonEnabled) enableButton.isEnabled = nextButtonEnabled
     }
 
     private fun showOverlayPicker() {
