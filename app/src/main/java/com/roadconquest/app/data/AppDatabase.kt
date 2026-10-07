@@ -24,8 +24,15 @@ class AppDatabase private constructor(context: Context) :
         val segmentCount: Long,
         val unlockedCount: Long
     )
+    internal data class LastTrackPointCache(
+        val present: Boolean,
+        val latitude: Double = 0.0,
+        val longitude: Double = 0.0,
+        val timestamp: Long = 0L
+    )
     internal var trackSummaryCache: TrackSummaryCache? = null
     internal var roadSummaryCache: RoadSummaryCache? = null
+    internal var lastTrackPointCache: LastTrackPointCache? = null
     internal var summaryCachingEnabled = true
 
     internal fun invalidateTrackSummary() {
@@ -66,16 +73,19 @@ class AppDatabase private constructor(context: Context) :
         if (!summaryCachingEnabled) {
             trackSummaryCache = null
             roadSummaryCache = null
+            lastTrackPointCache = null
             return
         }
         trackSummaryCache = TrackSummaryCache(0L, null, null, 0.0)
         roadSummaryCache = RoadSummaryCache(0L, 0L)
+        lastTrackPointCache = LastTrackPointCache(present = false)
     }
 
     internal fun disableSummaryCaching() {
         summaryCachingEnabled = false
         trackSummaryCache = null
         roadSummaryCache = null
+        lastTrackPointCache = null
     }
 
     init {
