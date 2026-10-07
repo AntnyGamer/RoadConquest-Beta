@@ -217,6 +217,13 @@ class TrackingService : Service(), LocationListener {
             // already persisted and its redundant SQLite insert can be skipped.
             if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
             val exploredCell = TrackingRepository.exploredCellKey(visited.latitude, visited.longitude)
+            if (exploredCell != null) {
+                // Bound this purely opportunistic cache. Clearing it only restores the original
+                // conflict-ignore database behavior; it cannot change exploration or scoring.
+                if (exploredCellsThisSession.size >= MAX_EXPLORED_CELL_CACHE) {
+                    exploredCellsThisSession.clear()
+                }
+            }
             if (exploredCell != null && exploredCellsThisSession.add(exploredCell)) {
                 storageExecutor.execute {
                     try {
@@ -690,6 +697,7 @@ class TrackingService : Service(), LocationListener {
         private const val MAX_START_ANCHOR_AGE_MS = 10_000L
         private const val MATCH_INTERVAL_MS = 10_000L
         private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 1_000f
+        private const val MAX_EXPLORED_CELL_CACHE = 4_096
         // A partial result usually means an intersection needs one or two newer fixes.
         // Retry on the normal matching cadence so turn holes close while the drive is still live.
         private const val MATCH_RETRY_AFTER_PARTIAL_MS = MATCH_INTERVAL_MS
