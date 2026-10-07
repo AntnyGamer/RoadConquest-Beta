@@ -1252,9 +1252,12 @@ class TrackingRepository(context: Context) {
         if (gap <= ordinaryGapMs) return true
         if (distance[0] > MAX_STOP_GAP_DISTANCE_M) return false
         // Beyond the normal GPS window, proximity alone is not proof of continuity: a moving
-        // car can disappear and later return near the same point. Real traffic-light/parking
-        // pauses supply a low-speed anchor, which is the evidence needed for a longer join.
-        return older.speedMps < STOP_GAP_SPEED_MPS || newer.speedMps < STOP_GAP_SPEED_MPS
+        // car can disappear and later return near the same point. Stored 0 m/s can also mean
+        // Android did not provide speed, so require the observed displacement across the gap to
+        // be stop-like as well as having a low-speed endpoint before treating it as a pause.
+        val inferredSpeedMps = distance[0] / (gap / 1_000f)
+        return inferredSpeedMps < STOP_GAP_SPEED_MPS &&
+            (older.speedMps < STOP_GAP_SPEED_MPS || newer.speedMps < STOP_GAP_SPEED_MPS)
     }
 
     companion object {
