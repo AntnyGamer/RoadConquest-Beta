@@ -115,6 +115,7 @@ class MapRenderer(
     private var detailedFogCoordinates: DoubleArray? = null
     private val fogCoverageScreen = DoubleArray(8)
     private var showingDetailedFog = false
+    private var fogHandoffGeneration = 0
     private var lastFogRenderAt = 0L
     private var minimumZoom = Double.NaN
     private val renderFog = Runnable { scheduleFogRender() }
@@ -737,15 +738,32 @@ class MapRenderer(
             }
         if (!force && detailed == showingDetailedFog) return
         showingDetailedFog = detailed
+        val generation = ++fogHandoffGeneration
         val detailedLayer = map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer
         val worldLayer = map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer
-        // Enable the incoming coverage before hiding the outgoing native layer.
-        if (detailed) {
-            detailedLayer?.setProperties(rasterOpacity(1f))
+        // Keep both native raster layers enabled for one rendered frame during a handoff.
+        // MapLibre can otherwise coalesce two same-frame opacity writes and briefly present
+        // neither source during a rapid zoom. One overlap frame can only make fog darker;
+        // it cannot expose an uncovered rectangle.
+        if (!fogEnabled) {
             worldLayer?.setProperties(rasterOpacity(0f))
-        } else {
-            worldLayer?.setProperties(rasterOpacity(if (fogEnabled) 1f else 0f))
             detailedLayer?.setProperties(rasterOpacity(0f))
+        } else if (detailed) {
+            detailedLayer?.setProperties(rasterOpacity(1f))
+            mapView.postOnAnimation {
+                if (!destroyed && generation == fogHandoffGeneration && showingDetailedFog) {
+                    (map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer)
+                        ?.setProperties(rasterOpacity(0f))
+                }
+            }
+        } else {
+            worldLayer?.setProperties(rasterOpacity(1f))
+            mapView.postOnAnimation {
+                if (!destroyed && generation == fogHandoffGeneration && !showingDetailedFog) {
+                    (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)
+                        ?.setProperties(rasterOpacity(0f))
+                }
+            }
         }
     }
 

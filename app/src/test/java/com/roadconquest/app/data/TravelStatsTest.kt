@@ -64,6 +64,14 @@ class TravelStatsTest {
         assertEquals(2L, repo.getSummary().roadSegmentCount)
     }
 
+    @Test fun unicodeCompatibilityVariantsOfSameRoadNameStayOneRoad() {
+        repo.upsertRoads(listOf(
+            MatchedRoad("Ｍａｉｎ St", "[[-74.002,40],[-74.001,40]]", 1, 2, 1.0),
+            MatchedRoad("Main St", "[[-74.001,40],[-74.000,40]]", 3, 4, 1.0)
+        ))
+        assertEquals(1L, repo.getSummary().roadsUnlockedCount)
+    }
+
     @Test fun sameRouteRefMergesDifferentNamesAndDividedCarriageways() {
         repo.upsertRoads(listOf(
             MatchedRoad(
