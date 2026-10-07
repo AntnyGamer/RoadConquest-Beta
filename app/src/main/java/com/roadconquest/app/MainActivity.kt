@@ -313,8 +313,13 @@ class MainActivity : Activity() {
         val overlayMode = Prefs.placeOverlayMode(this)
         renderer?.setFogEnabled(Prefs.isFogEnabled(this))
         renderer?.setMapMode(Prefs.mapMode(this))
+        val overlayModeChanged = renderer?.placeOverlayMode() != overlayMode
         renderer?.setPlaceOverlayMode(overlayMode)
-        if (overlayMode != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
+        // setPlaceOverlayMode already refreshes after an actual mode change. Only refresh here
+        // when the mode is unchanged so returning to the app still picks up newly cached data.
+        if (!overlayModeChanged && overlayMode != PlaceOverlayMode.NONE) {
+            renderer?.refreshPlaceOverlays()
+        }
         renderer?.refreshCosmetics()
         if (!Prefs.isDeviceDataDeletionPending(this)) {
             ProgressionManager.recordBatteryFromSystem(this)
