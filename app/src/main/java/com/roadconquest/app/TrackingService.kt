@@ -211,11 +211,13 @@ class TrackingService : Service(), LocationListener {
             // duplicate database work after a location would already have been processed.
             val visited = Location(location)
             lastExplored = visited
+            val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
+                PLACE_CANDIDATE_MIN_DISTANCE_M
+            // Preserve the original candidate-spacing state even when this exact fog cell was
+            // already persisted and its redundant SQLite insert can be skipped.
+            if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
             val exploredCell = TrackingRepository.exploredCellKey(visited.latitude, visited.longitude)
             if (exploredCell != null && exploredCellsThisSession.add(exploredCell)) {
-                val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
-                    PLACE_CANDIDATE_MIN_DISTANCE_M
-                if (savePlaceCandidate) lastPlaceCandidate = Location(visited)
                 storageExecutor.execute {
                     try {
                         if (repository.recordExploredPlace(visited, exploredCell)) {
