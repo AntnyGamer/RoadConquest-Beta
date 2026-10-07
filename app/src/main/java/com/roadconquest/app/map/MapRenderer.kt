@@ -287,11 +287,23 @@ class MapRenderer(
     fun updateCar(latitude: Double, longitude: Double, bearing: Double, ageMillis: Long = 0L) {
         if (destroyed) return
         val now = SystemClock.elapsedRealtime()
+        val previousVisual = liveLocation.current(now)
         if (!liveLocation.update(latitude, longitude, bearing, now, ageMillis)) return
         mainHandler.removeCallbacks(expireLocation)
         mainHandler.postDelayed(expireLocation, LiveLocation.MAX_AGE_MS - ageMillis)
-        updateCarLayer()
-        scheduleFogRender()
+
+        // Equal live fixes can still be newer and must extend expiry, but they do not need
+        // another MapLibre source upload or fog bitmap render. Only skip work when every
+        // user-visible value is exactly unchanged.
+        val currentVisual = liveLocation.current(now)
+        val visuallyChanged = previousVisual == null || currentVisual == null ||
+            previousVisual.latitude != currentVisual.latitude ||
+            previousVisual.longitude != currentVisual.longitude ||
+            previousVisual.bearing != currentVisual.bearing
+        if (visuallyChanged) {
+            updateCarLayer()
+            scheduleFogRender()
+        }
         if (!centeredOnce) {
             centeredOnce = true
             centerOnCar()
