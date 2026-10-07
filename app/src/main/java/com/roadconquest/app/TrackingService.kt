@@ -71,6 +71,7 @@ class TrackingService : Service(), LocationListener {
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
+    private var lowestBatteryPercentSeen = 101
     private val notificationManager by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(NotificationManager::class.java)
     }
@@ -111,9 +112,13 @@ class TrackingService : Service(), LocationListener {
             val scale = intent.getIntExtra("scale", -1)
             if (level < 0 || scale <= 0) return
             val percent = (level * 100 / scale).coerceIn(0, 100)
-            // No progression I/O is needed for ordinary battery levels.
-            if (percent <= 5 && ProgressionManager.recordBatteryPercent(this@TrackingService, percent)) {
-                sendUiBroadcast(ACTION_STATS_UPDATED)
+            // No progression I/O is needed for ordinary battery levels. Within one tracking
+            // session, a repeated or higher low-battery reading cannot lower the persisted
+            // minimum either, so avoid reopening SQLite for it.
+            if (percent <= 5 && percent < lowestBatteryPercentSeen) {
+                val changed = ProgressionManager.recordBatteryPercent(this@TrackingService, percent)
+                lowestBatteryPercentSeen = percent
+                if (changed) sendUiBroadcast(ACTION_STATS_UPDATED)
             }
         }
     }
