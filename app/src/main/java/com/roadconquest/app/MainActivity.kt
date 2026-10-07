@@ -309,10 +309,11 @@ class MainActivity : Activity() {
         }
         resumed = true
         mapView.onResume()
+        val overlayMode = Prefs.placeOverlayMode(this)
         renderer?.setFogEnabled(Prefs.isFogEnabled(this))
         renderer?.setMapMode(Prefs.mapMode(this))
-        renderer?.setPlaceOverlayMode(Prefs.placeOverlayMode(this))
-        if (Prefs.placeOverlayMode(this) != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
+        renderer?.setPlaceOverlayMode(overlayMode)
+        if (overlayMode != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
         renderer?.refreshCosmetics()
         if (!Prefs.isDeviceDataDeletionPending(this)) {
             ProgressionManager.recordBatteryFromSystem(this)
@@ -595,17 +596,25 @@ class MainActivity : Activity() {
     private fun refreshControls() {
         statsHandler.removeCallbacks(statsRefresh)
         statsRefreshScheduled = false
-        if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
-            !hasLocationPermission() || !locationManager.isLocationEnabled
-        ) renderer?.clearCurrentLocation()
+        // Snapshot state once for this UI refresh. Besides avoiding repeated preference/permission
+        // lookups, this prevents one refresh from mixing values if Android changes state midway.
+        val deletionPending = Prefs.isDeviceDataDeletionPending(this)
+        val trackingPaused = Prefs.isTrackingPaused(this)
+        val hasPreciseLocation = hasLocationPermission()
+        val hasApproximateLocation = if (hasPreciseLocation) false else hasApproximateLocationPermission()
+        val locationEnabled = locationManager.isLocationEnabled
         val manualOnly = Prefs.isManualOnly(this)
         val active = TrackingService.isRunning
+
+        if (deletionPending || trackingPaused || !hasPreciseLocation || !locationEnabled) {
+            renderer?.clearCurrentLocation()
+        }
         statusText.text = when {
-            Prefs.isDeviceDataDeletionPending(this) -> "Finishing device data deletion…"
-            Prefs.isTrackingPaused(this) -> getString(R.string.tracking_paused)
-            !hasLocationPermission() && hasApproximateLocationPermission() -> "Precise location required"
-            !hasLocationPermission() -> "Location permission required"
-            !locationManager.isLocationEnabled -> if (active) "Tracking paused — Location is off" else "Location is off"
+            deletionPending -> "Finishing device data deletion…"
+            trackingPaused -> getString(R.string.tracking_paused)
+            !hasPreciseLocation && hasApproximateLocation -> "Precise location required"
+            !hasPreciseLocation -> "Location permission required"
+            !locationEnabled -> if (active) "Tracking paused — Location is off" else "Location is off"
             active -> "Tracking your driving"
             else -> "Not tracking"
         }
@@ -663,10 +672,10 @@ class MainActivity : Activity() {
             }
         }
 
-        if (Prefs.isDeviceDataDeletionPending(this)) {
+        if (deletionPending) {
             enableButton.text = "Deleting device data…"
             enableButton.isEnabled = false
-        } else if (Prefs.isTrackingPaused(this)) {
+        } else if (trackingPaused) {
             enableButton.text = getString(R.string.resume_tracking)
             enableButton.isEnabled = true
         } else if (!manualOnly) {
