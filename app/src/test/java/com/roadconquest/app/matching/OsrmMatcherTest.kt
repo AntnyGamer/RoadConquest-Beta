@@ -128,6 +128,30 @@ class OsrmMatcherTest {
     }
 
 
+    @Test fun namedRotaryCountsButUnnamedRoundaboutDoesNot() {
+        val routePoints = listOf(
+            TrackPoint(50, 40.0, -74.0, 5f, 5f, 0f, 500_000, false),
+            TrackPoint(51, 40.0001, -73.9998, 5f, 5f, 0f, 510_000, false)
+        )
+        fun response(rotaryName: String) = """
+            {"code":"Ok","tracepoints":[
+              {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},
+              {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-73.9998,40.0001]}],
+             "matchings":[{"confidence":0.95,"legs":[{"steps":[
+              {"name":"","rotary_name":"$rotaryName","distance":24,"maneuver":{"type":"rotary"},
+               "geometry":{"type":"LineString","coordinates":[[-74,40],[-73.9998,40.0001]]}}
+             ]}]}]}
+        """.trimIndent()
+
+        val named = requireNotNull(OsrmMatcher().parse(response("Victory Circle"), routePoints)).roads.single()
+        assertEquals("Victory Circle", named.name)
+        assertTrue(named.countTowardsRoads)
+
+        val unnamed = requireNotNull(OsrmMatcher().parse(response(""), routePoints)).roads.single()
+        assertEquals("Unnamed road", unnamed.name)
+        assertFalse(unnamed.countTowardsRoads)
+    }
+
     @Test fun osrmRouteRefsAndRampManeuversFeedHumanRoadCounting() {
         val routePoints = listOf(
             TrackPoint(40, 40.0, -74.0, 5f, 8f, 0f, 400_000, false),
