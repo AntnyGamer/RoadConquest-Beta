@@ -78,6 +78,20 @@ class OsrmNetworkTest {
         }
     }
 
+    @Test fun missingSpeedWithinCombinedAccuracyDoesNotInventBearingGuidance() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(valid))
+            server.start()
+            val uncertain = listOf(
+                points[0].copy(speedMps = 0f, accuracyMeters = 50f, timestampMillis = 100_000L),
+                points[1].copy(speedMps = 0f, accuracyMeters = 50f, timestampMillis = 103_000L)
+            )
+            requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(uncertain))
+            val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
+            assertNull(request.queryParameter("bearings"))
+        }
+    }
+
     @Test fun lowSpeedBearingDoesNotConstrainMatching() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(valid))
