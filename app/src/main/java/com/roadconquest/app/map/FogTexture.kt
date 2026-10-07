@@ -18,6 +18,9 @@ object FogTexture {
     fun create(size: Int = SIZE): Bitmap {
         require(size > 0 && size and (size - 1) == 0)
         val pixels = IntArray(size * size)
+        // Only 73 shades are possible. Build their exact colors once rather than calling
+        // Color.rgb for every texel; output is pixel-for-pixel identical.
+        val palette = IntArray(73) { shade -> Color.rgb(14 + shade, 22 + shade, 34 + shade) }
         // The final row/column intentionally sample the same mathematical point as the first,
         // so REPEAT filtering cannot expose a tile seam.
         val denominator = (size - 1).coerceAtLeast(1).toDouble()
@@ -67,7 +70,7 @@ object FogTexture {
                 val normalized = (cloud + 0.50).coerceIn(0.0, 1.0)
                 val mist = normalized * normalized * (3.0 - 2.0 * normalized)
                 val shade = (mist * 72.0).roundToInt()
-                pixels[y * size + x] = Color.rgb(14 + shade, 22 + shade, 34 + shade)
+                pixels[y * size + x] = palette[shade]
             }
         }
         return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
