@@ -43,6 +43,8 @@ class SummaryCacheTest {
         assertEquals(0L, empty.roadSegmentCount)
         assertNotNull(database.trackSummaryCache)
         assertNotNull(database.roadSummaryCache)
+        assertNotNull(database.lastTrackPointCache)
+        assertFalse(requireNotNull(database.lastTrackPointCache).present)
 
         repository.insertLocations(listOf(
             fix(40.0, 1_000L),
@@ -55,6 +57,11 @@ class SummaryCacheTest {
         assertEquals(11_000L, afterTrack.lastTrackAt)
         val trackCacheAfterInsert = database.trackSummaryCache
         assertNotNull(trackCacheAfterInsert)
+        val lastPoint = requireNotNull(database.lastTrackPointCache)
+        assertTrue(lastPoint.present)
+        assertEquals(40.001, lastPoint.latitude, 0.0)
+        assertEquals(-74.0, lastPoint.longitude, 0.0)
+        assertEquals(11_000L, lastPoint.timestamp)
 
         repository.upsertRoads(listOf(
             MatchedRoad(
@@ -85,6 +92,7 @@ class SummaryCacheTest {
         assertFalse(database.summaryCachingEnabled)
         assertNull(database.trackSummaryCache)
         assertNull(database.roadSummaryCache)
+        assertNull(database.lastTrackPointCache)
 
         raw.execSQL(
             "INSERT INTO track_points(" +
