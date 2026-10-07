@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.location.Location
 import android.database.Cursor
 import android.os.Build
+import com.roadconquest.app.util.LocationProviders
 import org.json.JSONArray
 import java.security.MessageDigest
 import java.util.Locale
@@ -167,7 +168,7 @@ class TrackingRepository(context: Context) {
             put("latitude", location.latitude)
             put("longitude", location.longitude)
             put("accuracy_m", location.accuracy)
-            put("speed_mps", if (location.hasSpeed() && location.speed.isFinite() && location.speed >= 0f) location.speed else 0f)
+            put("speed_mps", LocationProviders.reliableMeasuredSpeed(location))
             put("bearing_deg", if (location.hasBearing() && location.bearing.isFinite()) location.bearing else 0f)
             put("timestamp_ms", timestamp)
             put("matched", 0)
