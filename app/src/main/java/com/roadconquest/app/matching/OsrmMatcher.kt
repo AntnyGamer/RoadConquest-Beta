@@ -193,18 +193,20 @@ class OsrmMatcher(
             if (geometryMeters >= MIN_GEOMETRY_LENGTH_M) {
                 val rawName = step.optString("name").trim()
                 val reference = step.optString("ref").trim()
+                val rotaryName = step.optString("rotary_name").trim()
                 val maneuverType = step.optJSONObject("maneuver")
                     ?.optString("type")
                     ?.trim()
                     ?.lowercase(Locale.ROOT)
                     .orEmpty()
                 val countTowardsRoads = when (maneuverType) {
-                    "on ramp", "off ramp" -> false
-                    "roundabout", "rotary" -> rawName.isNotBlank() || reference.isNotBlank()
+                    "ramp", "on ramp", "off ramp" -> false
+                    "roundabout", "rotary" ->
+                        rawName.isNotBlank() || rotaryName.isNotBlank() || reference.isNotBlank()
                     else -> true
                 }
                 parsed += StepGeometry(
-                    name = rawName.ifBlank { reference.ifBlank { "Unnamed road" } },
+                    name = rawName.ifBlank { rotaryName.ifBlank { reference.ifBlank { "Unnamed road" } } },
                     reference = reference,
                     countTowardsRoads = countTowardsRoads,
                     coordinates = connected,
