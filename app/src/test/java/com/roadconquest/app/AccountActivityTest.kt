@@ -109,6 +109,17 @@ class AccountActivityTest {
         }
     }
 
+    @Test fun endpointConfigurationCacheTracksRuntimeOverrideExactly() {
+        AccountClient.endpointOverrideForTests = "https://example.com"
+        assertTrue(AccountClient.isConfigured())
+        AccountClient.endpointOverrideForTests = ""
+        assertFalse(AccountClient.isConfigured())
+        AccountClient.endpointOverrideForTests = "http://example.com"
+        assertFalse(AccountClient.isConfigured())
+        AccountClient.endpointOverrideForTests = "https://example.org/base/"
+        assertTrue(AccountClient.isConfigured())
+    }
+
     @Test fun liveAccountEndpointIsConfiguredByDefault() {
         AccountClient.endpointOverrideForTests = null
         try {
