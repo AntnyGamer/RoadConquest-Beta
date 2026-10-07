@@ -421,6 +421,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        trackingReceiverRegistered = false
         accountPrompt?.dismiss()
         summaryGeneration++
         roadDetailsGeneration++
