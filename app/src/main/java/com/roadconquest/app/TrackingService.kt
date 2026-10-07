@@ -70,7 +70,6 @@ class TrackingService : Service(), LocationListener {
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
-    private var registeredLocationProvider: String? = null
     private val providerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
@@ -347,7 +346,6 @@ class TrackingService : Service(), LocationListener {
         if (batteryReceiverRegistered) runCatching { unregisterReceiver(batteryReceiver) }
         batteryReceiverRegistered = false
         if (::locationManager.isInitialized) runCatching { locationManager.removeUpdates(this) }
-        registeredLocationProvider = null
         matchingExecutor.shutdownNow()
         if (::verifiedDriving.isInitialized) verifiedDriving.close()
         // Drain accepted samples even when the user stops tracking. They were copied before enqueueing.
@@ -360,17 +358,8 @@ class TrackingService : Service(), LocationListener {
 
     private fun requestLocations() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
-        val preferred = LocationProviders.preferred(locationManager)
-        val current = registeredLocationProvider
-        // Provider broadcasts can fire for unrelated changes. Do not tear down and recreate an
-        // already-correct high-accuracy subscription: resetting GPS/fused work wastes power and
-        // can briefly interrupt the stream that road matching depends on.
-        if (current != null && current == preferred &&
-            runCatching { locationManager.isProviderEnabled(current) }.getOrDefault(false)
-        ) return
         runCatching { locationManager.removeUpdates(this) }
-        registeredLocationProvider = null
-        registeredLocationProvider = LocationProviders.registerHighAccuracy(locationManager, ::registerProvider)
+        LocationProviders.registerHighAccuracy(locationManager, ::registerProvider)
     }
 
     private fun registerProvider(provider: String): Boolean {
