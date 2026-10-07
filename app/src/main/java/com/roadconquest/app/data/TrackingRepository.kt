@@ -472,7 +472,7 @@ class TrackingRepository(context: Context) {
             arrayOf(segmentId),
             null,
             null,
-            "segment_id ASC"
+            null
         ).use { cursor ->
             if (!cursor.moveToFirst()) null
             else ExistingRoad(
