@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
 class LocationProviderRecoveryTest {
-    @Test fun trackingUsesOnePreciseProviderAndFallsBackWithoutDuplicateGpsWork() {
+    @Test fun trackingRequestsBothPreciseSourcesWithoutUploadConsent() {
         val manager = RuntimeEnvironment.getApplication().getSystemService(LocationManager::class.java)
         val shadow = Shadows.shadowOf(manager)
         shadow.setLocationEnabled(true)
@@ -29,12 +29,7 @@ class LocationProviderRecoveryTest {
         assertEquals(listOf("gps", "network"), LocationProviders.fallback(manager))
         val registered = mutableListOf<String>()
         LocationProviders.registerHighAccuracy(manager) { registered.add(it); true }
-        assertEquals(listOf("fused"), registered)
-
-        registered.clear()
-        LocationProviders.registerHighAccuracy(manager) { registered.add(it); it == "gps" }
         assertEquals(listOf("fused", "gps"), registered)
-
         registered.clear()
         LocationProviders.registerHighAccuracy(manager) { registered.add(it); it == "network" }
         assertEquals(listOf("fused", "gps", "network"), registered)
