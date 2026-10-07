@@ -414,6 +414,7 @@ class ProgressionRepository(context: Context) {
         val db = dbHelper.readableDatabase
         val earned = db.rawQuery("SELECT COALESCE(SUM(points), 0) FROM progression_rewards", null)
             .use { check(it.moveToFirst()); it.getLong(0) }
+
         val rewardedAchievements = linkedSetOf<String>()
         db.query(
             "progression_rewards",
@@ -426,8 +427,7 @@ class ProgressionRepository(context: Context) {
                 rewardedAchievements += cursor.getString(0).removePrefix("achievement:")
             }
         }
-        val spent = db.rawQuery("SELECT COALESCE(SUM(points_spent), 0) FROM progression_purchases", null)
-            .use { check(it.moveToFirst()); it.getLong(0) }
+
         val counts = mutableMapOf<PlaceKind, Long>()
         // Baseline places stay in visited_places for overlays, but only rewarded discoveries
         // count toward progress totals and achievements.
@@ -445,19 +445,46 @@ class ProgressionRepository(context: Context) {
                 }
             }
         }
+
+        // Purchases are a small, bounded set. Read their IDs and prices in the same cursor
+        // instead of scanning the table once for SUM() and again for the owned-item list.
         val purchases = linkedSetOf<String>()
-        db.query("progression_purchases", arrayOf("item_id"), null, null, null, null, "purchased_at ASC")
-            .use { cursor -> while (cursor.moveToNext()) purchases += cursor.getString(0) }
+        var spent = 0L
+        db.query(
+            "progression_purchases",
+            arrayOf("item_id", "points_spent"),
+            null, null, null, null,
+            "purchased_at ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                purchases += cursor.getString(0)
+                spent += cursor.getLong(1)
+            }
+        }
+
+        // Fetch the three progression counters with one tiny indexed query instead of opening
+        // three separate cursors every time the map/UI refreshes its progression snapshot.
+        val counters = HashMap<String, Long>(3)
+        db.query(
+            "progression_counters",
+            arrayOf("counter_key", "value"),
+            "counter_key IN (?,?,?)",
+            arrayOf(COUNTER_REWARDED_ROADS, COUNTER_ADS_WATCHED, COUNTER_LOWEST_BATTERY),
+            null, null, null
+        ).use { cursor ->
+            while (cursor.moveToNext()) counters[cursor.getString(0)] = cursor.getLong(1)
+        }
+
         ProgressionSnapshot(
             balance = (earned - spent).coerceAtLeast(0L),
             lifetimeEarned = earned,
             pointsSpent = spent,
-            rewardedRoads = counter(db, COUNTER_REWARDED_ROADS),
+            rewardedRoads = counters[COUNTER_REWARDED_ROADS] ?: 0L,
             towns = counts[PlaceKind.TOWN] ?: 0L,
             states = counts[PlaceKind.STATE] ?: 0L,
             countries = counts[PlaceKind.COUNTRY] ?: 0L,
-            adsWatched = counter(db, COUNTER_ADS_WATCHED),
-            lowestBatteryPercent = (counterOrNull(db, COUNTER_LOWEST_BATTERY) ?: 101L)
+            adsWatched = counters[COUNTER_ADS_WATCHED] ?: 0L,
+            lowestBatteryPercent = (counters[COUNTER_LOWEST_BATTERY] ?: 101L)
                 .toInt().coerceIn(0, 101),
             purchasedItems = purchases,
             rewardedAchievements = rewardedAchievements
