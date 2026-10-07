@@ -426,7 +426,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        trackingReceiverRegistered = false
+        // onStop owns receiver registration state. Do not clear the process-wide flag here:
+        // during a configuration handoff a replacement MainActivity may already be started.
         accountPrompt?.dismiss()
         summaryGeneration++
         roadDetailsGeneration++
