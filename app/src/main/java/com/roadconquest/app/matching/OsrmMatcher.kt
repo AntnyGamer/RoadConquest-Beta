@@ -141,22 +141,38 @@ class OsrmMatcher(
                 var last = first
                 while (last + 1 < trace.size && reliable(last + 1)) last++
                 if (last > first) {
-                    val matchingRoads = mutableListOf<MatchedRoad>()
-                    for (l in first until last) {
-                        for (road in parseLeg(legs.getJSONObject(l), trace[l], trace[l + 1], points, confidences[m])) {
-                            appendRoad(matchingRoads, road)
-                        }
-                    }
-                    if (matchingRoads.isNotEmpty()) {
-                        roads += matchingRoads
-                        for (t in first..last) {
+                    var blockStart = first
+                    var blockRoads = mutableListOf<MatchedRoad>()
+
+                    fun flushBlock(endLegExclusive: Int) {
+                        if (blockRoads.isEmpty() || endLegExclusive <= blockStart) return
+                        roads += blockRoads
+                        for (t in blockStart..endLegExclusive) {
                             val input = trace[t].input
                             // The first fix after any withheld interval stays pending so a later
                             // retry can resolve the missing incoming segment with better context.
-                            if (t == first && input != 0) continue
+                            if (t == blockStart && input != 0) continue
                             resolved[points[input].id] = confidences[m]
                         }
+                        blockRoads = mutableListOf()
                     }
+
+                    for (l in first until last) {
+                        val legRoads = try {
+                            parseLeg(legs.getJSONObject(l), trace[l], trace[l + 1], points, confidences[m])
+                        } catch (_: IllegalArgumentException) {
+                            emptyList()
+                        }
+                        if (legRoads.isEmpty()) {
+                            // One locally implausible OSRM leg should stay pending, but must not
+                            // turn every valid sibling leg in the batch into a 5-minute failure.
+                            flushBlock(l)
+                            blockStart = l + 1
+                            continue
+                        }
+                        for (road in legRoads) appendRoad(blockRoads, road)
+                    }
+                    flushBlock(last)
                 }
                 first = last + 1
             }
@@ -232,8 +248,8 @@ class OsrmMatcher(
         val rawStart = JSONArray().put(points[start.input].longitude).put(points[start.input].latitude)
         val rawEnd = JSONArray().put(points[end.input].longitude).put(points[end.input].latitude)
         val uncertainty = points[start.input].accuracyMeters + points[end.input].accuracyMeters
-        require(coordinateDistanceMeters(rawStart, start.location) <= points[start.input].accuracyMeters * 2 + 10 &&
-            coordinateDistanceMeters(rawEnd, end.location) <= points[end.input].accuracyMeters * 2 + 10) {
+        require(coordinateDistanceMeters(rawStart, start.location) <= snapToleranceMeters(points[start.input]) &&
+            coordinateDistanceMeters(rawEnd, end.location) <= snapToleranceMeters(points[end.input])) {
             "Matched road is too far from the recorded drive"
         }
         require(total <= coordinateDistanceMeters(rawStart, rawEnd) * 3 + uncertainty * 2 + 30 &&
@@ -338,6 +354,10 @@ class OsrmMatcher(
         return EARTH_RADIUS_M * sqrt(x * x + y * y)
     }
 
+    private fun snapToleranceMeters(point: TrackPoint): Double =
+        (point.accuracyMeters.toDouble() + SNAP_TOLERANCE_EXTRA_M)
+            .coerceIn(MIN_SNAP_TOLERANCE_M, MAX_SNAP_TOLERANCE_M)
+
     private fun initialBearingDegrees(a: TrackPoint, b: TrackPoint): Double {
         val lat1 = Math.toRadians(a.latitude)
         val lat2 = Math.toRadians(b.latitude)
@@ -412,6 +432,14 @@ class OsrmMatcher(
         internal const val MIN_ACCEPTABLE_CONFIDENCE = 0.45
         private const val MIN_MATCH_RADIUS_M = 10f
         private const val MAX_MATCH_RADIUS_M = 75f
+        // Treat OSRM's radius as candidate discovery, not proof. The user's export that exposed
+        // the false Lake Boulevard fragment had ~10 m reported accuracy but a ~16 m lateral snap;
+        // all confirmed road samples in the same drive were within ~7.1 m of saved geometry.
+        // This bound keeps ordinary centerline/GNSS offset room while rejecting that nearby-road
+        // class of false positive, especially when slowing or turning next to a parallel road.
+        private const val MIN_SNAP_TOLERANCE_M = 8.0
+        private const val SNAP_TOLERANCE_EXTRA_M = 3.0
+        private const val MAX_SNAP_TOLERANCE_M = 20.0
         private const val MIN_BEARING_GUIDANCE_SPEED_MPS = 4f
         private const val MIN_BEARING_EVIDENCE_DISTANCE_M = 8.0
         private const val BEARING_ACCURACY_DISTANCE_FACTOR = 0.75
