@@ -314,9 +314,10 @@ class MapRenderer(
         if (destroyed) return false
         val fix = liveLocation.current(SystemClock.elapsedRealtime()) ?: return false
         centeredOnce = true
-        val camera = CameraPosition.Builder(map.cameraPosition)
+        val currentCamera = map.cameraPosition
+        val camera = CameraPosition.Builder(currentCamera)
             .target(LatLng(fix.latitude, fix.longitude))
-            .zoom(map.cameraPosition.zoom.coerceIn(FogBitmapRenderer.CENTER_ZOOM, FogBitmapRenderer.MAX_ZOOM))
+            .zoom(currentCamera.zoom.coerceIn(FogBitmapRenderer.CENTER_ZOOM, FogBitmapRenderer.MAX_ZOOM))
             .tilt(0.0)
             .build()
         map.animateCamera(CameraUpdateFactory.newCameraPosition(camera))
