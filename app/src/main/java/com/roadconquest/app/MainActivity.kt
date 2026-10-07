@@ -313,13 +313,8 @@ class MainActivity : Activity() {
         val overlayMode = Prefs.placeOverlayMode(this)
         renderer?.setFogEnabled(Prefs.isFogEnabled(this))
         renderer?.setMapMode(Prefs.mapMode(this))
-        val overlayModeChanged = renderer?.placeOverlayMode() != overlayMode
         renderer?.setPlaceOverlayMode(overlayMode)
-        // setPlaceOverlayMode already refreshes after an actual mode change. Only refresh here
-        // when the mode is unchanged so returning to the app still picks up newly cached data.
-        if (!overlayModeChanged && overlayMode != PlaceOverlayMode.NONE) {
-            renderer?.refreshPlaceOverlays()
-        }
+        if (overlayMode != PlaceOverlayMode.NONE) renderer?.refreshPlaceOverlays()
         renderer?.refreshCosmetics()
         if (!Prefs.isDeviceDataDeletionPending(this)) {
             ProgressionManager.recordBatteryFromSystem(this)
@@ -617,7 +612,7 @@ class MainActivity : Activity() {
         if (deletionPending || trackingPaused || !hasPreciseLocation || !locationEnabled) {
             renderer?.clearCurrentLocation()
         }
-        val nextStatus = when {
+        statusText.text = when {
             deletionPending -> "Finishing device data deletion…"
             trackingPaused -> getString(R.string.tracking_paused)
             !hasPreciseLocation && hasApproximateLocation -> "Precise location required"
@@ -626,7 +621,6 @@ class MainActivity : Activity() {
             active -> "Tracking your driving"
             else -> "Not tracking"
         }
-        if (statusText.text.toString() != nextStatus) statusText.text = nextStatus
 
         val generation = ++summaryGeneration
         summaryExecutor.execute {
@@ -654,10 +648,8 @@ class MainActivity : Activity() {
                 if (isDestroyed || generation != summaryGeneration) return@runOnUiThread
                 result.fold(
                     onSuccess = { (value, progression, unlocked) ->
-                        val nextStats = StatsText.format(this, value)
-                        if (statsText.text.toString() != nextStats) statsText.text = nextStats
-                        val nextPoints = String.format(Locale.getDefault(), "⚔ %,d points", progression.balance)
-                        if (pointsText.text.toString() != nextPoints) pointsText.text = nextPoints
+                        statsText.text = StatsText.format(this, value)
+                        pointsText.text = String.format(Locale.getDefault(), "⚔ %,d points", progression.balance)
                         if (unlocked.isNotEmpty()) {
                             val reward = unlocked.sumOf { it.rewardPoints }
                             val message = if (unlocked.size == 1) {
@@ -676,33 +668,26 @@ class MainActivity : Activity() {
                     },
                     onFailure = { error ->
                         Log.e("RoadConquest", "Could not load data summary", error)
-                        val unavailable = getString(R.string.saved_data_unavailable)
-                        if (statsText.text.toString() != unavailable) statsText.text = unavailable
-                        if (pointsText.text.toString() != "Points unavailable") {
-                            pointsText.text = "Points unavailable"
-                        }
+                        statsText.text = getString(R.string.saved_data_unavailable)
+                        pointsText.text = "Points unavailable"
                     }
                 )
             }
         }
 
-        val nextButtonText: CharSequence
-        val nextButtonEnabled: Boolean
         if (deletionPending) {
-            nextButtonText = "Deleting device data…"
-            nextButtonEnabled = false
+            enableButton.text = "Deleting device data…"
+            enableButton.isEnabled = false
         } else if (trackingPaused) {
-            nextButtonText = getString(R.string.resume_tracking)
-            nextButtonEnabled = true
+            enableButton.text = getString(R.string.resume_tracking)
+            enableButton.isEnabled = true
         } else if (!manualOnly) {
-            nextButtonText = "Enabled automatically"
-            nextButtonEnabled = false
+            enableButton.text = "Enabled automatically"
+            enableButton.isEnabled = false
         } else {
-            nextButtonText = if (active) getString(R.string.disable) else getString(R.string.enable)
-            nextButtonEnabled = true
+            enableButton.isEnabled = true
+            enableButton.text = if (active) getString(R.string.disable) else getString(R.string.enable)
         }
-        if (enableButton.text.toString() != nextButtonText.toString()) enableButton.text = nextButtonText
-        if (enableButton.isEnabled != nextButtonEnabled) enableButton.isEnabled = nextButtonEnabled
     }
 
     private fun showOverlayPicker() {
