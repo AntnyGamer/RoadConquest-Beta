@@ -79,6 +79,25 @@ class TravelStatsTest {
         assertEquals(1L, repo.getSummary().roadsUnlockedCount)
     }
 
+    @Test fun multiplexedRouteDoesNotTransitivelyCollapseDistinctRoutes() {
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Interstate", "[[-74.0030,40],[-74.0020,40]]",
+                1, 2, 1.0, reference = "I-95"
+            ),
+            MatchedRoad(
+                "Overlap", "[[-74.0020,40],[-74.0010,40]]",
+                2, 3, 1.0, reference = "US-1; I-95"
+            ),
+            MatchedRoad(
+                "US Highway", "[[-74.0010,40],[-74.0000,40]]",
+                3, 4, 1.0, reference = "US-1"
+            )
+        ))
+        assertEquals(3L, repo.getSummary().roadSegmentCount)
+        assertEquals(2L, repo.getSummary().roadsUnlockedCount)
+    }
+
     @Test fun identicalRouteRefsFarApartDoNotCollapseIntoOneRoad() {
         repo.upsertRoads(listOf(
             MatchedRoad(
