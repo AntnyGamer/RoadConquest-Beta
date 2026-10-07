@@ -177,6 +177,12 @@ class OsrmMatcher(
                 first = last + 1
             }
         }
+        // OSRM can occasionally split two consecutive, high-quality fixes on the same road into
+        // separate matchings. That leaves a short raw/pending seam even though both sides are
+        // confidently mapped. Close only small, directionally consistent same-road seams using
+        // the already-snapped endpoints; turns and different-road boundaries remain pending.
+        bridgeConfidentSameRoadSplits(roads, resolved, points)
+
         // A valid but ambiguous response is a partial match, not a network failure. It should
         // retry soon with more context and must not save provisional blue lines or road credit.
         return MatchResult(roads, resolved)
@@ -318,6 +324,80 @@ class OsrmMatcher(
             RoadGrouping.normalizeReferences(b.reference)
     }
 
+    private fun bridgeConfidentSameRoadSplits(
+        roads: MutableList<MatchedRoad>,
+        resolved: MutableMap<Long, Double>,
+        points: List<TrackPoint>
+    ) {
+        if (roads.size < 2 || points.size < 2) return
+        val ordered = roads.sortedWith(compareBy<MatchedRoad> { it.firstTimestamp }.thenBy { it.lastTimestamp })
+        val bridged = HashSet<Long>()
+        for (index in 0 until ordered.lastIndex) {
+            val left = ordered[index]
+            val right = ordered[index + 1]
+            if (left.confidence < MIN_ACCEPTABLE_CONFIDENCE ||
+                right.confidence < MIN_ACCEPTABLE_CONFIDENCE ||
+                !sameMergeIdentity(left, right)
+            ) continue
+
+            val leftPoint = points.indexOfLast { it.timestampMillis == left.lastTimestamp }
+            val rightPoint = points.indexOfFirst { it.timestampMillis == right.firstTimestamp }
+            if (leftPoint < 0 || rightPoint != leftPoint + 1) continue
+            val from = points[leftPoint]
+            val to = points[rightPoint]
+            val elapsed = to.timestampMillis - from.timestampMillis
+            if (elapsed !in 1..MAX_SPLIT_BRIDGE_GAP_MS || !bridged.add(to.id)) continue
+
+            val leftCoordinates = runCatching { JSONArray(left.coordinatesJson) }.getOrNull() ?: continue
+            val rightCoordinates = runCatching { JSONArray(right.coordinatesJson) }.getOrNull() ?: continue
+            if (leftCoordinates.length() < 2 || rightCoordinates.length() < 2) continue
+            val start = leftCoordinates.getJSONArray(leftCoordinates.length() - 1)
+            val end = rightCoordinates.getJSONArray(0)
+            val connectorMeters = coordinateDistanceMeters(start, end)
+            val rawMeters = pointDistanceMeters(from, to)
+            val uncertainty = from.accuracyMeters + to.accuracyMeters
+            if (!connectorMeters.isFinite() || !rawMeters.isFinite() ||
+                connectorMeters > MAX_SPLIT_BRIDGE_M ||
+                connectorMeters > rawMeters * SPLIT_BRIDGE_DISTANCE_FACTOR + uncertainty + SPLIT_BRIDGE_DISTANCE_PAD_M ||
+                coordinateDistanceMeters(
+                    JSONArray().put(from.longitude).put(from.latitude), start
+                ) > snapToleranceMeters(from) ||
+                coordinateDistanceMeters(
+                    JSONArray().put(to.longitude).put(to.latitude), end
+                ) > snapToleranceMeters(to)
+            ) continue
+
+            val rawBearing = initialBearingDegrees(from, to)
+            val connectorBearing = coordinateBearingDegrees(start, end)
+            if (bearingDifferenceDegrees(rawBearing, connectorBearing) > MAX_SPLIT_BRIDGE_BEARING_DIFFERENCE_DEGREES) {
+                continue
+            }
+
+            roads += MatchedRoad(
+                name = left.name,
+                coordinatesJson = JSONArray().put(copyCoordinate(start)).put(copyCoordinate(end)).toString(),
+                firstTimestamp = from.timestampMillis,
+                lastTimestamp = to.timestampMillis,
+                confidence = minOf(left.confidence, right.confidence),
+                reference = left.reference,
+                countTowardsRoads = left.countTowardsRoads
+            )
+            resolved[to.id] = minOf(left.confidence, right.confidence)
+        }
+    }
+
+    private fun coordinateBearingDegrees(a: JSONArray, b: JSONArray): Double {
+        val lat1 = Math.toRadians(a.getDouble(1))
+        val lat2 = Math.toRadians(b.getDouble(1))
+        val deltaLongitude = Math.toRadians(((b.getDouble(0) - a.getDouble(0) + 540.0) % 360.0) - 180.0)
+        val y = sin(deltaLongitude) * cos(lat2)
+        val x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(deltaLongitude)
+        return normalizeBearing(Math.toDegrees(atan2(y, x)))
+    }
+
+    private fun bearingDifferenceDegrees(a: Double, b: Double): Double =
+        kotlin.math.abs(((a - b + 540.0) % 360.0) - 180.0)
+
     private fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
@@ -438,7 +518,12 @@ class OsrmMatcher(
         // slowing or turning beside a parallel road.
         private const val MIN_SNAP_TOLERANCE_M = 8.0
         private const val SNAP_TOLERANCE_EXTRA_M = 3.0
-        private const val MAX_SNAP_TOLERANCE_M = 20.0
+        private const val MAX_SNAP_TOLERANCE_M = 30.0
+        private const val MAX_SPLIT_BRIDGE_GAP_MS = 5_000L
+        private const val MAX_SPLIT_BRIDGE_M = 80.0
+        private const val SPLIT_BRIDGE_DISTANCE_FACTOR = 1.35
+        private const val SPLIT_BRIDGE_DISTANCE_PAD_M = 8.0
+        private const val MAX_SPLIT_BRIDGE_BEARING_DIFFERENCE_DEGREES = 30.0
         private const val MIN_BEARING_GUIDANCE_SPEED_MPS = 4f
         private const val MIN_BEARING_EVIDENCE_DISTANCE_M = 8.0
         private const val BEARING_ACCURACY_DISTANCE_FACTOR = 0.75
