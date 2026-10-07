@@ -18,10 +18,18 @@ class TrackingRepository(context: Context) {
     /** A visited cell reveals fog only; it never enters driving history or road matching. */
     @Synchronized
     fun recordExploredPlace(location: Location): Boolean {
+        val cellKey = exploredCellKey(location.latitude, location.longitude) ?: return false
+        return recordExploredPlace(location, cellKey)
+    }
+
+    /** Same write path when the tracking service has already computed the exact 50 m cell. */
+    @Synchronized
+    internal fun recordExploredPlace(location: Location, cellKey: Long): Boolean {
         synchronized(dbHelper.historyLock) {
             if (historyGeneration != dbHelper.historyGeneration) return false
-            if (location.isMock || !location.hasAccuracy() || location.accuracy !in 0.01f..25f) return false
-            val cellKey = exploredCellKey(location.latitude, location.longitude) ?: return false
+            if (location.isMock || !location.hasAccuracy() || location.accuracy !in 0.01f..25f ||
+                exploredCellKey(location.latitude, location.longitude) != cellKey
+            ) return false
             val x = (cellKey shr 32).toInt().toLong()
             val y = cellKey.toInt().toLong()
             val values = ContentValues().apply {
@@ -29,7 +37,9 @@ class TrackingRepository(context: Context) {
                 put("latitude", Math.toDegrees(atan(sinh((y + 0.5) * EXPLORED_CELL_SIZE_M / WEB_MERCATOR_RADIUS_M))))
                 put("longitude", Math.toDegrees((x + 0.5) * EXPLORED_CELL_SIZE_M / WEB_MERCATOR_RADIUS_M).coerceIn(-180.0, 180.0))
             }
-            return dbHelper.writableDatabase.insertWithOnConflict("explored_places", null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
+            return dbHelper.writableDatabase.insertWithOnConflict(
+                "explored_places", null, values, SQLiteDatabase.CONFLICT_IGNORE
+            ) != -1L
         }
     }
 
