@@ -290,6 +290,7 @@ class MainActivity : Activity() {
             filter,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        trackingReceiverRegistered = true
         mapView.onStart()
     }
 
@@ -413,6 +414,7 @@ class MainActivity : Activity() {
         ForegroundSession.app.onStop(isChangingConfigurations || recreatingForAppearance)
         refreshRoadsAfterStop = true
         renderer?.cancelPlaceOverlayLoads()
+        trackingReceiverRegistered = false
         runCatching { unregisterReceiver(locationReceiver) }
         mapView.onStop()
         super.onStop()
@@ -1042,6 +1044,14 @@ class MainActivity : Activity() {
         checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     companion object {
+        /**
+         * The high-frequency tracking broadcasts are consumed only by MainActivity's dynamic
+         * receiver. Tracking continues identically when this is false; it only lets the service
+         * avoid allocating and dispatching broadcasts that have no receiver while the map is
+         * stopped/backgrounded.
+         */
+        @Volatile internal var trackingReceiverRegistered = false
+
         private const val REQUEST_BASIC_PERMISSIONS = 100
         private const val STATE_START_AFTER_PERMISSION = "start_after_permission"
         private const val STATE_MAP_CENTERED = "map_centered"
