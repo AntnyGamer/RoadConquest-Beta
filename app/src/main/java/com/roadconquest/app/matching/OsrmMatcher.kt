@@ -440,9 +440,8 @@ class OsrmMatcher(
                 0.0
             }
             val storedSpeed = point.speedMps.toDouble().takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
-            if (maxOf(storedSpeed, inferredSpeedMps) < MIN_BEARING_GUIDANCE_SPEED_MPS) {
-                return@map ""
-            }
+            val movementSpeedMps = if (storedSpeed > 0.0) storedSpeed else inferredSpeedMps
+            if (movementSpeedMps < MIN_BEARING_GUIDANCE_SPEED_MPS) return@map ""
 
             val fromAccuracy = from.accuracyMeters.takeIf { it.isFinite() && it >= 0f } ?: MAX_MATCH_RADIUS_M
             val toAccuracy = to.accuracyMeters.takeIf { it.isFinite() && it >= 0f } ?: MAX_MATCH_RADIUS_M
@@ -470,12 +469,12 @@ class OsrmMatcher(
     private fun snapToleranceMeters(point: TrackPoint, inferredSpeedMps: Double): Double {
         val accuracy = point.accuracyMeters.toDouble()
         val storedSpeed = point.speedMps.toDouble().takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
-        // Stored track points use 0 m/s when Android did not provide speed. Treat clear
-        // displacement between the two fixes as equivalent movement evidence so a missing-speed
-        // sentinel cannot accidentally activate the stricter low-speed snap gate while driving.
-        if (maxOf(storedSpeed, inferredSpeedMps.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0) >=
-            STRICT_SNAP_MAX_SPEED_MPS
-        ) {
+        // Stored track points use 0 m/s when Android did not provide speed. Only that
+        // ambiguous zero sentinel may fall back to displacement-derived speed; a real positive
+        // low-speed measurement stays authoritative so GPS jitter cannot loosen this gate.
+        val inferredSpeed = inferredSpeedMps.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        val movementSpeedMps = if (storedSpeed > 0.0) storedSpeed else inferredSpeed
+        if (movementSpeedMps >= STRICT_SNAP_MAX_SPEED_MPS) {
             // Preserve the old allowance at normal driving speed. The false nearby-road sample in
             // the supplied export happened while slowing/stopping, so this keeps the protection
             // targeted instead of creating fresh highway or arterial gaps from normal GNSS drift.
