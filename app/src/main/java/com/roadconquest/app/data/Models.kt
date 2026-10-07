@@ -16,7 +16,11 @@ data class MatchedRoad(
     val coordinatesJson: String,
     val firstTimestamp: Long,
     val lastTimestamp: Long,
-    val confidence: Double
+    val confidence: Double,
+    /** Signed/official route reference returned by OSRM (for example I-295, US 322, A1). */
+    val reference: String = "",
+    /** False for connector geometry such as on/off ramps that should stay visible but not add a road. */
+    val countTowardsRoads: Boolean = true
 )
 
 data class RoadRecord(
