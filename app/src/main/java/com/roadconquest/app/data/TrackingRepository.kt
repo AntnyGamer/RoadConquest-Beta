@@ -66,9 +66,12 @@ class TrackingRepository(context: Context) {
             if (historyGeneration != dbHelper.historyGeneration) return -1L
             val db = dbHelper.writableDatabase
             val delta = TrackInsertDelta()
+            var persistedPoint: LastPoint? = null
             db.beginTransaction()
             val id = try {
-                insertLocationInTransaction(db, location, loadLastPoint(db), delta).also {
+                val previous = loadLastPoint(db)
+                insertLocationInTransaction(db, location, previous, delta).also {
+                    persistedPoint = previous
                     db.setTransactionSuccessful()
                 }
             } finally {
@@ -80,6 +83,7 @@ class TrackingRepository(context: Context) {
                 delta.lastTimestamp,
                 delta.distanceMeters
             )
+            persistedPoint?.let(::cacheLastPoint)
             return id
         }
     }
@@ -91,10 +95,12 @@ class TrackingRepository(context: Context) {
             if (historyGeneration != dbHelper.historyGeneration) return
             val db = dbHelper.writableDatabase
             val delta = TrackInsertDelta()
+            var persistedPoint: LastPoint? = null
             db.beginTransaction()
             try {
                 val previous = loadLastPoint(db)
                 locations.forEach { insertLocationInTransaction(db, it, previous, delta) }
+                persistedPoint = previous
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -105,10 +111,21 @@ class TrackingRepository(context: Context) {
                 delta.lastTimestamp,
                 delta.distanceMeters
             )
+            persistedPoint?.let(::cacheLastPoint)
         }
     }
 
     private fun loadLastPoint(db: SQLiteDatabase): LastPoint {
+        if (dbHelper.summaryCachingEnabled) {
+            dbHelper.lastTrackPointCache?.let { cached ->
+                return LastPoint(
+                    present = cached.present,
+                    latitude = cached.latitude,
+                    longitude = cached.longitude,
+                    timestamp = cached.timestamp
+                )
+            }
+        }
         val previous = LastPoint()
         db.query(
             "track_points", arrayOf("latitude", "longitude", "timestamp_ms"),
@@ -121,7 +138,18 @@ class TrackingRepository(context: Context) {
                 previous.timestamp = cursor.getLong(2)
             }
         }
+        if (dbHelper.summaryCachingEnabled) cacheLastPoint(previous)
         return previous
+    }
+
+    private fun cacheLastPoint(point: LastPoint) {
+        if (!dbHelper.summaryCachingEnabled) return
+        dbHelper.lastTrackPointCache = AppDatabase.LastTrackPointCache(
+            present = point.present,
+            latitude = point.latitude,
+            longitude = point.longitude,
+            timestamp = point.timestamp
+        )
     }
 
     private fun insertLocationInTransaction(
