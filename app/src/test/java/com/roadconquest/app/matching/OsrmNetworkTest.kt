@@ -68,7 +68,10 @@ class OsrmNetworkTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(valid))
             server.start()
-            val slow = points.map { it.copy(speedMps = 1f) }
+            val slow = listOf(
+                points[0].copy(speedMps = 1f, timestampMillis = 100_000L),
+                points[1].copy(speedMps = 1f, timestampMillis = 103_000L)
+            )
             requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(slow))
             val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
             assertNull(request.queryParameter("bearings"))
