@@ -60,9 +60,17 @@ internal object RoadGrouping {
     fun isUnnamed(nameKey: String): Boolean =
         nameKey.isEmpty() || nameKey == "unnamed road"
 
-    fun sharedReference(first: Road, second: Road): Boolean =
-        first.referenceKeys.isNotEmpty() && second.referenceKeys.isNotEmpty() &&
-            first.referenceKeys.any(second.referenceKeys::contains)
+    /**
+     * A multiplex such as I-95;US-1 belongs to more than one signed route. Treating any shared
+     * member as identity would transitively collapse the two routes after they split. A stable
+     * primary ref keeps the shared pavement with one route while the diverging route remains
+     * a separate human road.
+     */
+    fun sharedReference(first: Road, second: Road): Boolean {
+        val firstPrimary = first.referenceKeys.minOrNull() ?: return false
+        val secondPrimary = second.referenceKeys.minOrNull() ?: return false
+        return firstPrimary == secondPrimary
+    }
 
     fun connected(first: Road, second: Road): Boolean {
         val sharedRef = sharedReference(first, second)
