@@ -71,6 +71,7 @@ class TrackingService : Service(), LocationListener {
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
+    private var lastStatsBroadcastAt = -STATS_UI_BROADCAST_INTERVAL_MS
     private var lastNotificationLocationEnabled: Boolean? = null
     private val notificationManager by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(NotificationManager::class.java)
@@ -114,7 +115,7 @@ class TrackingService : Service(), LocationListener {
             val percent = (level * 100 / scale).coerceIn(0, 100)
             // No progression I/O is needed for ordinary battery levels.
             if (percent <= 5 && ProgressionManager.recordBatteryPercent(this@TrackingService, percent)) {
-                sendUiBroadcast(ACTION_STATS_UPDATED)
+                sendStatsUiBroadcast()
             }
         }
     }
@@ -298,7 +299,7 @@ class TrackingService : Service(), LocationListener {
         storageExecutor.execute {
             try {
                 repository.insertLocations(toSave)
-                sendUiBroadcast(ACTION_STATS_UPDATED)
+                sendStatsUiBroadcast()
                 maybeRunMatching()
             } catch (error: Exception) {
                 Log.e("RoadConquest", "Could not save driving locations; stopping tracking", error)
@@ -421,6 +422,16 @@ class TrackingService : Service(), LocationListener {
                     ((SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L).coerceAtLeast(0L)
                 } else (System.currentTimeMillis() - location.time).coerceAtLeast(0L))
         )
+    }
+
+    private fun sendStatsUiBroadcast() {
+        if (!MainActivity.trackingReceiverRegistered) return
+        val now = SystemClock.elapsedRealtime()
+        // MainActivity already coalesces these into one exact database refresh every 5 seconds.
+        // Extra broadcasts inside that same window cannot change what the user sees.
+        if (now - lastStatsBroadcastAt < STATS_UI_BROADCAST_INTERVAL_MS) return
+        lastStatsBroadcastAt = now
+        sendBroadcast(Intent(ACTION_STATS_UPDATED).setPackage(packageName))
     }
 
     private fun sendUiBroadcast(action: String) {
@@ -706,6 +717,7 @@ class TrackingService : Service(), LocationListener {
 
         private const val CHANNEL_ID = "roadconquest_tracking"
         private const val NOTIFICATION_ID = 4101
+        private const val STATS_UI_BROADCAST_INTERVAL_MS = 5_000L
         private const val LOCATION_INTERVAL_MS = 3_000L
         private const val LOCATION_MIN_UPDATE_INTERVAL_MS = 1_500L
         // Require time between updates, not movement: stopped cars still need fresh live fixes.
