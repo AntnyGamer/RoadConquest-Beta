@@ -12,14 +12,16 @@ object LocationProviders {
     fun fallback(locationManager: LocationManager): List<String> =
         candidates(locationManager).drop(1)
 
-    /** Request both precise sources by default, with network only when neither registers. */
+    /**
+     * Register only one provider at a time. The platform fused provider already combines GPS
+     * and other inputs, so also keeping a separate GPS request active duplicates high-power
+     * location work on devices that expose both. Fall through to GPS/network only when the
+     * preferred provider cannot be registered.
+     */
     fun registerHighAccuracy(locationManager: LocationManager, register: (String) -> Boolean) {
-        val enabled = candidates(locationManager)
-        var registered = false
-        enabled.filter { it != LocationManager.NETWORK_PROVIDER }.forEach {
-            if (register(it)) registered = true
+        for (provider in candidates(locationManager)) {
+            if (register(provider)) return
         }
-        if (!registered && LocationManager.NETWORK_PROVIDER in enabled) register(LocationManager.NETWORK_PROVIDER)
     }
 
     /** A baseline must come from a fix produced after the current location request began. */
