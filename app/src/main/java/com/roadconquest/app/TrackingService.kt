@@ -72,6 +72,7 @@ class TrackingService : Service(), LocationListener {
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
     private var lowestBatteryPercentSeen = 101
+    private var lastNotificationLocationEnabled: Boolean? = null
     private val notificationManager by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(NotificationManager::class.java)
     }
@@ -648,6 +649,7 @@ class TrackingService : Service(), LocationListener {
 
     private fun startAsForeground() {
         val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        lastNotificationLocationEnabled = locationEnabled
         startForeground(
             NOTIFICATION_ID,
             buildForegroundNotification(locationEnabled),
@@ -658,6 +660,10 @@ class TrackingService : Service(), LocationListener {
     private fun refreshForegroundNotification() {
         if (!isRunning) return
         val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
+        // Provider broadcasts can repeat while the visible notification state is unchanged.
+        // Avoid rebuilding the same notification and sending another system-service IPC.
+        if (lastNotificationLocationEnabled == locationEnabled) return
+        lastNotificationLocationEnabled = locationEnabled
         notificationManager.notify(NOTIFICATION_ID, buildForegroundNotification(locationEnabled))
     }
 
