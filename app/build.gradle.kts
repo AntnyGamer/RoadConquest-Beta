@@ -20,8 +20,8 @@ android {
         applicationId = "com.roadconquest.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 39
-        versionName = "1.0-beta.13"
+        versionCode = 40
+        versionName = "1.0-beta.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["timeout_msec"] = "120000"
         val escapedAccountApiUrl = accountApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -38,8 +38,14 @@ android {
 
     buildTypes {
         release {
-            // Favor predictable native/SDK behavior for this prototype over APK-size shrinking.
-            isMinifyEnabled = false
+            // R8 reduces shipped bytecode and embeds the mapping metadata Play needs to
+            // deobfuscate Java/Kotlin crashes. Keep resource shrinking off to avoid changing
+            // resource reachability/packaging behavior solely for size.
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
