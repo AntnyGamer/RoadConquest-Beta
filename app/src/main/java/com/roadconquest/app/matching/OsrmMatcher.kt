@@ -8,7 +8,6 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
-import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -51,9 +50,9 @@ class OsrmMatcher(
         // Keep a leg per surviving fix so an ambiguous batch tail can be withheld without
         // persisting its guessed junction spur. Named-road counts do not count these legs.
         val waypoints = points.indices.joinToString(";")
-        // Bearing is only sent when the phone-reported heading agrees with movement between
-        // sufficiently separated fixes. This helps OSRM disambiguate parallel/divided roads
-        // without trusting noisy low-speed compass/GNSS headings or constraining sharp turns.
+        // Course guidance is only sent when successive accepted fixes are far enough apart
+        // relative to their uncertainty. Deriving it from the trace avoids treating the legacy
+        // stored 0° value for "no device bearing" as a real northbound sensor reading.
         val bearings = buildBearingGuidance(points)
         // The driving filter already removes bad fixes. Preserve dense accepted samples;
         // server-side tidy can turn otherwise usable samples into unmatched tracepoints.
@@ -282,9 +281,9 @@ class OsrmMatcher(
     private fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
-            if (!point.speedMps.isFinite() || point.speedMps < MIN_BEARING_GUIDANCE_SPEED_MPS ||
-                !point.bearingDegrees.isFinite()
-            ) return@map ""
+            if (!point.speedMps.isFinite() || point.speedMps < MIN_BEARING_GUIDANCE_SPEED_MPS) {
+                return@map ""
+            }
 
             val (from, to) = if (index < points.lastIndex) {
                 point to points[index + 1]
@@ -301,12 +300,7 @@ class OsrmMatcher(
             if (!distance.isFinite() || distance < minimumEvidenceDistance) return@map ""
 
             val movementBearing = initialBearingDegrees(from, to)
-            val reportedBearing = normalizeBearing(point.bearingDegrees.toDouble())
-            if (bearingDifferenceDegrees(reportedBearing, movementBearing) >
-                MAX_BEARING_COURSE_DISAGREEMENT_DEGREES
-            ) return@map ""
-
-            "${reportedBearing.roundToInt() % 360},$BEARING_GUIDANCE_RANGE_DEGREES"
+            "${movementBearing.roundToInt() % 360},$BEARING_GUIDANCE_RANGE_DEGREES"
         }
         return values.takeIf { entries -> entries.any { it.isNotEmpty() } }?.joinToString(";")
     }
@@ -331,9 +325,6 @@ class OsrmMatcher(
 
     private fun normalizeBearing(value: Double): Double =
         ((value % 360.0) + 360.0) % 360.0
-
-    private fun bearingDifferenceDegrees(a: Double, b: Double): Double =
-        abs(((a - b + 540.0) % 360.0) - 180.0)
 
     private data class StepGeometry(val name: String, val coordinates: JSONArray, val meters: Double)
 
@@ -394,7 +385,6 @@ class OsrmMatcher(
         private const val MIN_BEARING_GUIDANCE_SPEED_MPS = 4f
         private const val MIN_BEARING_EVIDENCE_DISTANCE_M = 8.0
         private const val BEARING_ACCURACY_DISTANCE_FACTOR = 0.75
-        private const val MAX_BEARING_COURSE_DISAGREEMENT_DEGREES = 50.0
         // OSRM interprets this as a symmetric range around the supplied heading. Sixty-five
         // degrees is broad enough for ordinary curves while still excluding the opposite road.
         private const val BEARING_GUIDANCE_RANGE_DEGREES = 65
