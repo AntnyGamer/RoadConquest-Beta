@@ -114,7 +114,7 @@ class TrackingService : Service(), LocationListener {
             val percent = (level * 100 / scale).coerceIn(0, 100)
             // No progression I/O is needed for ordinary battery levels.
             if (percent <= 5 && ProgressionManager.recordBatteryPercent(this@TrackingService, percent)) {
-                sendBroadcast(Intent(ACTION_STATS_UPDATED).setPackage(packageName))
+                sendUiBroadcast(ACTION_STATS_UPDATED)
             }
         }
     }
@@ -201,7 +201,7 @@ class TrackingService : Service(), LocationListener {
             storageExecutor.execute {
                 try {
                     if (progressionRepository.recordBaselineCandidate(baseline)) {
-                        sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+                        sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
                     }
                 } catch (error: Exception) {
                     Log.e("RoadConquest", "Could not save starting place location", error)
@@ -249,7 +249,7 @@ class TrackingService : Service(), LocationListener {
                     try {
                         if (repository.recordExploredPlace(visited, exploredCell)) {
                             if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
-                            sendBroadcast(Intent(ACTION_EXPLORATION_UPDATED).setPackage(packageName))
+                            sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
                         }
                     } catch (error: Exception) {
                         // A failed write must remain eligible for a later accepted fix in this cell.
@@ -298,7 +298,7 @@ class TrackingService : Service(), LocationListener {
         storageExecutor.execute {
             try {
                 repository.insertLocations(toSave)
-                sendBroadcast(Intent(ACTION_STATS_UPDATED).setPackage(packageName))
+                sendUiBroadcast(ACTION_STATS_UPDATED)
                 maybeRunMatching()
             } catch (error: Exception) {
                 Log.e("RoadConquest", "Could not save driving locations; stopping tracking", error)
@@ -410,6 +410,7 @@ class TrackingService : Service(), LocationListener {
     }
 
     private fun sendLocationUpdate(location: Location, bearingDegrees: Double) {
+        if (!MainActivity.trackingReceiverRegistered) return
         sendBroadcast(
             Intent(ACTION_LOCATION_UPDATE)
                 .setPackage(packageName)
@@ -420,6 +421,11 @@ class TrackingService : Service(), LocationListener {
                     ((SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L).coerceAtLeast(0L)
                 } else (System.currentTimeMillis() - location.time).coerceAtLeast(0L))
         )
+    }
+
+    private fun sendUiBroadcast(action: String) {
+        if (!MainActivity.trackingReceiverRegistered) return
+        sendBroadcast(Intent(action).setPackage(packageName))
     }
 
     private fun isUsableDrivingLocation(location: Location, previous: Location?): Boolean {
@@ -559,7 +565,7 @@ class TrackingService : Service(), LocationListener {
 
                         val resolvedIds = if (acceptedRoads.isNotEmpty() && matchedIds.isNotEmpty()) {
                             repository.completeMatch(acceptedRoads, matchedIds)
-                            sendBroadcast(Intent(ACTION_ROADS_UPDATED).setPackage(packageName))
+                            sendUiBroadcast(ACTION_ROADS_UPDATED)
                             matchedIds.toSet()
                         } else {
                             emptySet()
