@@ -17,7 +17,7 @@ class OsrmNetworkTest {
         TrackPoint(1, 40.0, -74.0, 3f, 5f, 270f, 100_000, false),
         TrackPoint(2, 40.0, -74.001, 99f, 5f, 270f, 100_000, false)
     )
-    private val valid = """{"code":"Ok","tracepoints":[{"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},{"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-74.001,40]}],"matchings":[{"confidence":0.9,"legs":[{"steps":[{"name":"Rue cité","distance":100,"geometry":{"type":"LineString","coordinates":[[-74,40],[-74.001,40]]}}]}]}]}"""
+    private val valid = """{"code":"Ok","tracepoints":[{"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},{"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-74.001,40]}],"matchings":[{"confidence":0.9,"legs":[{"steps":[{"name":"Rue cité","ref":"NJ 47","distance":100,"maneuver":{"type":"turn"},"geometry":{"type":"LineString","coordinates":[[-74,40],[-74.001,40]]}}]}]}]}"""
 
     @Test fun requestNormalizesTimesAndRadiusAndParsesUtf8RoadNames() {
         MockWebServer().use { server ->
@@ -25,6 +25,8 @@ class OsrmNetworkTest {
             server.start()
             val result = requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(points))
             assertEquals("Rue cité", result.roads.single().name)
+            assertEquals("NJ 47", result.roads.single().reference)
+            assertTrue(result.roads.single().countTowardsRoads)
             val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
             assertEquals("100;101", request.queryParameter("timestamps"))
             assertEquals("10;75", request.queryParameter("radiuses"))
@@ -54,6 +56,19 @@ class OsrmNetworkTest {
             requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(slow))
             val request = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS)).requestUrl!!
             assertNull(request.queryParameter("bearings"))
+        }
+    }
+
+    @Test fun onAndOffRampsRemainMatchedButDoNotIncrementRoadCountMetadata() {
+        MockWebServer().use { server ->
+            val ramp = """{"code":"Ok","tracepoints":[{"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74,40]},{"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-74.001,40]}],"matchings":[{"confidence":0.9,"legs":[{"steps":[{"name":"Exit 3 ramp","distance":100,"maneuver":{"type":"off ramp"},"geometry":{"type":"LineString","coordinates":[[-74,40],[-74.001,40]]}}]}]}]}"""
+            server.enqueue(MockResponse().setBody(ramp))
+            server.start()
+            val road = requireNotNull(
+                OsrmMatcher(server.url("/").toString().trimEnd('/')).match(points)
+            ).roads.single()
+            assertEquals("Exit 3 ramp", road.name)
+            assertFalse(road.countTowardsRoads)
         }
     }
 
