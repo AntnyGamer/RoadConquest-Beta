@@ -21,31 +21,46 @@ object FogTexture {
         // The final row/column intentionally sample the same mathematical point as the first,
         // so REPEAT filtering cannot expose a tile seam.
         val denominator = (size - 1).coerceAtLeast(1).toDouble()
+        val uSamples = DoubleArray(size) { it / denominator }
+        val vSamples = DoubleArray(size) { it / denominator }
+
+        // Lattice values depend only on period + seed. Precompute them once instead of hashing
+        // the same corner values millions of times while building the 512 px texture. Sampling
+        // math is unchanged, so this is pixel-for-pixel identical to direct lattice evaluation.
+        val warpX3 = NoiseLayer(3, 17)
+        val warpX7 = NoiseLayer(7, 73)
+        val warpY3 = NoiseLayer(3, 101)
+        val warpY7 = NoiseLayer(7, 151)
+        val cloud2 = NoiseLayer(2, 211)
+        val cloud4 = NoiseLayer(4, 307)
+        val cloud8 = NoiseLayer(8, 401)
+        val cloud16 = NoiseLayer(16, 503)
+        val cloud32 = NoiseLayer(32, 601)
 
         for (y in 0 until size) {
-            val v = y / denominator
+            val v = vSamples[y]
             for (x in 0 until size) {
-                val u = x / denominator
+                val u = uSamples[x]
 
                 // Low-frequency domain warping bends the cloud masses before the finer octaves
                 // are added. This avoids axis-aligned/value-noise cells looking like a grid.
                 val warpX =
-                    0.13 * periodicNoise(u, v, 3, 17) +
-                    0.05 * periodicNoise(u, v, 7, 73)
+                    0.13 * warpX3.sample(u, v) +
+                    0.05 * warpX7.sample(u, v)
                 val warpY =
-                    0.13 * periodicNoise(u + 0.37, v + 0.11, 3, 101) +
-                    0.05 * periodicNoise(u + 0.19, v + 0.53, 7, 151)
+                    0.13 * warpY3.sample(u + 0.37, v + 0.11) +
+                    0.05 * warpY7.sample(u + 0.19, v + 0.53)
                 val warpedU = u + warpX
                 val warpedV = v + warpY
 
                 // Broad mist first, then progressively finer wisps. The texture stays static:
                 // there is no animation/timer and therefore no ongoing fog-specific battery cost.
                 val cloud =
-                    0.46 * periodicNoise(warpedU, warpedV, 2, 211) +
-                    0.28 * periodicNoise(warpedU, warpedV, 4, 307) +
-                    0.15 * periodicNoise(warpedU, warpedV, 8, 401) +
-                    0.08 * periodicNoise(warpedU, warpedV, 16, 503) +
-                    0.03 * periodicNoise(u, v, 32, 601)
+                    0.46 * cloud2.sample(warpedU, warpedV) +
+                    0.28 * cloud4.sample(warpedU, warpedV) +
+                    0.15 * cloud8.sample(warpedU, warpedV) +
+                    0.08 * cloud16.sample(warpedU, warpedV) +
+                    0.03 * cloud32.sample(u, v)
 
                 // Smooth the tonal response so the fog has soft cloud bodies rather than harsh
                 // contour bands. Alpha remains controlled by FogBitmapRenderer.MAX_FOG_ALPHA.
@@ -58,24 +73,34 @@ object FogTexture {
         return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
     }
 
-    /** Smooth, deterministic value noise whose integer lattice wraps at [period]. */
-    private fun periodicNoise(u: Double, v: Double, period: Int, seed: Int): Double {
-        val px = u * period
-        val py = v * period
-        val x0 = floor(px).toInt()
-        val y0 = floor(py).toInt()
-        val tx = px - x0
-        val ty = py - y0
-        val sx = smooth(tx)
-        val sy = smooth(ty)
+    /** Smooth, deterministic value noise backed by a tiny precomputed periodic lattice. */
+    private class NoiseLayer(private val period: Int, seed: Int) {
+        private val values = DoubleArray(period * period) { index ->
+            lattice(index % period, index / period, seed)
+        }
 
-        val n00 = lattice(wrap(x0, period), wrap(y0, period), seed)
-        val n10 = lattice(wrap(x0 + 1, period), wrap(y0, period), seed)
-        val n01 = lattice(wrap(x0, period), wrap(y0 + 1, period), seed)
-        val n11 = lattice(wrap(x0 + 1, period), wrap(y0 + 1, period), seed)
-        val top = n00 + (n10 - n00) * sx
-        val bottom = n01 + (n11 - n01) * sx
-        return top + (bottom - top) * sy
+        fun sample(u: Double, v: Double): Double {
+            val px = u * period
+            val py = v * period
+            val x0 = floor(px).toInt()
+            val y0 = floor(py).toInt()
+            val tx = px - x0
+            val ty = py - y0
+            val sx = smooth(tx)
+            val sy = smooth(ty)
+
+            val x1 = wrap(x0 + 1, period)
+            val y1 = wrap(y0 + 1, period)
+            val wx0 = wrap(x0, period)
+            val wy0 = wrap(y0, period)
+            val n00 = values[wy0 * period + wx0]
+            val n10 = values[wy0 * period + x1]
+            val n01 = values[y1 * period + wx0]
+            val n11 = values[y1 * period + x1]
+            val top = n00 + (n10 - n00) * sx
+            val bottom = n01 + (n11 - n01) * sx
+            return top + (bottom - top) * sy
+        }
     }
 
     private fun smooth(value: Double): Double = value * value * (3.0 - 2.0 * value)
