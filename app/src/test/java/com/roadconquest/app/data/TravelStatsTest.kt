@@ -98,6 +98,29 @@ class TravelStatsTest {
         assertEquals(2L, repo.getSummary().roadsUnlockedCount)
     }
 
+    @Test fun concurrentRouteRefsDoNotMergeSeparateRoutesAfterTheyDiverge() {
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Shared Highway", "[[-74.002,40.0000],[-74.001,40.0000]]",
+                1, 2, 1.0, reference = "US 1;US 9"
+            )
+        ))
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Route 1", "[[-74.001,40.0000],[-74.000,40.0001]]",
+                3, 4, 1.0, reference = "US 1"
+            )
+        ))
+        repo.upsertRoads(listOf(
+            MatchedRoad(
+                "Route 9", "[[-74.001,40.0000],[-74.000,39.9999]]",
+                5, 6, 1.0, reference = "US 9"
+            )
+        ))
+        assertEquals(3L, repo.getSummary().roadSegmentCount)
+        assertEquals(2L, repo.getSummary().roadsUnlockedCount)
+    }
+
     @Test fun identicalRouteRefsFarApartDoNotCollapseIntoOneRoad() {
         repo.upsertRoads(listOf(
             MatchedRoad(
