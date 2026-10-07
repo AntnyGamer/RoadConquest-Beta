@@ -15,14 +15,8 @@ object Prefs {
     private const val KEY_ACCOUNT_PROMPT_SHOWN = "account_prompt_shown"
     private const val KEY_DEVICE_DATA_DELETION_PENDING = "device_data_deletion_pending"
 
-    @Volatile private var cachedPrefs: android.content.SharedPreferences? = null
-
-    private fun prefs(context: Context): android.content.SharedPreferences =
-        cachedPrefs ?: synchronized(this) {
-            cachedPrefs ?: context.applicationContext
-                .getSharedPreferences(FILE, Context.MODE_PRIVATE)
-                .also { cachedPrefs = it }
-        }
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     fun uiTheme(context: Context): UiTheme =
         UiTheme.entries.firstOrNull { it.name == prefs(context).getString("ui_theme", null) } ?: UiTheme.SYSTEM
