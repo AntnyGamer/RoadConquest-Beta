@@ -138,14 +138,7 @@ class MapRenderer(
         viewportRevision++
         updateCameraLimits()
         updateFogCoverage()
-        // The detailed fog bitmap is georeferenced, so MapLibre can pan/zoom/rotate it natively
-        // without another CPU bitmap render. Rebuild during a gesture only after the padded
-        // bitmap no longer covers the viewport; idle always performs a final sharp refresh.
-        if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM &&
-            !showingDetailedFog
-        ) {
-            scheduleFogRender()
-        }
+        if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) scheduleFogRender()
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
         cameraMoving = false
@@ -826,15 +819,6 @@ class MapRenderer(
             mainHandler.removeCallbacks(renderFog)
             fogAgain = false
             updateFogCoverage()
-            return
-        }
-        // While a gesture remains inside the already-rendered padded bitmap, MapLibre's native
-        // transform keeps the fog correctly anchored. Deferring the expensive off-screen bitmap
-        // work until coverage is actually exhausted (or the camera becomes idle) cuts repeated
-        // allocations, projection work and CPU/GPU uploads with no change to saved exploration.
-        if (cameraMoving && showingDetailedFog) {
-            mainHandler.removeCallbacks(renderFog)
-            fogAgain = false
             return
         }
         if (fogRunning) {
