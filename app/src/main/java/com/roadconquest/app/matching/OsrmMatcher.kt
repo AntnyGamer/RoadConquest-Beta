@@ -1,6 +1,7 @@
 package com.roadconquest.app.matching
 
 import com.roadconquest.app.data.MatchedRoad
+import com.roadconquest.app.data.RoadGrouping
 import com.roadconquest.app.data.TrackPoint
 import org.json.JSONArray
 import org.json.JSONObject
@@ -293,16 +294,13 @@ class OsrmMatcher(
     }
 
     private fun sameMergeIdentity(a: MatchedRoad, b: MatchedRoad): Boolean {
-        val first = a.name.trim()
-        val second = b.name.trim()
-        if (first.isEmpty() || first.equals("Unnamed road", ignoreCase = true) ||
-            !first.equals(second, ignoreCase = true) || a.countTowardsRoads != b.countTowardsRoads
+        val first = RoadGrouping.normalizeName(a.name)
+        if (first.isEmpty() || first != RoadGrouping.normalizeName(b.name) ||
+            a.countTowardsRoads != b.countTowardsRoads
         ) return false
-        return normalizeReference(a.reference) == normalizeReference(b.reference)
+        return RoadGrouping.normalizeReferences(a.reference) ==
+            RoadGrouping.normalizeReferences(b.reference)
     }
-
-    private fun normalizeReference(value: String): String =
-        value.trim().uppercase(Locale.ROOT).replace(Regex("\\s+"), " ")
 
     private fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
