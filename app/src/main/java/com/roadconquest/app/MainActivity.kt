@@ -104,6 +104,13 @@ class MainActivity : Activity() {
     private var baselinePreviewCapturedForRegistration = false
     private var baselinePreviewRequestElapsedNanos = 0L
     private var baselinePreviewRequestWallMillis = 0L
+    private val previewLocationRequest by lazy(LazyThreadSafetyMode.NONE) {
+        LocationRequest.Builder(PREVIEW_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(PREVIEW_MIN_UPDATE_INTERVAL_MS)
+            .setMinUpdateDistanceMeters(PREVIEW_MIN_DISTANCE_M)
+            .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
+            .build()
+    }
     private val previewLocationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             if (Prefs.isTrackingPaused(this@MainActivity) || TrackingService.isRunning || !isFreshLocation(location) ||
@@ -981,12 +988,12 @@ class MainActivity : Activity() {
     private fun registerPreviewProvider(provider: String): Boolean {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return false
         return try {
-            val request = LocationRequest.Builder(PREVIEW_INTERVAL_MS)
-                .setMinUpdateIntervalMillis(PREVIEW_MIN_UPDATE_INTERVAL_MS)
-                .setMinUpdateDistanceMeters(PREVIEW_MIN_DISTANCE_M)
-                .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
-                .build()
-            locationManager.requestLocationUpdates(provider, request, mainExecutor, previewLocationListener)
+            locationManager.requestLocationUpdates(
+                provider,
+                previewLocationRequest,
+                mainExecutor,
+                previewLocationListener
+            )
             true
         } catch (_: SecurityException) {
             false
