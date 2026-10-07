@@ -116,12 +116,14 @@ class OsrmTurnTest {
         assertTrue(result.matchedPointConfidences.isEmpty())
     }
 
-    @Test fun disconnectedStepGeometryCannotLeaveACompletedGap() {
+    @Test fun disconnectedStepGeometryStaysPendingWithoutPoisoningTheBatch() {
         val badLeg = leg("Approach", a, b)
         badLeg.getJSONArray("steps").put(leg("Exit", d, e).getJSONArray("steps").getJSONObject(0))
-        assertThrows(IllegalArgumentException::class.java) {
+        val result = requireNotNull(
             OsrmMatcher().parse(response(listOf(trace(0, 0, a), trace(0, 1, e)), matching(badLeg)), points(a, e))
-        }
+        )
+        assertTrue(result.roads.isEmpty())
+        assertTrue(result.matchedPointConfidences.isEmpty())
     }
 
     @Test fun missingAmbiguityOrShiftedWaypointIndexCannotResolveFixes() {
@@ -181,10 +183,58 @@ class OsrmTurnTest {
 
     @Test fun unsupportedDetourCannotTurnARecordedStraightDriveIntoAnInventedRoad() {
         val far = coord(-73.99, 40.01)
-        assertThrows(IllegalArgumentException::class.java) {
+        val result = requireNotNull(
             OsrmMatcher().parse(response(listOf(trace(0, 0, a), trace(0, 1, b)),
                 matching(leg("Detour", a, far, b))), points(a, b))
-        }
+        )
+        assertTrue(result.roads.isEmpty())
+        assertTrue(result.matchedPointConfidences.isEmpty())
+    }
+
+    @Test fun oneBadLegKeepsOnlyThatIntervalPendingAndPreservesValidSiblingGeometry() {
+        val far = coord(-73.99, 40.01)
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, a), trace(0, 1, b), trace(0, 2, c)),
+                    matching(
+                        leg("Approach", a, b),
+                        leg("Bad sibling", b, far, c)
+                    )
+                ),
+                points(a, b, c)
+            )
+        )
+
+        assertEquals(listOf("Approach"), result.roads.map { it.name })
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
+        assertFalse(3L in result.matchedPointConfidences)
+    }
+
+    @Test fun nearbyParallelRoadSnapBeyondReportedAccuracyStaysPending() {
+        val rawStart = coord(-74.0, 40.0)
+        val rawEnd = coord(-74.0, 40.0001)
+        val parallelStart = coord(-73.99981, 40.0)
+        val parallelEnd = coord(-73.99981, 40.0001)
+        val rawPoints = listOf(
+            TrackPoint(1, 40.0, -74.0, 10f, 3f, 0f, 1_000_000L, false),
+            TrackPoint(2, 40.0001, -74.0, 10f, 3f, 0f, 1_003_000L, false)
+        )
+
+        val result = requireNotNull(
+            OsrmMatcher().parse(
+                response(
+                    listOf(trace(0, 0, parallelStart), trace(0, 1, parallelEnd)),
+                    matching(leg("Nearby Parallel Road", parallelStart, parallelEnd))
+                ),
+                rawPoints
+            )
+        )
+
+        assertTrue(result.roads.isEmpty())
+        assertTrue(result.matchedPointConfidences.isEmpty())
+        assertNotEquals(rawStart.toString(), parallelStart.toString())
+        assertNotEquals(rawEnd.toString(), parallelEnd.toString())
     }
 
     @Test fun shortIntersectionEdgesRemainInTheDrawnRoute() {
