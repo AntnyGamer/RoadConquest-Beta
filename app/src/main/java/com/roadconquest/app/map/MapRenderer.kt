@@ -493,7 +493,7 @@ class MapRenderer(
                 } else {
                     null
                 }
-                val pending = repository.getPendingRouteInBounds(
+                val pending = repository.getPendingRouteInBoundsResult(
                     queryNorth, queryEast, querySouth, queryWest,
                     visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
                 )
@@ -503,8 +503,9 @@ class MapRenderer(
                     places,
                     footprint.takeIf { roadQuery?.complete == true },
                     footprint.takeIf { queryPlaces },
-                    roadFeatures(OverlayRoads.prepare(pending)),
-                    pending.isNotEmpty()
+                    roadFeatures(OverlayRoads.prepare(pending.roads)),
+                    pending.roads.isNotEmpty(),
+                    pending.oldestVisiblePendingTimestampMillis?.plus(PENDING_ROUTE_MAX_AGE_MS)
                 )
             }
             result.exceptionOrNull()?.let { Log.e("RoadConquest", "Could not refresh saved map data", it) }
@@ -516,8 +517,13 @@ class MapRenderer(
                         (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(it.pendingRoute)
                         // Also expire the preview when the map is idle and location updates stop.
                         mainHandler.removeCallbacks(expirePendingRoutes)
-                        if (it.pendingVisible) {
-                            mainHandler.postDelayed(expirePendingRoutes, PENDING_ROUTE_MAX_AGE_MS)
+                        if (it.pendingVisible && it.nextPendingExpiryMillis != null) {
+                            // Use the oldest visible pending fix, not the time of this redraw:
+                            // multiple unresolved trails must expire independently, even on an idle map.
+                            mainHandler.postDelayed(
+                                expirePendingRoutes,
+                                (it.nextPendingExpiryMillis - System.currentTimeMillis()).coerceAtLeast(1_000L)
+                            )
                         }
                         if (it.places != null) {
                             loadedPlaceBounds = it.placeBounds
@@ -1123,7 +1129,8 @@ class MapRenderer(
         val roadBounds: RoadQueryBounds?,
         val placeBounds: RoadQueryBounds?,
         val pendingRoute: FeatureCollection,
-        val pendingVisible: Boolean
+        val pendingVisible: Boolean,
+        val nextPendingExpiryMillis: Long?
     )
 
     private data class RoadQueryBounds(
