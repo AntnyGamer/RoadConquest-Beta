@@ -20,6 +20,10 @@ import xml.etree.ElementTree as ET
 
 PACKAGE = 'com.roadconquest.app'
 EARTH = 6371000
+# On the API 35 runner, setGps's documented m/s value reaches Android as knots:
+# 12.0 becomes exactly 6.17333 m/s. Compensate only in the emulator input and
+# verify the native provider value before treating this as a valid driving test.
+EMULATOR_SPEED_INPUT_SCALE = 3600 / 1852
 
 
 def meters(a, b):
@@ -152,7 +156,7 @@ class GpsController:
         import grpc
         from google.protobuf import descriptor_pb2, descriptor_pool, empty_pb2, message_factory
         # The small GpsState schema from AOSP emulator_controller.proto. The emulator
-        # receives speed in m/s and bearing in degrees; Android supplies fix timing.
+        # declares speed in m/s and bearing in degrees; Android supplies fix timing.
         schema = descriptor_pb2.FileDescriptorProto(
             name='drive-gps.proto', package='android.emulation.control', syntax='proto3')
         message = schema.message_type.add(name='GpsState')
@@ -173,7 +177,20 @@ class GpsController:
 
     def fix(self, point, speed, bearing):
         self.send(self.state(passiveUpdate=False, latitude=point[1], longitude=point[0],
-                             speed=speed, bearing=bearing, altitude=10, satellites=10), timeout=5)
+                             speed=speed * EMULATOR_SPEED_INPUT_SCALE, bearing=bearing,
+                             altitude=10, satellites=10), timeout=5)
+
+
+def check_native_speed(location, rows):
+    gps = re.search(r'last location=Location\[gps (-?[\d.]+),(-?[\d.]+)[^\n]* vel=([\d.]+)', location)
+    assert gps, 'Emulator did not expose native GPS speed'
+    latitude, longitude, native_speed = map(float, gps.groups())
+    row = min(rows, key=lambda r: meters([longitude, latitude], r['position']))
+    assert meters([longitude, latitude], row['position']) < 2, 'Cannot associate native fix with replay row'
+    assert abs(native_speed - row['speed']) < .03, (
+        f'Invalid emulator speed: native {native_speed} m/s, commanded {row["speed"]} m/s')
+    return {'native_speed_mps': native_speed, 'planned_speed_mps': row['speed'],
+            'emulator_input_scale': EMULATOR_SPEED_INPUT_SCALE, 'row_time_s': row['t']}
 
 
 def check_gps_clock(location):
@@ -341,6 +358,9 @@ def main():
                 location = adb('shell', 'dumpsys', 'location')
                 (args.out / 'location-early.txt').write_text(location)
                 check_gps_clock(location)
+                speed_check = check_native_speed(location, plan['rows'][:i+1])
+                (args.out / 'native-speed-check.json').write_text(json.dumps(speed_check, indent=2))
+                print('Native GPS speed check:', speed_check, flush=True)
                 fixes = re.findall(r'last location=Location\[(?:gps|fused) (-?[\d.]+),(-?[\d.]+)',location)
                 assert any(meters(plan['path'][0],[float(lon),float(lat)])>50
                            for lat,lon in fixes), 'Emulator GPS coordinates did not move'
