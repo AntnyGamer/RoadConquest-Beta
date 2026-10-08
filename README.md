@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 21
+# Road Conquest 1.0 Beta 22
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -22,7 +22,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 47.
+This release uses Android application ID `com.roadconquest.app` and internal version code 48.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -88,6 +88,8 @@ and user-saved exported files are separate.
 
 Moving GPS gaps longer than 30 seconds start a new matching interval; nearby stationary pauses can
 still reconnect without inventing a route across a location outage.
+Older unmatched GPS fixes also receive spare matching batches even when they have no retry
+backoff, avoiding queue starvation while keeping the first batch focused on live driving.
 Short unmatched turn gaps retry with adjacent approach and exit fixes, using spare space within
 the same ten-fix request limit. Confidence, accuracy and detour checks still govern road credit;
 an ambiguous final endpoint can remain pending until later driving provides more evidence.
@@ -204,7 +206,7 @@ ad failures never block the rest of the screen.
 Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
 complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
 collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
-advertising disclosure, and allow version code 46 for verified scoring. GitHub release publication
+advertising disclosure, and allow version code 48 for verified scoring. GitHub release publication
 builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
 Ad requests have their own network, memory, storage, and battery costs; this release retains the
 Beta 17 map/tracking optimizations but does not claim ads have zero overhead.
