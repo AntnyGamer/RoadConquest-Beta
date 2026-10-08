@@ -342,7 +342,7 @@ class MapRenderingDeviceTest {
                 mapHandler = MapRenderer::class.java.getDeclaredField("mainHandler")
                     .apply { isAccessible = true }.get(renderer) as Handler
             }
-            scenario.moveToState(Lifecycle.State.STARTED)
+            scenario.moveToState(Lifecycle.State.CREATED)
             scenario.onActivity {
                 assertFalse("Hidden-map visibility polling is cancelled", mapHandler.hasCallbacks(visibilityCheck))
                 for (name in listOf("renderFog", "expirePendingRoutes", "expireLocation")) {

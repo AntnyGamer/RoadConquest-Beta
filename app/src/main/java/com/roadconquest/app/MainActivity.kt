@@ -413,7 +413,6 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         resumed = false
-        renderer?.pauseViewport()
         statsHandler.removeCallbacks(statsRefresh)
         statsRefreshScheduled = false
         stopPreviewLocation()
@@ -423,6 +422,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         ForegroundSession.app.onStop(isChangingConfigurations || recreatingForAppearance)
+        renderer?.pauseViewport()
         refreshRoadsAfterStop = true
         renderer?.cancelPlaceOverlayLoads()
         trackingReceiverRegistered = false
