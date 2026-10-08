@@ -70,7 +70,8 @@ object PlaceResolver {
     )
 
     private fun canonical(value: String): String =
-        value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+        value.trim().lowercase(Locale.ROOT).replace(WHITESPACE_RE, " ")
 
+    private val WHITESPACE_RE = Regex("\\s+")
     private const val MAX_RESULTS = 5
 }

@@ -536,15 +536,15 @@ class MapRenderer(
             style.addSource(GeoJsonSource(overlaySourceId(mode), EMPTY_FEATURES))
             style.addSource(GeoJsonSource(overlayBoundarySourceId(mode), EMPTY_FEATURES))
             val color = when (mode) {
-                PlaceOverlayMode.COUNTRY -> Color.parseColor("#2F80ED")
-                PlaceOverlayMode.STATE -> Color.parseColor("#8E44AD")
-                PlaceOverlayMode.TOWN -> Color.parseColor("#27AE60")
+                PlaceOverlayMode.COUNTRY -> 0xFF2F80ED.toInt()
+                PlaceOverlayMode.STATE -> 0xFF8E44AD.toInt()
+                PlaceOverlayMode.TOWN -> 0xFF27AE60.toInt()
                 PlaceOverlayMode.NONE -> Color.TRANSPARENT
             }
             val outline = when (mode) {
-                PlaceOverlayMode.COUNTRY -> Color.parseColor("#174A8B")
-                PlaceOverlayMode.STATE -> Color.parseColor("#5D2C72")
-                PlaceOverlayMode.TOWN -> Color.parseColor("#176B3D")
+                PlaceOverlayMode.COUNTRY -> 0xFF174A8B.toInt()
+                PlaceOverlayMode.STATE -> 0xFF5D2C72.toInt()
+                PlaceOverlayMode.TOWN -> 0xFF176B3D.toInt()
                 PlaceOverlayMode.NONE -> Color.TRANSPARENT
             }
             style.addLayer(

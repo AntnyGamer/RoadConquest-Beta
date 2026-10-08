@@ -247,6 +247,18 @@ class PlaceOverlayClient(
         private const val MAX_CONFIG_LENGTH = 2_048
         private const val DEFAULT_ENDPOINT = "https://nominatim.openstreetmap.org"
         private const val EARTH_RADIUS_M = 6_371_008.8
+        // These values are invariant across every Nominatim result. Reuse the compiled patterns
+        // and immutable membership tables instead of rebuilding them for each candidate.
+        private val WHITESPACE_RE = Regex("\\s+")
+        private val POPULATION_RE = Regex("""\d[\d, .]*""")
+        private val POLYGON_TYPES = setOf("Polygon", "MultiPolygon")
+        private val STATE_ADDRESS_TYPES = setOf("state", "region", "state_district")
+        private val LOCALITY_ADDRESS_KEYS = listOf(
+            "city", "town", "village", "municipality", "township", "locality"
+        )
+        private val TOWN_ADDRESS_TYPES = setOf(
+            "city", "town", "village", "municipality", "township", "locality", "administrative"
+        )
 
         internal fun parseResponse(place: PlaceDiscovery, body: String): PlaceOverlayData? {
             val results = runCatching { JSONArray(body) }.getOrNull() ?: return null
@@ -255,7 +267,7 @@ class PlaceOverlayClient(
             for (i in 0 until results.length()) {
                 val candidate = results.optJSONObject(i) ?: continue
                 val geometry = candidate.optJSONObject("geojson") ?: continue
-                if (geometry.optString("type") !in setOf("Polygon", "MultiPolygon")) continue
+                if (geometry.optString("type") !in POLYGON_TYPES) continue
                 val score = score(place, candidate)
                 if (score > bestScore) {
                     best = candidate
@@ -307,21 +319,18 @@ class PlaceOverlayClient(
                     if (canonical(address.optString("state")) == expectedName) score += 7
                     if (expectedCountry.isNotBlank() &&
                         canonical(address.optString("country")) == expectedCountry) score += 2
-                    if (addressType in setOf("state", "region", "state_district")) score += 3
+                    if (addressType in STATE_ADDRESS_TYPES) score += 3
                 }
                 PlaceKind.TOWN -> {
-                    val locality = listOf(
-                        "city", "town", "village", "municipality", "township", "locality"
-                    ).any { canonical(address.optString(it)) == expectedName }
+                    val locality = LOCALITY_ADDRESS_KEYS.any {
+                        canonical(address.optString(it)) == expectedName
+                    }
                     if (locality) score += 7
                     if (expectedParent.isNotBlank() &&
                         canonical(address.optString("state")) == expectedParent) score += 2
                     if (expectedCountry.isNotBlank() &&
                         canonical(address.optString("country")) == expectedCountry) score += 1
-                    if (addressType in setOf(
-                            "city", "town", "village", "municipality", "township", "locality", "administrative"
-                        )
-                    ) score += 3
+                    if (addressType in TOWN_ADDRESS_TYPES) score += 3
 
                     // Names such as "Washington Township" are not unique even inside one
                     // state. Prefer the boundary whose Nominatim centroid is near the exact
@@ -367,7 +376,7 @@ class PlaceOverlayClient(
         }
 
         private fun parsePopulation(value: String?): Long? {
-            val match = value?.let { Regex("""\d[\d, .]*""").find(it)?.value } ?: return null
+            val match = value?.let { POPULATION_RE.find(it)?.value } ?: return null
             return match.filter(Char::isDigit).toLongOrNull()?.takeIf { it > 0L }
         }
 
@@ -414,6 +423,6 @@ class PlaceOverlayClient(
         }
 
         private fun canonical(value: String): String =
-            value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+            value.trim().lowercase(Locale.ROOT).replace(WHITESPACE_RE, " ")
     }
 }
