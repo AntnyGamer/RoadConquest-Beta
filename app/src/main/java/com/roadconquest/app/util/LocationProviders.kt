@@ -6,15 +6,15 @@ import android.location.Location
 object LocationProviders {
     /** Fused can combine satellite and other inputs; its name alone does not determine accuracy. */
     fun preferred(locationManager: LocationManager): String? =
-        candidates(locationManager).firstOrNull()
+        enabledProviders(locationManager).firstOrNull()
 
     /** Ordered alternatives used only if registering the preferred provider fails. */
     fun fallback(locationManager: LocationManager): List<String> =
-        candidates(locationManager).drop(1)
+        enabledProviders(locationManager).drop(1)
 
     /** Request both precise sources by default, with network only when neither registers. */
     fun registerHighAccuracy(locationManager: LocationManager, register: (String) -> Boolean) {
-        val enabled = candidates(locationManager)
+        val enabled = enabledProviders(locationManager)
         var registered = false
         for (provider in enabled) {
             if (provider != LocationManager.NETWORK_PROVIDER && register(provider)) registered = true
@@ -60,7 +60,8 @@ object LocationProviders {
         return candidate.provider == previous.provider || candidate.accuracy <= previous.accuracy
     }
 
-    private fun candidates(locationManager: LocationManager): List<String> {
+    /** One ordered snapshot so callers do not query provider state twice for the same decision. */
+    internal fun enabledProviders(locationManager: LocationManager): List<String> {
         val enabled = locationManager.getProviders(true)
         val fused = LocationManager.FUSED_PROVIDER
         return buildList(3) {
