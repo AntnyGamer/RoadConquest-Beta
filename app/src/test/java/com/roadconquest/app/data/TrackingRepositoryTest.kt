@@ -96,10 +96,21 @@ class TrackingRepositoryTest {
             point(1_000_000L, lon = -74.0),
             point(1_003_000L, lon = -73.9999)
         )
-        assertEquals(1, repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0).size)
-        assertTrue(repository.getPendingRouteInBounds(
+        val first = repository.getPendingRouteInBoundsResult(
+            41.0, -73.0, 39.0, -75.0, visibleSinceMillis = 1_000_000L
+        )
+        assertEquals(1, first.roads.size)
+        assertEquals(1_000_000L, first.oldestVisiblePendingTimestampMillis)
+        val second = repository.getPendingRouteInBoundsResult(
+            41.0, -73.0, 39.0, -75.0, visibleSinceMillis = 1_000_001L
+        )
+        assertEquals(1, second.roads.size)
+        assertEquals(1_003_000L, second.oldestVisiblePendingTimestampMillis)
+        val expired = repository.getPendingRouteInBoundsResult(
             41.0, -73.0, 39.0, -75.0, visibleSinceMillis = 1_003_001L
-        ).isEmpty())
+        )
+        assertTrue(expired.roads.isEmpty())
+        assertNull(expired.oldestVisiblePendingTimestampMillis)
         assertEquals(ids, repository.loadMatchingWindow().points.map { it.id })
     }
 
