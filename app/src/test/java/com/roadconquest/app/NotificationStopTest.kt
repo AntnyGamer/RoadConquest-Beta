@@ -5,6 +5,7 @@ import android.app.Service
 import android.content.Intent
 import android.location.Location
 import android.location.LocationManager
+import android.os.Build
 import com.roadconquest.app.util.ForegroundSession
 import com.roadconquest.app.util.Prefs
 import org.junit.Assert.*
@@ -98,22 +99,27 @@ class NotificationStopTest {
         } finally { controller.destroy() }
     }
 
-    @Test fun locationOffForegroundServiceSaysItIsWaitingInsteadOfTracking() {
+    @Test fun locationOffForegroundServiceFollowsPlatformPrerequisites() {
         val app = RuntimeEnvironment.getApplication()
         Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(false)
         val controller = Robolectric.buildService(TrackingService::class.java).create()
         try {
             val service = controller.get()
-            val notification = Shadows.shadowOf(service).lastForegroundNotification
-            assertNotNull(notification)
-            assertEquals(
-                "Road Conquest is ready",
-                notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
-            )
-            assertEquals(
-                "Waiting for Android Location to be turned on",
-                notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                assertTrue(Shadows.shadowOf(service).isStoppedBySelf)
+                assertNull(Shadows.shadowOf(service).lastForegroundNotification)
+            } else {
+                val notification = Shadows.shadowOf(service).lastForegroundNotification
+                assertNotNull(notification)
+                assertEquals(
+                    "Road Conquest is ready",
+                    notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
+                )
+                assertEquals(
+                    "Waiting for Android Location to be turned on",
+                    notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()
+                )
+            }
         } finally {
             controller.destroy()
         }
