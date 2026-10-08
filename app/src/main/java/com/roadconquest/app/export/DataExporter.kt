@@ -2,6 +2,7 @@ package com.roadconquest.app.export
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import com.roadconquest.app.BuildConfig
 import com.roadconquest.app.data.DataSummary
 import com.roadconquest.app.data.TrackingRepository
 import com.roadconquest.app.util.Prefs
@@ -71,6 +72,8 @@ object DataExporter {
     ) {
         val metadata = JSONObject()
             .put("app", "Road Conquest")
+            .put("app_version", BuildConfig.VERSION_NAME)
+            .put("app_version_code", BuildConfig.VERSION_CODE)
             .put("schema_version", 8)
             .put("explored_place_count", exploredCount)
             .put("road_visit_count", roadVisitCount)
