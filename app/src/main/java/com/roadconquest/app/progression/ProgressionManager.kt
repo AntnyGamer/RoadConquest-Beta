@@ -8,6 +8,7 @@ import com.roadconquest.app.data.DataSummary
 import com.roadconquest.app.data.ProgressionRepository
 import com.roadconquest.app.data.ProgressionSnapshot
 import com.roadconquest.app.map.PlaceOverlayCache
+import java.util.UUID
 
 object ProgressionManager {
     fun sync(context: Context, summary: DataSummary): ProgressionSnapshot {
@@ -55,15 +56,14 @@ object ProgressionManager {
         return changed
     }
 
-    fun recordCompletedAd(context: Context): Long {
-        val repository = ProgressionRepository(context)
-        val count = repository.recordCompletedAd()
+    fun recordCompletedAd(repository: ProgressionRepository, receiptId: String, points: Long): Boolean {
+        if (!repository.recordCompletedAd(receiptId, points)) return false
         val metrics = metrics(repository.snapshot())
         Achievements.progress(DataSummary(0, 0, null, null), metrics)
             .asSequence()
             .filter { it.unlocked && it.id.startsWith("ads_") }
             .forEach { repository.awardAchievement(it.id, it.rewardPoints) }
-        return count
+        return true
     }
 
     fun resetLocalProgression(context: Context) {
@@ -106,9 +106,14 @@ object ProgressionManager {
 }
 
 /**
- * Integration point for a future rewarded-ad SDK. Call only from the SDK's confirmed-completion
- * callback; opening or dismissing an ad must never increment progress.
+ * One bridge per displayed ad. Capture the current history before showing the ad so late SDK
+ * callbacks cannot repopulate deleted data. Its receipt also makes duplicate callbacks harmless.
  */
-object AdRewardBridge {
-    fun onCompletedAd(context: Context): Long = ProgressionManager.recordCompletedAd(context.applicationContext)
+class AdRewardBridge(context: Context, private val points: Long) {
+    private val repository = ProgressionRepository(context.applicationContext)
+    private val receiptId = UUID.randomUUID().toString()
+
+    init { require(points > 0L) }
+
+    fun onCompletedAd(): Boolean = ProgressionManager.recordCompletedAd(repository, receiptId, points)
 }

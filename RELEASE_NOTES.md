@@ -1,10 +1,12 @@
-# Road Conquest 1.0 Beta 16
+# Road Conquest 1.0 Beta 18
 
-- Include the post-Beta 15 refinements currently on `main`.
-- Reuse compiled place-overlay and place-resolver regular expressions and immutable lookup collections instead of reconstructing them repeatedly.
-- Use equivalent literal overlay color values instead of runtime color-string parsing, without altering the displayed overlay colors.
-- Remove an obsolete, unreferenced Mapzen terrain-credits asset.
-- Preserve the Beta 15 road gap fixes, audited 11 m low-speed snap tolerance, existing fog appearance, location sampling cadence, and the Android 12+ minimum.
-- Continue publishing signed APK and Play-ready AAB artifacts, R8 mapping, MapLibre native debug symbols, project source, checksums, and the tested account-service bundle.
+- Add anchored adaptive AdMob banners in separate footers on Garage, Achievements, Leaderboards, and Settings. Keep the driving map and account forms clear; do not show automatic full-screen ads.
+- Add voluntary rewarded ads in the Garage. Load on request, show the configured point amount before playback, and grant points only on the SDK-confirmed reward callback.
+- Persist the point reward and completed-view counter atomically, reject duplicate callbacks, and reject late rewards from a history session deleted by the user. Completed ads also unlock the existing ad achievements.
+- Gate ad initialization and requests with Google UMP, expose applicable privacy choices, use Google demo IDs in debug builds, and clean up ad views when their screen closes.
+- Include the updated advertising privacy-policy source and retain all Beta 17 battery/rendering and road-matching changes.
+- Publish signed APK/AAB artifacts, mapping, native symbols, exact project source, checksums, and the tested account-service bundle from the same branch. Main remains unmerged.
 
-Android version code is 42. Android 12 or newer is required.
+Android version code is 44. Android 12 or newer is required.
+
+Publisher setup remains necessary in AdMob Privacy & messaging and app readiness review, and in Play Console's ads/Data safety declarations. Deploy the attached account-service bundle to update the public privacy page and allow version code 44 for verified scoring. Ad inventory and live consent messages depend on the publisher account; build tests do not verify live ad fill. Ads introduce SDK and network overhead.

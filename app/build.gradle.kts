@@ -20,8 +20,8 @@ android {
         applicationId = "com.roadconquest.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 42
-        versionName = "1.0-beta.16"
+        versionCode = 44
+        versionName = "1.0-beta.18"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["timeout_msec"] = "120000"
         val escapedAccountApiUrl = accountApiUrl.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -37,7 +37,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+            buildConfigField("String", "ADMOB_BANNER_ID", "\"ca-app-pub-3940256099942544/9214589741\"")
+            buildConfigField("String", "ADMOB_REWARDED_ID", "\"ca-app-pub-3940256099942544/5224354917\"")
+        }
         release {
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-4489303482171969~1528361127"
+            buildConfigField("String", "ADMOB_BANNER_ID", "\"ca-app-pub-4489303482171969/1295506962\"")
+            buildConfigField("String", "ADMOB_REWARDED_ID", "\"ca-app-pub-4489303482171969/2621950945\"")
             // R8 reduces shipped bytecode and embeds the mapping metadata Play needs to
             // deobfuscate Java/Kotlin crashes. Keep resource shrinking off to avoid changing
             // resource reachability/packaging behavior solely for size.
@@ -73,6 +81,8 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-ads:25.5.0")
+    implementation("com.google.android.ump:user-messaging-platform:4.0.0")
     implementation("com.google.android.play:integrity:1.6.0")
     implementation("androidx.core:core:1.19.1")
     implementation("org.maplibre.gl:android-sdk-opengl:13.6.1")

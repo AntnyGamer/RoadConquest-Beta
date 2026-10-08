@@ -1,6 +1,7 @@
 package com.roadconquest.app
 
 import android.app.Activity
+import com.roadconquest.app.ads.ScreenAds
 import android.content.Context
 import android.os.Bundle
 import android.view.ViewGroup
@@ -23,6 +24,7 @@ import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 class AchievementsActivity : Activity() {
+    private lateinit var ads: ScreenAds
     private val executor = Executors.newSingleThreadExecutor()
     private var achievements: List<AchievementProgress> = emptyList()
     private var selectedCategory = AchievementCategory.ROADS
@@ -44,6 +46,7 @@ class AchievementsActivity : Activity() {
             isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_achievements)
+        ads = ScreenAds(this, findViewById(R.id.achievementsRoot))
         val root = findViewById<android.view.View>(R.id.achievementsRoot)
         val left = root.paddingLeft
         val top = root.paddingTop
@@ -177,7 +180,18 @@ class AchievementsActivity : Activity() {
         super.onStop()
     }
 
+    override fun onResume() {
+        super.onResume()
+        ads.onResume()
+    }
+
+    override fun onPause() {
+        ads.onPause()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        ads.destroy()
         executor.shutdownNow()
         super.onDestroy()
     }

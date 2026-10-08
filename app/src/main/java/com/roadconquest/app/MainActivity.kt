@@ -79,6 +79,7 @@ class MainActivity : Activity() {
     private var renderer: MapRenderer? = null
     private var previewBearingDegrees = 0.0
     private var startAfterPermissionGrant = false
+    private var started = false
     private var resumed = false
     private var refreshRoadsAfterStop = false
     private var enteredForeground = false
@@ -273,12 +274,14 @@ class MainActivity : Activity() {
             }
             renderer = MapRenderer(this, map, repository, mapView, mapWasCentered).also { renderer ->
                 renderer.initialize { showFreshCachedOrStartingLocation() }
+                if (!started) renderer.pauseViewport()
             }
         }
     }
 
     override fun onStart() {
         super.onStart()
+        started = true
         enteredForeground = ForegroundSession.app.onStart()
         val filter = IntentFilter(TrackingService.ACTION_LOCATION_UPDATE).apply {
             addAction(TrackingService.ACTION_STATS_UPDATED)
@@ -420,7 +423,9 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        started = false
         ForegroundSession.app.onStop(isChangingConfigurations || recreatingForAppearance)
+        renderer?.pauseViewport()
         refreshRoadsAfterStop = true
         renderer?.cancelPlaceOverlayLoads()
         trackingReceiverRegistered = false

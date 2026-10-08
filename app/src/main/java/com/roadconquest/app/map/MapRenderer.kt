@@ -75,6 +75,8 @@ class MapRenderer(
     private var queryRoadsAgain = false
     private var viewportRevision = 0
     private var cameraMoving = false
+    private var viewportActive = true
+    private var resumeVisibilityCheck: Runnable? = null
     private var resumeFrameListener: MapView.OnDidFinishRenderingFrameListener? = null
     private var resumeGeneration = 0
     private var fogRunning = false
@@ -122,6 +124,7 @@ class MapRenderer(
     private val renderFog = Runnable { scheduleFogRender() }
     private val expirePendingRoutes = Runnable { if (!destroyed) refreshTracking() }
     private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        if (!viewportActive) return@OnLayoutChangeListener
         val cameraPosition = map.cameraPosition
         updateCameraLimits(cameraPosition)
         updateFogCoverage(cameraPosition = cameraPosition)
@@ -132,12 +135,14 @@ class MapRenderer(
         if (!destroyed && liveLocation.current(SystemClock.elapsedRealtime()) == null) clearCurrentLocation()
     }
     private val cameraMoveStartedListener = MapLibreMap.OnCameraMoveStartedListener {
+        if (!viewportActive) return@OnCameraMoveStartedListener
         // Native animations can advance before the next Java camera-move callback.
         // Cover the whole world before motion starts, not after a bitmap edge escapes.
         cameraMoving = true
         updateFogCoverage()
     }
     private val cameraMoveListener = MapLibreMap.OnCameraMoveListener {
+        if (!viewportActive) return@OnCameraMoveListener
         cameraMoving = true
         viewportRevision++
         // CameraPosition crosses the MapLibre/native boundary. Snapshot it once per move callback
@@ -150,6 +155,7 @@ class MapRenderer(
         }
     }
     private val cameraIdleListener = MapLibreMap.OnCameraIdleListener {
+        if (!viewportActive) return@OnCameraIdleListener
         cameraMoving = false
         val cameraPosition = map.cameraPosition
         updateFogCoverage(cameraPosition = cameraPosition)
@@ -296,7 +302,7 @@ class MapRenderer(
     }
 
     fun updateCar(latitude: Double, longitude: Double, bearing: Double, ageMillis: Long = 0L) {
-        if (destroyed) return
+        if (destroyed || !viewportActive) return
         val now = SystemClock.elapsedRealtime()
         val previousVisual = liveLocation.current(now)
         if (!liveLocation.update(latitude, longitude, bearing, now, ageMillis)) return
@@ -375,8 +381,32 @@ class MapRenderer(
         refreshViewport(loadRoads = true)
     }
 
+    fun pauseViewport() {
+        // These timers only serve the visible map. Keep persistence/tracking independent.
+        viewportActive = false
+        resumeGeneration++
+        viewportRevision++
+        resumeVisibilityCheck?.let(mainHandler::removeCallbacks)
+        resumeVisibilityCheck = null
+        resumeFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
+        resumeFrameListener = null
+        mainHandler.removeCallbacks(renderFog)
+        mainHandler.removeCallbacks(expirePendingRoutes)
+        mainHandler.removeCallbacks(expireLocation)
+        fogAgain = false
+        queryAgain = false
+        queryRoadsAgain = false
+        cancelFogHandoff()
+    }
+
     fun resumeViewport(reloadRoads: Boolean) {
         if (destroyed) return
+        if (!viewportActive) {
+            viewportActive = true
+            updateCarLayer()
+            val now = SystemClock.elapsedRealtime()
+            liveLocation.current(now)?.let { mainHandler.postDelayed(expireLocation, it.expiresAt - now) }
+        }
         if (reloadRoads) loadedRoadBounds = null
         loadedPlaceBounds = null
         // onResume runs just before the window becomes visible. Arming the frame callback there
@@ -384,15 +414,17 @@ class MapRenderer(
         cameraMoving = false
         viewportRevision++
         val generation = ++resumeGeneration
+        resumeVisibilityCheck?.let(mainHandler::removeCallbacks)
         resumeFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
         resumeFrameListener = null
         lateinit var awaitVisible: Runnable
         awaitVisible = Runnable {
-            if (destroyed || generation != resumeGeneration) return@Runnable
+            if (destroyed || !viewportActive || generation != resumeGeneration) return@Runnable
             if (!mapView.isShown || mapView.width <= 0 || mapView.height <= 0) {
                 mainHandler.postDelayed(awaitVisible, RESUME_VISIBILITY_RETRY_MS)
                 return@Runnable
             }
+            resumeVisibilityCheck = null
             lateinit var listener: MapView.OnDidFinishRenderingFrameListener
             listener = MapView.OnDidFinishRenderingFrameListener { _, _, _ ->
                 mapView.removeOnDidFinishRenderingFrameListener(listener)
@@ -400,6 +432,8 @@ class MapRenderer(
                 if (!destroyed && generation == resumeGeneration) {
                     cameraMoving = false
                     viewportRevision++
+                    updateCameraLimits()
+                    updateFogCoverage(force = true)
                     refreshViewport(loadRoads = true)
                 }
             }
@@ -407,6 +441,7 @@ class MapRenderer(
             mapView.addOnDidFinishRenderingFrameListener(listener)
             map.triggerRepaint()
         }
+        resumeVisibilityCheck = awaitVisible
         mainHandler.post(awaitVisible)
     }
 
@@ -418,13 +453,14 @@ class MapRenderer(
     fun refreshTracking() = refreshViewport(loadRoads = false)
 
     private fun refreshViewport(loadRoads: Boolean) {
-        if (destroyed) return
+        if (destroyed || !viewportActive) return
         if (cameraMoving || queryRunning) {
             queryAgain = true
             queryRoadsAgain = queryRoadsAgain || loadRoads
             return
         }
-        if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
+        val cameraPosition = map.cameraPosition
+        if (cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
             mainHandler.removeCallbacks(expirePendingRoutes)
             (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
             loadedPlaceBounds = null
@@ -442,10 +478,11 @@ class MapRenderer(
         val south = bounds.latitudeSouth
         val width = mapView.width.toFloat()
         val height = mapView.height.toFloat()
-        val topLeft = unwrappedCorner(0f, 0f).longitude
-        val topRight = unwrappedCorner(width, 0f).longitude
-        val bottomRight = unwrappedCorner(width, height).longitude
-        val bottomLeft = unwrappedCorner(0f, height).longitude
+        val centerLongitude = cameraPosition.target?.longitude ?: 0.0
+        val topLeft = unwrappedCorner(0f, 0f, centerLongitude).longitude
+        val topRight = unwrappedCorner(width, 0f, centerLongitude).longitude
+        val bottomRight = unwrappedCorner(width, height, centerLongitude).longitude
+        val bottomLeft = unwrappedCorner(0f, height, centerLongitude).longitude
         val minLongitude = minOf(topLeft, topRight, bottomRight, bottomLeft)
         val maxLongitude = maxOf(topLeft, topRight, bottomRight, bottomLeft)
         fun wrappedLongitude(longitude: Double) = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
@@ -512,6 +549,7 @@ class MapRenderer(
             mainHandler.post {
                 if (destroyed) return@post
                 queryRunning = false
+                if (!viewportActive) return@post
                 if (revision == viewportRevision) {
                     result.getOrNull()?.let {
                         (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(it.pendingRoute)
@@ -914,6 +952,7 @@ class MapRenderer(
     }
 
     private fun updateCarLayer() {
+        if (!viewportActive) return
         val style = map.style ?: return
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val source = style.getSource(CAR_SOURCE_ID) as? GeoJsonSource ?: return
@@ -926,7 +965,7 @@ class MapRenderer(
     }
 
     private fun scheduleFogRender(cameraPosition: CameraPosition? = null) {
-        if (destroyed || !fogEnabled) return
+        if (destroyed || !viewportActive || !fogEnabled) return
         // Snapshot native camera state once when the caller did not already provide it.
         val position = cameraPosition ?: map.cameraPosition
         // At overview zooms the static world fog already provides complete coverage. Do not
@@ -964,7 +1003,7 @@ class MapRenderer(
                 }
                 fogRunning = false
                 if (rendered != null) {
-                    if (capture.styleGeneration == styleGeneration) {
+                    if (viewportActive && capture.styleGeneration == styleGeneration) {
                         val id = if (capture.world) WORLD_FOG_SOURCE_ID else FOG_SOURCE_ID
                         val source = map.style?.getSource(id) as? ImageSource
                         source?.setCoordinates(capture.quad)
@@ -992,6 +1031,9 @@ class MapRenderer(
 
     private fun captureFog(): FogCapture? {
         if (mapView.width <= 0 || mapView.height <= 0 || map.style == null) return null
+        // Capture after camera-limit updates; the caller's move-event snapshot may predate
+        // a native zoom clamp. Reuse this fresh snapshot throughout the bitmap calculation.
+        val position = map.cameraPosition
         val padX = mapView.width * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER
         val padY = mapView.height * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER
         val left = -padX
@@ -1001,17 +1043,17 @@ class MapRenderer(
         val expandedWidth = right - left
         val expandedHeight = bottom - top
         if (expandedWidth <= 0f || expandedHeight <= 0f) return null
-        val maxBitmapDimension = FogBitmapRenderer.bitmapDimensionForZoom(map.cameraPosition.zoom)
+        val maxBitmapDimension = FogBitmapRenderer.bitmapDimensionForZoom(position.zoom)
         val scale = min(
             maxBitmapDimension / expandedWidth,
             maxBitmapDimension / expandedHeight
         ).coerceAtMost(1f)
         val bitmapWidth = (expandedWidth * scale).roundToInt().coerceAtLeast(2)
         val bitmapHeight = (expandedHeight * scale).roundToInt().coerceAtLeast(2)
-        val roads = if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedRoads
+        val roads = if (position.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedRoads
             else OverlayRoads.EMPTY
         val roadScreen = projectRoads(roads)
-        val places = if (map.cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedPlaces else doubleArrayOf()
+        val places = if (position.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedPlaces else doubleArrayOf()
         val placeScreen = projectPlaces(places)
 
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
@@ -1021,15 +1063,15 @@ class MapRenderer(
             map.projection.toScreenLocations(liveCoordinates, liveScreenCache)
             liveScreenCache
         }
-        val center = map.cameraPosition.target ?: return null
+        val center = position.target ?: return null
         val metersPerPixel = map.projection.getMetersPerPixelAtLatitude(center.latitude) / mapView.pixelRatio
         if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return null
-        if (!fogTextureTransform.update(center.latitude, center.longitude, map.cameraPosition.zoom,
+        if (!fogTextureTransform.update(center.latitude, center.longitude, position.zoom,
                 { coordinates, output -> map.projection.toScreenLocations(coordinates, output) }, fogMatrix)) return null
         val mercatorMetersPerPixel = metersPerPixel / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
         // Screen corners can span several wrapped worlds at overview zooms. An ImageSource
         // cannot represent those as one narrow wrapped quad; use one complete Mercator world.
-        if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
+        if (position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
             (expandedWidth + expandedHeight) * mercatorMetersPerPixel >= 2 * PI * 6378137.0) {
             val world = 2 * PI * 6378137.0
             val size = maxBitmapDimension
@@ -1038,7 +1080,7 @@ class MapRenderer(
             val centerScreen = map.projection.toScreenLocation(center)
             val phase = floatArrayOf(centerScreen.x, centerScreen.y)
             inverse.mapPoints(phase)
-            val texelScale = (FogTextureTransform.tileMetersForZoom(map.cameraPosition.zoom) / world * size / FogTexture.SIZE).toFloat()
+            val texelScale = (FogTextureTransform.tileMetersForZoom(position.zoom) / world * size / FogTexture.SIZE).toFloat()
             val longitude = ((center.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
             val mercatorY = 6378137.0 * ln(tan(PI / 4 + Math.toRadians(center.latitude.coerceIn(-85.05112878, 85.05112878)) / 2))
             fogMatrix.setScale(texelScale, texelScale)
@@ -1049,7 +1091,7 @@ class MapRenderer(
                 world / size, null, null, fogMatrixValues.also { fogMatrix.getValues(it) }.copyOf()
             ), world = true)
         }
-        val quad = fogQuad(left, top, right, bottom)
+        val quad = fogQuad(left, top, right, bottom, center.longitude)
         fogMatrix.postTranslate(-left, -top)
         fogMatrix.postScale(scale, scale)
         fogMatrix.getValues(fogMatrixValues)
@@ -1097,20 +1139,23 @@ class MapRenderer(
         LatLng(-85.05112878, 180.0), LatLng(-85.05112878, -180.0)
     )
 
-    private fun unwrappedCorner(x: Float, y: Float): LatLng {
+    private fun unwrappedCorner(x: Float, y: Float, center: Double): LatLng {
         val point = map.projection.fromScreenLocation(PointF(x, y))
-        val center = map.cameraPosition.target?.longitude ?: 0.0
         val longitude = center + ((point.longitude - center + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         return LatLng(point.latitude, longitude)
     }
 
-    private fun fogQuad(left: Float, top: Float, right: Float, bottom: Float): LatLngQuad =
+    private fun fogQuad(
+        left: Float, top: Float, right: Float, bottom: Float,
+        centerLongitude: Double = map.cameraPosition.target?.longitude ?: 0.0
+    ): LatLngQuad =
         LatLngQuad(
-            unwrappedCorner(left, top), unwrappedCorner(right, top),
-            unwrappedCorner(right, bottom), unwrappedCorner(left, bottom)
+            unwrappedCorner(left, top, centerLongitude), unwrappedCorner(right, top, centerLongitude),
+            unwrappedCorner(right, bottom, centerLongitude), unwrappedCorner(left, bottom, centerLongitude)
         )
 
     private fun roadFeatures(roads: OverlayRoads): FeatureCollection {
+        if (roads.coordinates.isEmpty()) return EMPTY_FEATURES
         val features = ArrayList<Feature>((roads.starts.size - 1).coerceAtLeast(0))
         for (road in 0 until roads.starts.size - 1) {
             val points = ArrayList<Point>((roads.starts[road + 1] - roads.starts[road]) / 2)

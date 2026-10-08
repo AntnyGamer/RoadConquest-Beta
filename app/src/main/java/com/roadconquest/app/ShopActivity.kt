@@ -22,6 +22,7 @@ import com.roadconquest.app.progression.ShopCatalog
 import com.roadconquest.app.progression.ShopItem
 import com.roadconquest.app.util.Appearance
 import com.roadconquest.app.util.ForegroundSession
+import com.roadconquest.app.ads.ScreenAds
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -30,6 +31,7 @@ class ShopActivity : Activity() {
     private lateinit var pointsText: TextView
     private lateinit var progressText: TextView
     private lateinit var items: LinearLayout
+    private lateinit var ads: ScreenAds
     @Volatile private var generation = 0
 
     override fun attachBaseContext(newBase: Context) {
@@ -50,6 +52,7 @@ class ShopActivity : Activity() {
         pointsText = findViewById(R.id.shopPointsText)
         progressText = findViewById(R.id.shopProgressText)
         items = findViewById(R.id.shopItems)
+        ads = ScreenAds(this, findViewById(R.id.shopRoot), findViewById(R.id.shopRewardButton), ::refresh)
     }
 
     override fun onStart() {
@@ -60,6 +63,7 @@ class ShopActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::items.isInitialized) refresh()
+        if (::ads.isInitialized) ads.onResume()
     }
 
     private fun refresh() {
@@ -220,8 +224,14 @@ class ShopActivity : Activity() {
         super.onStop()
     }
 
+    override fun onPause() {
+        if (::ads.isInitialized) ads.onPause()
+        super.onPause()
+    }
+
     override fun onDestroy() {
         generation++
+        if (::ads.isInitialized) ads.destroy()
         // A purchase the user already confirmed is a local state mutation and should finish
         // even if the Garage screen closes immediately afterward. Stale UI callbacks are
         // rejected by generation/isDestroyed checks.
