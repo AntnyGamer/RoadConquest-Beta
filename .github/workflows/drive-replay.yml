@@ -7,12 +7,83 @@ on:
       - tools/emulator-drive-replay.py
       - tools/fixtures/philadelphia-drive.json
   workflow_dispatch:
+  workflow_run:
+    workflows: [Android checks]
+    types: [completed]
 permissions:
   contents: read
 jobs:
+  prepare:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      enabled: ${{ steps.release.outputs.enabled }}
+    steps:
+      - name: Check out the tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - name: Download and verify the exact published release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_COMMIT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_run' ]; then
+            version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+            target=$(gh release view "v$version" --json targetCommitish --jq '.targetCommitish')
+            if [ "$target" != "$TESTED_COMMIT" ]; then
+              echo '::notice::This source did not publish a new release; no repeated release drive is needed.'
+              echo 'enabled=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            # Preserve the fixed Beta20 control for review-branch comparisons.
+            version='1.0-beta.20'
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-beta(\.[0-9]+)?)?$ ]]
+          folder="$RUNNER_TEMP/published-drive"
+          mkdir -p "$folder"
+          gh release download "v$version" --pattern "RoadConquest-$version.apk" --pattern "RoadConquest-$version-SHA256SUMS.txt" --dir "$folder"
+          awk -v name="RoadConquest-$version.apk" '$2 == name { print }' "$folder/RoadConquest-$version-SHA256SUMS.txt" > "$folder/apk-checksum.txt"
+          test -s "$folder/apk-checksum.txt"
+          (cd "$folder" && sha256sum -c apk-checksum.txt)
+          if [ "$GITHUB_EVENT_NAME" != 'workflow_run' ]; then
+            echo "77e8aec1810cc6c6559ca0439e12598648b4af4f496544a3fd01717dad22bf02  $folder/RoadConquest-$version.apk" | sha256sum -c -
+          fi
+          if [ ! -x "$ANDROID_HOME/build-tools/36.0.0/apksigner" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.0.0'
+          fi
+          cert=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$folder/RoadConquest-$version.apk" | sed -n 's/Signer #1 certificate SHA-256 digest: //p')
+          test "$cert" = 'cd3c4b180b4740a0bff77e37de109be6cab264cd1bd66e0ced05441252ad9ae1'
+          sha256sum "$folder/RoadConquest-$version.apk" | cut -d ' ' -f 1 > "$folder/sha256.txt"
+          mv "$folder/RoadConquest-$version.apk" "$folder/published.apk"
+          echo "$version" > "$folder/version.txt"
+          echo "$TESTED_COMMIT" > "$folder/tested-source.txt"
+          echo 'enabled=true' >> "$GITHUB_OUTPUT"
+      - name: Save verified signed APK for the driving job
+        if: steps.release.outputs.enabled == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: published-drive-apk
+          path: ${{ runner.temp }}/published-drive/
+          retention-days: 7
   drive:
+    needs: prepare
+    if: needs.prepare.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -20,11 +91,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
-      - name: Download the published signed Beta20 APK
-        run: |
-          curl --fail --location --retry 3 'https://github.com/AntnyGamer/RoadConquest-Beta/releases/download/v1.0-beta.20/RoadConquest-1.0-beta.20.apk' -o "$RUNNER_TEMP/Beta20.apk"
-          echo "77e8aec1810cc6c6559ca0439e12598648b4af4f496544a3fd01717dad22bf02  $RUNNER_TEMP/Beta20.apk" | sha256sum -c -
+      - name: Download the verified signed APK from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name published-drive-apk --dir "$RUNNER_TEMP/published-drive"
       - name: Update Android 37 command-line tools
         if: matrix.api == '37.0'
         run: |
@@ -55,7 +127,7 @@ jobs:
           disk-size: ${{ matrix.api == '37.0' && '4G' || '' }}
           emulator-boot-timeout: 300
           emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu lavapipe -grpc 8554
-          script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/Beta20.apk" --out "$RUNNER_TEMP/drive-evidence" --keep-location-on
+          script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/published-drive/published.apk" --expected-sha256 "$(cat "$RUNNER_TEMP/published-drive/sha256.txt")" --out "$RUNNER_TEMP/drive-evidence" --keep-location-on
       - name: Save driving data, screenshots and diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
