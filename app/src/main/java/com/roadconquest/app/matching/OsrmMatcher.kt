@@ -39,18 +39,16 @@ class OsrmMatcher(
             previousSecond = normalizedSecond
             normalizedSecond.toString()
         }
-        val radiuses = points.joinToString(";") {
-            // Very small reported GNSS accuracy is common on modern phones, but the fix can
-            // still cut across a corner by several meters while the map road centerline is
-            // offset the other way. A 5 m OSRM search radius was leaving otherwise excellent
-            // turn samples unmatched. Give every fix a modest 10 m search envelope; parseLeg()
-            // still applies the stricter recorded-accuracy distance check before any geometry
-            // can become permanent road credit, so this improves candidate discovery without
-            // blindly accepting a nearby parallel road.
-            kotlin.math.ceil(
-                it.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toDouble()
-            ).toInt().toString()
-        }
+        val radiuses = points.mapIndexed { index, point ->
+            // OSRM interprets radiuses as GPS standard deviations, not a fixed snapping
+            // distance. A sharp, well-supported turn can momentarily offset the GPS fix
+            // from the road centerline; consider more candidates only for that interior fix.
+            // parseLeg() still enforces its independent confidence, snap and detour guards.
+            val ordinary = kotlin.math.ceil(
+                point.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toDouble()
+            ).toInt()
+            maxOf(ordinary, if (isSharpTurn(points, index)) TURN_MATCH_RADIUS_M else ordinary).toString()
+        }.joinToString(";")
         // Keep a leg per surviving fix so an ambiguous batch tail can be withheld without
         // persisting its guessed junction spur. Named-road counts do not count these legs.
         val waypoints = points.indices.joinToString(";")
@@ -459,22 +457,25 @@ class OsrmMatcher(
     private fun bearingDifferenceDegrees(a: Double, b: Double): Double =
         kotlin.math.abs(((a - b + 540.0) % 360.0) - 180.0)
 
+    private fun isSharpTurn(points: List<TrackPoint>, index: Int): Boolean {
+        if (index == 0 || index == points.lastIndex) return false
+        val incoming = points[index - 1]
+        val point = points[index]
+        val outgoing = points[index + 1]
+        return pointDistanceMeters(incoming, point) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
+            pointDistanceMeters(point, outgoing) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
+            bearingDifferenceDegrees(
+                initialBearingDegrees(incoming, point),
+                initialBearingDegrees(point, outgoing)
+            ) >= SHARP_TURN_DEGREES
+    }
+
     internal fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
             // A forward-only course at a junction describes the exit road, not necessarily
             // the incoming road. Do not forbid OSRM from considering the true turn here.
-            if (index > 0 && index < points.lastIndex) {
-                val incoming = points[index - 1]
-                val outgoing = points[index + 1]
-                if (pointDistanceMeters(incoming, point) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
-                    pointDistanceMeters(point, outgoing) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
-                    bearingDifferenceDegrees(
-                        initialBearingDegrees(incoming, point),
-                        initialBearingDegrees(point, outgoing)
-                    ) >= SHARP_TURN_DEGREES
-                ) return@map ""
-            }
+            if (isSharpTurn(points, index)) return@map ""
             val (from, to) = if (index < points.lastIndex) {
                 point to points[index + 1]
             } else {
@@ -606,6 +607,9 @@ class OsrmMatcher(
         // acceptance threshold; otherwise a 0.45-0.79 contextual match can retry forever.
         internal const val MIN_ACCEPTABLE_CONFIDENCE = 0.45
         private const val MIN_MATCH_RADIUS_M = 10f
+        // Only widen the GPS uncertainty at a supported interior corner. The candidate
+        // search is broader; the permanent road snap tolerance remains unchanged.
+        private const val TURN_MATCH_RADIUS_M = 18
         private const val MAX_MATCH_RADIUS_M = 75f
         // Treat OSRM's radius as candidate discovery, not proof. Tighten permanent
         // geometry only while the vehicle is moving slowly enough for a nearby-road snap to be
