@@ -10,8 +10,13 @@ cloud-textured fog map.
 ## Install
 
 Android 12 or newer is required. Download the signed APK from Releases for direct installation.
-For Google Play, use the signed Android App Bundle (AAB) from the same verified release. Each release
-also includes the Android Studio project and SHA-256 checksums.
+For Google Play, download the **signed** `RoadConquest-<version>.aab` from the [GitHub Releases](https://github.com/AntnyGamer/RoadConquest-Beta/releases) page, not the unsigned intermediate from GitHub Actions. The Actions artifact is named `android-build-inputs-unsigned` and contains `app-release-UNSIGNED-DO-NOT-UPLOAD.aab`, which Google Play cannot accept. Each release also includes the Android Studio project and SHA-256 checksums.
+
+If Play still reports an invalid signature for the **signed release** bundle, compare the SHA-256 fingerprint under Play Console → Test and release → App integrity → **Upload key certificate** (not the separate Google Play **App signing key certificate**) with the release upload key:
+
+`CD:3C:4B:18:0B:47:40:A0:BF:F7:7E:37:DE:10:9B:E6:CA:B2:64:CD:1B:D6:6E:0C:ED:05:44:12:52:AD:9A:E1`
+
+If these fingerprints differ, use the previously registered upload key or request an upload-key reset in Play Console. Do not generate a new keystore for an existing app or put signing keys in Git.
 
 Grant Precise location. For automatic background tracking, choose Allow all the time in Android's
 location settings and allow background battery use. Settings includes shortcuts to the relevant
