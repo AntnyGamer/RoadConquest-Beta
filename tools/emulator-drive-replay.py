@@ -7,7 +7,6 @@ copy the emulator's private SQLite files for inspection. No real account is used
 """
 import argparse
 import bisect
-import datetime
 import hashlib
 import json
 import math
@@ -70,6 +69,15 @@ def route_plan():
         f = (distance - cumulative[i-1]) / (cumulative[i] - cumulative[i-1])
         return [path[i-1][j] + f * (path[i][j] - path[i-1][j]) for j in (0, 1)]
 
+    def driving_at(distance):
+        turn = min(turns, key=lambda t: abs(t['at_m'] - distance))
+        radius = 10
+        if abs(distance-turn['at_m']) >= radius:
+            return at(distance)
+        entry, exit = at(max(0,turn['at_m']-radius)), at(min(total,turn['at_m']+radius))
+        f = (distance-turn['at_m']+radius)/(2*radius)
+        return [(1-f)**2*entry[j] + 2*(1-f)*f*turn['point'][j] + f*f*exit[j] for j in (0,1)]
+
     rows = []
     rng = random.Random(1937)
     distance = 0.0
@@ -85,7 +93,7 @@ def route_plan():
             for _ in range(15):
                 elapsed += 3
                 # Small sub-meter stopped jitter, without invented driving speed.
-                point = offset(at(distance), rng.uniform(-.6, .6), rng.uniform(-.6, .6))
+                point = offset(driving_at(distance), rng.uniform(-.6, .6), rng.uniform(-.6, .6))
                 rows.append({'t': elapsed, 's': distance, 'position': point,
                              'speed': 0, 'bearing': course(at(distance), at(distance + 1)),
                              'phase': 'traffic-light-stop'})
@@ -97,8 +105,8 @@ def route_plan():
             if not stopped:
                 distance = min(distance, stop_at)
         elapsed += dt
-        point = at(distance)
-        heading = course(at(max(0, distance - 2)), at(min(total, distance + 2)))
+        point = driving_at(distance)
+        heading = course(driving_at(max(0, distance - 2)), driving_at(min(total, distance + 2)))
         if distance > 750:
             # A consistent lane offset plus bounded position noise (not perfect centerline GPS).
             lateral = max(-3.5, min(3.5, 1.5 + rng.gauss(0, 1.0)))
@@ -139,23 +147,10 @@ def tap_id(root, resource_id):
     return False
 
 
-def nmea(point, speed, bearing):
-    now = datetime.datetime.now(datetime.timezone.utc)
-    def coord(value, width):
-        degree = int(abs(value))
-        return f'{degree:0{width}d}{(abs(value)-degree)*60:09.6f}'
-    lat, lon = coord(point[1], 2), coord(point[0], 3)
-    ns, ew = ('N' if point[1] >= 0 else 'S'), ('E' if point[0] >= 0 else 'W')
-    stamp = now.strftime('%H%M%S') + '.00'
-    sentences = [
-        f'GPGGA,{stamp},{lat},{ns},{lon},{ew},1,10,1.0,10.0,M,0.0,M,,',
-        f'GPRMC,{stamp},A,{lat},{ns},{lon},{ew},{speed/0.514444:.3f},{bearing:.2f},{now:%d%m%y},,,A'
-    ]
-    for body in sentences:
-        checksum = 0
-        for char in body:
-            checksum ^= ord(char)
-        adb('emu', 'geo', 'nmea', f'${body}*{checksum:02X}')
+def send_fix(point, speed):
+    # Current AVD GNSS implementations acknowledge raw NMEA without changing position.
+    # geo fix uses their supported location interface; velocity is specified in knots.
+    adb('emu', 'geo', 'fix', *point, '10', '10', f'{speed/0.514444:.5f}')
 
 
 def snapshot(out):
@@ -306,7 +301,19 @@ def main():
                 location_off = False
                 events.append({'t':row['t'], 'wall_ms':round(time.time()*1000),
                                'event':'system-location-restored'})
-            nmea(row['position'], row['speed'], row['bearing'])
+            send_fix(row['position'], row['speed'])
+            if i == 6:
+                location = adb('shell', 'dumpsys', 'location')
+                (args.out / 'location-early.txt').write_text(location)
+                fixes = re.findall(r'last location=Location\[(?:gps|fused) (-?[\d.]+),(-?[\d.]+)',location)
+                assert any(meters(plan['path'][0],[float(lon),float(lat)])>50
+                           for lat,lon in fixes), 'Emulator GPS coordinates did not move'
+                adb('pull',f'/data/user/0/{PACKAGE}/databases',str(args.out/'early-db'))
+                early = sqlite3.connect(args.out/'early-db/roadconquest.db')
+                count = early.execute('SELECT COUNT(*) FROM track_points').fetchone()[0]
+                early.close()
+                print('Early driving storage check:',count,'points',flush=True)
+                assert count > 0, 'Emulator fixes did not reach normal driving storage'
             if i % 10 == 0:
                 print('Replay', i, '/', len(plan['rows']), row['phase'], round(row['s']), 'm', flush=True)
                 assert adb('shell', 'pidof', PACKAGE), 'App died during drive'
