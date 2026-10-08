@@ -120,6 +120,7 @@ class MapRenderer(
     private var lastFogRenderAt = 0L
     private var minimumZoom = Double.NaN
     private val renderFog = Runnable { scheduleFogRender() }
+    private val expirePendingRoutes = Runnable { if (!destroyed) refreshTracking() }
     private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
         val cameraPosition = map.cameraPosition
         updateCameraLimits(cameraPosition)
@@ -424,6 +425,7 @@ class MapRenderer(
             return
         }
         if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
+            mainHandler.removeCallbacks(expirePendingRoutes)
             (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
             loadedPlaceBounds = null
             setDisplayedPlaces(doubleArrayOf())
@@ -491,16 +493,18 @@ class MapRenderer(
                 } else {
                     null
                 }
+                val pending = repository.getPendingRouteInBounds(
+                    queryNorth, queryEast, querySouth, queryWest,
+                    visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
+                )
                 RoadDisplay(
                     roads,
                     roads?.let(::roadFeatures),
                     places,
                     footprint.takeIf { roadQuery?.complete == true },
                     footprint.takeIf { queryPlaces },
-                    roadFeatures(OverlayRoads.prepare(repository.getPendingRouteInBounds(
-                        queryNorth, queryEast, querySouth, queryWest,
-                        visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
-                    )))
+                    roadFeatures(OverlayRoads.prepare(pending)),
+                    pending.isNotEmpty()
                 )
             }
             result.exceptionOrNull()?.let { Log.e("RoadConquest", "Could not refresh saved map data", it) }
@@ -510,6 +514,11 @@ class MapRenderer(
                 if (revision == viewportRevision) {
                     result.getOrNull()?.let {
                         (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(it.pendingRoute)
+                        // Also expire the preview when the map is idle and location updates stop.
+                        mainHandler.removeCallbacks(expirePendingRoutes)
+                        if (it.pendingVisible) {
+                            mainHandler.postDelayed(expirePendingRoutes, PENDING_ROUTE_MAX_AGE_MS)
+                        }
                         if (it.places != null) {
                             loadedPlaceBounds = it.placeBounds
                             setDisplayedPlaces(it.places)
@@ -1113,7 +1122,8 @@ class MapRenderer(
         val places: DoubleArray?,
         val roadBounds: RoadQueryBounds?,
         val placeBounds: RoadQueryBounds?,
-        val pendingRoute: FeatureCollection
+        val pendingRoute: FeatureCollection,
+        val pendingVisible: Boolean
     )
 
     private data class RoadQueryBounds(
