@@ -10,9 +10,11 @@ import bisect
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import random
 import re
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -24,6 +26,9 @@ EARTH = 6371000
 # 12.0 becomes exactly 6.17333 m/s. Compensate only in the emulator input and
 # verify the native provider value before treating this as a valid driving test.
 EMULATOR_SPEED_INPUT_SCALE = 3600 / 1852
+SDK_ADB = Path(os.environ.get('ANDROID_HOME', os.environ.get('ANDROID_SDK_ROOT', '/usr/local/lib/android/sdk'))) / 'platform-tools/adb'
+ADB = str(SDK_ADB) if SDK_ADB.is_file() else shutil.which('adb') or 'adb'
+EMULATOR_SERIAL = os.environ.get('ROADCONQUEST_EMULATOR_SERIAL', 'emulator-5554')
 
 
 def meters(a, b):
@@ -124,13 +129,16 @@ def route_plan():
 
 
 def adb(*args, check=True):
-    result = subprocess.run(['adb', *map(str, args)], check=check,
+    result = subprocess.run([ADB, '-s', EMULATOR_SERIAL, *map(str, args)], check=False,
                             capture_output=True, timeout=45)
+    if check and result.returncode:
+        raise RuntimeError(f'ADB {args} failed: {result.stderr.decode(errors="replace").strip()} '
+                           f'{result.stdout.decode(errors="replace").strip()}')
     return result.stdout.decode(errors='replace').strip()
 
 
 def screenshot(out, name):
-    result = subprocess.run(['adb', 'exec-out', 'screencap', '-p'],
+    result = subprocess.run([ADB, '-s', EMULATOR_SERIAL, 'exec-out', 'screencap', '-p'],
                             capture_output=True, timeout=30, check=True)
     (out / (name + '.png')).write_bytes(result.stdout)
 
@@ -279,8 +287,20 @@ def main():
         return
     assert args.apk
     assert hashlib.sha256(Path(args.apk).read_bytes()).hexdigest() == args.expected_sha256
-    print(adb('root'), flush=True)
-    adb('wait-for-device')
+    assert EMULATOR_SERIAL.startswith('emulator-'), 'Replay requires a disposable emulator'
+    print('Using ADB:', ADB, 'device:', EMULATOR_SERIAL, flush=True)
+    for attempt in range(3):
+        adb('wait-for-device')
+        try:
+            print(adb('root'), flush=True)
+        except RuntimeError as error:
+            print('ADB setup attempt', attempt + 1, error, flush=True)
+        adb('wait-for-device')
+        if adb('shell', 'id', '-u', check=False) == '0':
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError('Disposable emulator root connection did not become ready')
     adb('shell', 'wm', 'size', '1080x2340')
     adb('shell', 'wm', 'density', '420')
     print(adb('install', '-r', args.apk), flush=True)

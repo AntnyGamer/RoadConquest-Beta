@@ -6,7 +6,7 @@ on:
       - .github/workflows/candidate-drive-replay.yml
       - app/src/main/java/com/roadconquest/app/data/TrackingRepository.kt
       - app/src/main/java/com/roadconquest/app/matching/**
-      - app/src/main/java/com/roadconquest/app/tracking/**
+      - app/src/main/java/com/roadconquest/app/TrackingService.kt
       - tools/emulator-drive-replay.py
   workflow_dispatch:
 permissions:
