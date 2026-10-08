@@ -16,6 +16,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.location.LocationRequest
+import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
@@ -132,8 +133,12 @@ class TrackingService : Service(), LocationListener {
         locationManager = getSystemService(LocationManager::class.java)
         createNotificationChannel()
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !locationManager.isLocationEnabled)
         ) {
+            // Android 14+ requires system Location to be enabled before a location-type
+            // foreground service can be promoted. Older supported releases may still keep
+            // the existing ready/wait service alive while Location is off.
             stopSelf()
             return
         }
