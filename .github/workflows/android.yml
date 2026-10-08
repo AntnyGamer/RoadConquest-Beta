@@ -324,9 +324,77 @@ jobs:
             app/build/outputs/connected_android_test_additional_output/
           retention-days: 14
 
+  release-startup:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [31, '37.0']
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Download the release APK built by this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name android-apks --dir "$RUNNER_TEMP/release-startup"
+      - name: Sign a disposable copy for emulator installation
+        run: |
+          set -euo pipefail
+          if [ ! -x "$ANDROID_HOME/build-tools/36.0.0/apksigner" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.0.0'
+          fi
+          apk=$(find "$RUNNER_TEMP/release-startup" -name app-release-unsigned.apk -print -quit)
+          test -n "$apk"
+          sha256sum "$apk"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/startup-test.jks" -storepass startup-test-only -keypass startup-test-only -alias startup -keyalg RSA -keysize 2048 -validity 1 -dname 'CN=CI startup test'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$RUNNER_TEMP/startup-test.jks" --ks-key-alias startup --ks-pass pass:startup-test-only --key-pass pass:startup-test-only --out "$RUNNER_TEMP/startup-test.apk" "$apk"
+      - name: Update Android 37 command-line tools
+        if: matrix.api-level == '37.0'
+        run: |
+          set -euo pipefail
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'cmdline-tools;latest' > /dev/null
+          install_status=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$install_status" -eq 0
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest-2" ]; then
+            rm -rf "$ANDROID_HOME/cmdline-tools/latest"
+            mv "$ANDROID_HOME/cmdline-tools/latest-2" "$ANDROID_HOME/cmdline-tools/latest"
+          fi
+          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list device > /dev/null
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Cold-start the minified release on Android ${{ matrix.api-level }}
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disk-size: ${{ matrix.api-level == '37.0' && '4G' || '' }}
+          emulator-boot-timeout: 300
+          script: bash tools/verify-release-startup.sh "$RUNNER_TEMP/startup-test.apk" "$RUNNER_TEMP/startup-results"
+      - name: Save release startup evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-startup-api-${{ matrix.api-level }}
+          path: ${{ runner.temp }}/startup-results/
+          retention-days: 14
+
   release:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/perf/battery-and-rendering-review')
-    needs: [account-server, verify, map-integration]
+    needs: [account-server, verify, map-integration, release-startup]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -354,9 +422,9 @@ jobs:
           set -euo pipefail
           version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
           [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-beta(\.[0-9]+)?)?$ ]]
-          # Scope publication from the unmerged optimization branch to this beta only.
-          if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$version" != "1.0-beta.18" ]; then
-            echo "::notice::This branch publishes only 1.0-beta.18."
+          # Scope publication from the review branch to this beta only.
+          if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$version" != "1.0-beta.19" ]; then
+            echo "::notice::This branch publishes only 1.0-beta.19."
             exit 0
           fi
           tag="v$version"

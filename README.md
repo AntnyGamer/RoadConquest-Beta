@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 18
+# Road Conquest 1.0 Beta 19
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 44.
+This release uses Android application ID `com.roadconquest.app` and internal version code 45.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -147,6 +147,14 @@ Play Console still requires the publisher to complete the Data safety form, back
 developer/package registration, store listing assets, review access where applicable, and the other account-level
 declarations that cannot be supplied by source code alone.
 
+## Beta 19 startup hotfix
+
+Beta 18's minified release crashed before the main screen: R8 removed the public no-argument
+constructor used by Room to create AdMob's WorkManager database. Beta 19 preserves that constructor.
+Publication now also requires two cold launches of the minified release APK on Android 12 and 17,
+using the exact unsigned APK produced by the release build before permanent signing. Install the
+signed Beta 19 APK as an update to retain local driving history; do not uninstall or clear storage.
+
 ## Ads
 
 AdMob anchored adaptive banners appear in separate footers on Garage, Achievements, Leaderboards,
@@ -167,7 +175,7 @@ ad failures never block the rest of the screen.
 Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
 complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
 collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
-advertising disclosure, and allow version code 44 for verified scoring. GitHub release publication
+advertising disclosure, and allow version code 45 for verified scoring. GitHub release publication
 builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
 Ad requests have their own network, memory, storage, and battery costs; this release retains the
 Beta 17 map/tracking optimizations but does not claim ads have zero overhead.
