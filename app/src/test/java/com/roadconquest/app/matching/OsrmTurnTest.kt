@@ -83,12 +83,12 @@ class OsrmTurnTest {
         repo.completeMatch(first.roads, first.matchedPointConfidences.keys.toList())
 
         val retry = repo.loadMatchingWindow(10)
-        assertEquals(listOf(ids[1], ids[2], ids[3], ids[4]), retry.points.map { it.id })
+        assertEquals(listOf(ids[0], ids[1], ids[2], ids[3], ids[4]), retry.points.map { it.id })
         assertEquals(setOf(ids[2], ids[3]), retry.markableIds)
         val repaired = requireNotNull(matcher.parse(response(listOf(
-            trace(0, 0, b), trace(0, 1, c), trace(0, 2, d), trace(0, 3, e)
-        ), matching(leg("Approach", b, c), leg("Turn", c, junction, d),
-            leg("Exit", d, e))), retry.points))
+            trace(0, 0, a), trace(0, 1, b), trace(0, 2, c), trace(0, 3, d), trace(0, 4, e)
+        ), matching(leg("Approach", a, b), leg("Approach", b, c),
+            leg("Turn", c, junction, d), leg("Exit", d, e))), retry.points))
         repo.completeMatch(repaired.roads, repaired.matchedPointConfidences.keys.filter { it in retry.markableIds })
         assertTrue(repo.loadMatchingWindow(10).points.isEmpty())
         val saved = repo.getRoadsInBounds(40.002, -73.999, 39.999, -74.001)
