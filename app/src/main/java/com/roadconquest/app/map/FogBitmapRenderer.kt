@@ -301,8 +301,8 @@ object FogBitmapRenderer {
             reusable?.recycle()
             Bitmap.createBitmap(request.bitmapWidth, request.bitmapHeight, Bitmap.Config.ARGB_8888)
         }
-        val canvas = Canvas(bitmap)
         val scratch = renderScratch.get()
+        val canvas = scratch.outputCanvas.apply { setBitmap(bitmap) }
         scratch.textureMatrix.setValues(request.textureMatrix)
         scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
         canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
@@ -311,7 +311,7 @@ object FogBitmapRenderer {
         // Combine the strongest reveal once. Repeated DST_OUT operations multiply the
         // remaining alpha, widening the clear area as roads/visited places overlap.
         val reveal = scratch.acquireRevealBitmap(request.bitmapWidth, request.bitmapHeight)
-        val revealCanvas = Canvas(reveal)
+        val revealCanvas = scratch.revealCanvas.apply { setBitmap(reveal) }
         val erasePaint = scratch.revealPaint
         val capBounds = scratch.capBounds
         val roadLinear = scratch.roadLinear
@@ -320,13 +320,14 @@ object FogBitmapRenderer {
 
         val centerCos = cos(Math.toRadians(request.centerLatitude.coerceIn(-85.05112878, 85.05112878)))
             .coerceAtLeast(1e-6)
+        val metersPerPixelCosScale = request.metersPerScreenPixelAtCenter / centerCos
         for (road in 0 until request.roads.starts.size - 1) {
             for (i in request.roads.starts[road] until request.roads.starts[road + 1] - 2 step 2) {
                 if (!request.roadScreen[i].isFinite() || !request.roadScreen[i + 1].isFinite() ||
                     !request.roadScreen[i + 2].isFinite() || !request.roadScreen[i + 3].isFinite()) continue
                 val latitude = (request.roads.coordinates[i] + request.roads.coordinates[i + 2]) / 2.0
-                val localMetersPerPixel = request.metersPerScreenPixelAtCenter *
-                    cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878))) / centerCos
+                val localMetersPerPixel = metersPerPixelCosScale *
+                    cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878)))
                 if (!localMetersPerPixel.isFinite() || localMetersPerPixel <= 0) continue
                 val radius = maxOf(
                     (ROAD_FULL_M / localMetersPerPixel * request.screenScale).toFloat(),
@@ -345,22 +346,22 @@ object FogBitmapRenderer {
 
         for (i in request.exploredCoordinates.indices step 2) {
             drawPlaceReveal(revealCanvas, request, request.exploredCoordinates[i], request.exploredScreen[i],
-                request.exploredScreen[i + 1], centerCos, erasePaint, locationRadial)
+                request.exploredScreen[i + 1], metersPerPixelCosScale, erasePaint, locationRadial)
         }
         val live = request.liveScreen
         val liveLatitude = request.liveLatitude
         if (live != null && liveLatitude != null && live.all { it.isFinite() }) {
-            drawPlaceReveal(revealCanvas, request, liveLatitude, live[0], live[1], centerCos, erasePaint, locationRadial)
+            drawPlaceReveal(revealCanvas, request, liveLatitude, live[0], live[1], metersPerPixelCosScale, erasePaint, locationRadial)
         }
         canvas.drawBitmap(reveal, 0f, 0f, scratch.applyRevealPaint)
         return bitmap
     }
 
     private fun drawPlaceReveal(canvas: Canvas, request: Request, latitude: Double, x: Double, y: Double,
-                                centerCos: Double, paint: Paint, gradient: RadialGradient) {
+                                metersPerPixelCosScale: Double, paint: Paint, gradient: RadialGradient) {
         if (!x.isFinite() || !y.isFinite()) return
-        val metersPerPixel = request.metersPerScreenPixelAtCenter *
-            cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878))) / centerCos
+        val metersPerPixel = metersPerPixelCosScale *
+            cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878)))
         val radius = maxOf(
             (LOCATION_FULL_M / metersPerPixel * request.screenScale).toFloat(),
             MIN_VISIBLE_REVEAL_RADIUS_PX * request.screenScale
@@ -448,6 +449,10 @@ object FogBitmapRenderer {
     private val cloudTexture by lazy { FogTexture.create() }
 
     private class RenderScratch {
+        // Rebind two thread-confined Canvas instances instead of allocating native Canvas
+        // wrappers for every fog frame. Pixel output is unchanged.
+        val outputCanvas = Canvas()
+        val revealCanvas = Canvas()
         val textureMatrix = Matrix()
         val cloudShader = BitmapShader(cloudTexture, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
         val cloudPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
