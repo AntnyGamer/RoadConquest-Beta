@@ -128,7 +128,6 @@ class TrackingService : Service(), LocationListener {
     override fun onCreate() {
         super.onCreate()
         locationManager = getSystemService(LocationManager::class.java)
-        createNotificationChannel()
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
             (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !locationManager.isLocationEnabled)
@@ -140,6 +139,7 @@ class TrackingService : Service(), LocationListener {
             return
         }
 
+        createNotificationChannel()
         val started = runCatching { startAsForeground() }.isSuccess
         if (!started) {
             stopSelf()
