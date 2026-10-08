@@ -855,6 +855,14 @@ class TrackingRepository(context: Context) {
             coordinates = JSONArray()
         }
         fun add(point: TrackPoint) { coordinates.put(JSONArray().put(point.longitude).put(point.latitude)) }
+        fun noteVisiblePending(point: TrackPoint) {
+            if (!point.matched && point.timestampMillis >= visibleSinceMillis) {
+                oldestVisiblePendingTimestampMillis = minOf(
+                    oldestVisiblePendingTimestampMillis ?: point.timestampMillis,
+                    point.timestampMillis
+                )
+            }
+        }
         dbHelper.readableDatabase.rawQuery(
             sql,
             arrayOf(
@@ -864,20 +872,19 @@ class TrackingRepository(context: Context) {
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 val point = cursor.toTrackPoint()
-                if (!point.matched && point.timestampMillis >= visibleSinceMillis) {
-                    oldestVisiblePendingTimestampMillis = minOf(
-                        oldestVisiblePendingTimestampMillis ?: point.timestampMillis,
-                        point.timestampMillis
-                    )
-                }
                 val before = previous
                 val continuous = before != null && before.id + 1 == point.id &&
                     (!before.matched || !point.matched) &&
                     before.accuracyMeters in 0f..50f && point.accuracyMeters in 0f..50f &&
                     isMatchingContinuation(before, point, MATCH_CLUSTER_GAP_MS)
                 if (continuous) {
-                    if (coordinates.length() == 0) add(requireNotNull(before))
+                    val start = requireNotNull(before)
+                    if (coordinates.length() == 0) add(start)
                     add(point)
+                    // A lone unmatched fix contributes no visible line and must not
+                    // schedule needless expiry refreshes for unrelated nearby traces.
+                    noteVisiblePending(start)
+                    noteVisiblePending(point)
                 } else finish()
                 previous = point
             }
