@@ -213,13 +213,16 @@ jobs:
             app/build/reports/
             app/build/test-results/
           retention-days: 14
-      - name: Save verified Android release artifacts
+      - name: Mark the CI App Bundle as unsigned
+        shell: bash
+        run: mv app/build/outputs/bundle/release/app-release.aab app/build/outputs/bundle/release/app-release-UNSIGNED-DO-NOT-UPLOAD.aab
+      - name: Save unsigned Android build inputs (not for Play upload)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: android-apks
+          name: android-build-inputs-unsigned
           path: |
             app/build/outputs/apk/release/app-release-unsigned.apk
-            app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/bundle/release/app-release-UNSIGNED-DO-NOT-UPLOAD.aab
             app/build/outputs/mapping/release/mapping.txt
             app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip
           retention-days: 14
@@ -343,7 +346,7 @@ jobs:
       - name: Download the release APK built by this run
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name android-apks --dir "$RUNNER_TEMP/release-startup"
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name android-build-inputs-unsigned --dir "$RUNNER_TEMP/release-startup"
       - name: Sign a disposable copy for emulator installation
         run: |
           set -euo pipefail
@@ -444,9 +447,9 @@ jobs:
           out="$RUNNER_TEMP/roadconquest-release"
           mkdir -p "$out"
           build_dir="$RUNNER_TEMP/roadconquest-build"
-          gh run download "$GITHUB_RUN_ID" -n android-apks -D "$build_dir"
+          gh run download "$GITHUB_RUN_ID" -n android-build-inputs-unsigned -D "$build_dir"
           mapfile -t unsigned_apks < <(find "$build_dir" -type f -name 'app-release-unsigned.apk' -print)
-          mapfile -t app_bundles < <(find "$build_dir" -type f -name 'app-release.aab' -print)
+          mapfile -t app_bundles < <(find "$build_dir" -type f -name 'app-release-UNSIGNED-DO-NOT-UPLOAD.aab' -print)
           mapfile -t mappings < <(find "$build_dir" -type f -name 'mapping.txt' -print)
           if [ "${#unsigned_apks[@]}" -ne 1 ] || [ "${#app_bundles[@]}" -ne 1 ] || [ "${#mappings[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one verified release APK, AAB and R8 mapping artifact."
@@ -497,7 +500,18 @@ jobs:
             -sigalg SHA256withRSA -digestalg SHA-256 "$out/RoadConquest-$version.aab" "$SIGNING_ALIAS"
           # Android upload keys are commonly self-signed; verify the JAR signature without
           # treating trust-chain warnings as a corrupt bundle.
-          jarsigner -verify "$out/RoadConquest-$version.aab"
+          # jarsigner -verify can return exit code 0 for an *unsigned* JAR.
+          # Require an actual verified signature and the pinned upload certificate.
+          jarsigner -verify "$out/RoadConquest-$version.aab" | tee "$RUNNER_TEMP/roadconquest-aab-verify.txt"
+          if ! grep -qx 'jar verified\.' "$RUNNER_TEMP/roadconquest-aab-verify.txt"; then
+            echo "::error::The Play upload AAB is not signed and verified."
+            exit 1
+          fi
+          bundle_cert=$(keytool -printcert -jarfile "$out/RoadConquest-$version.aab" | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          if [ "$bundle_cert" != "$new_cert" ]; then
+            echo "::error::The Play upload AAB certificate does not match the permanent release upload key."
+            exit 1
+          fi
           rm "$out/RoadConquest-$version-unsigned.apk"
           (cd "$out" && sha256sum *.apk *.aab *.zip *.mjs *-mapping.txt > "RoadConquest-$version-SHA256SUMS.txt")
           release_flags=()
