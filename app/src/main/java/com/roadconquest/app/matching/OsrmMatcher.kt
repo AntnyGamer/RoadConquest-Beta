@@ -432,6 +432,19 @@ class OsrmMatcher(
     private fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
+            // A forward-only course at a junction describes the exit road, not necessarily
+            // the incoming road. Do not forbid OSRM from considering the true turn here.
+            if (index > 0 && index < points.lastIndex) {
+                val incoming = points[index - 1]
+                val outgoing = points[index + 1]
+                if (pointDistanceMeters(incoming, point) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
+                    pointDistanceMeters(point, outgoing) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
+                    bearingDifferenceDegrees(
+                        initialBearingDegrees(incoming, point),
+                        initialBearingDegrees(point, outgoing)
+                    ) >= SHARP_TURN_DEGREES
+                ) return@map ""
+            }
             val (from, to) = if (index < points.lastIndex) {
                 point to points[index + 1]
             } else {
@@ -586,6 +599,7 @@ class OsrmMatcher(
         // OSRM interprets this as a symmetric range around the supplied heading. Sixty-five
         // degrees is broad enough for ordinary curves while still excluding the opposite road.
         private const val BEARING_GUIDANCE_RANGE_DEGREES = 65
+        private const val SHARP_TURN_DEGREES = 45.0
         private const val EARTH_RADIUS_M = 6_371_008.8
         private const val MIN_GEOMETRY_LENGTH_M = 0.001
         private const val DUPLICATE_POINT_TOLERANCE_M = 0.01
