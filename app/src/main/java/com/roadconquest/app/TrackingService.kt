@@ -72,6 +72,8 @@ class TrackingService : Service(), LocationListener {
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
+    // All location registration/removal callbacks run on the service main thread.
+    private var locationUpdatesRegistered = false
     private var lowestBatteryPercentSeen = 101
     private var lastNotificationLocationEnabled: Boolean? = null
     private val notificationManager by lazy(LazyThreadSafetyMode.NONE) {
@@ -397,7 +399,10 @@ class TrackingService : Service(), LocationListener {
         providerReceiverRegistered = false
         if (batteryReceiverRegistered) runCatching { unregisterReceiver(batteryReceiver) }
         batteryReceiverRegistered = false
-        if (::locationManager.isInitialized) runCatching { locationManager.removeUpdates(this) }
+        if (::locationManager.isInitialized && locationUpdatesRegistered) {
+            runCatching { locationManager.removeUpdates(this) }
+            locationUpdatesRegistered = false
+        }
         matchingExecutor.shutdownNow()
         if (::verifiedDriving.isInitialized) verifiedDriving.close()
         // Drain accepted samples even when the user stops tracking. They were copied before enqueueing.
@@ -410,7 +415,10 @@ class TrackingService : Service(), LocationListener {
 
     private fun requestLocations() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
-        runCatching { locationManager.removeUpdates(this) }
+        if (locationUpdatesRegistered) {
+            runCatching { locationManager.removeUpdates(this) }
+            locationUpdatesRegistered = false
+        }
         LocationProviders.registerHighAccuracy(locationManager, ::registerProvider)
     }
 
@@ -418,6 +426,7 @@ class TrackingService : Service(), LocationListener {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return false
         return try {
             locationManager.requestLocationUpdates(provider, highAccuracyLocationRequest, mainExecutor, this)
+            locationUpdatesRegistered = true
             true
         } catch (_: SecurityException) {
             false
