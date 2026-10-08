@@ -3,6 +3,7 @@ package com.roadconquest.app
 import android.Manifest
 import android.content.Intent
 import android.location.LocationManager
+import android.os.Build
 import com.roadconquest.app.util.Prefs
 import org.junit.Assert.*
 import org.junit.Before
@@ -35,7 +36,7 @@ class BootReceiverTest {
         }
     }
 
-    @Test fun manualModeAndMissingPermissionsPreventBackgroundStartupButLocationOffDoesNot() {
+    @Test fun locationOffBootBehaviorFollowsForegroundServicePlatformRules() {
         val app = RuntimeEnvironment.getApplication()
         Prefs.markEverStarted(app)
         val receiver = BootReceiver()
@@ -50,14 +51,18 @@ class BootReceiverTest {
         Shadows.shadowOf(app).denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION); bootBlocked()
         Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
 
-        // Automatic mode stays armed through a reboot even if Android Location is currently
-        // off, so the service can take the first good fix after the user enables Location.
         Shadows.shadowOf(app.getSystemService(LocationManager::class.java)).setLocationEnabled(false)
         receiver.onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
-        assertEquals(
-            TrackingService::class.java.name,
-            Shadows.shadowOf(app).nextStartedService.component!!.className
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14+ requires system Location to be enabled before a location FGS starts.
+            assertNull(Shadows.shadowOf(app).nextStartedService)
+        } else {
+            // API 31-33 retain the original ready/wait service behavior.
+            assertEquals(
+                TrackingService::class.java.name,
+                Shadows.shadowOf(app).nextStartedService.component!!.className
+            )
+        }
     }
 
     @Test fun unrelatedBroadcastCannotStartTracking() {
