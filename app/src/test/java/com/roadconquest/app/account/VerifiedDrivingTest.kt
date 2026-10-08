@@ -53,6 +53,42 @@ class VerifiedDrivingTest {
         verified.close()
     }
 
+    @Test fun permanentlyIneligibleFixesNeverEnterVerifiedQueue() {
+        val context = RuntimeEnvironment.getApplication()
+        val verified = VerifiedDriving(context)
+        val busy = VerifiedDriving::class.java.getDeclaredField("busy").apply { isAccessible = true }
+            .get(verified) as AtomicBoolean
+        busy.set(true)
+
+        fun fix(provider: String = "gps", accuracy: Float = 5f, speed: Float = 10f) =
+            Location(provider).apply {
+                latitude = 40.0
+                longitude = -74.0
+                this.accuracy = accuracy
+                this.speed = speed
+                time = System.currentTimeMillis()
+                elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos().coerceAtLeast(1L)
+            }
+
+        verified.offer(fix(provider = "fused"))
+        verified.offer(fix(accuracy = 30f))
+        verified.offer(fix(speed = 70f))
+        verified.offer(fix().apply { removeSpeed() })
+
+        @Suppress("UNCHECKED_CAST")
+        val queue = VerifiedDriving::class.java.getDeclaredField("pendingLocations").apply { isAccessible = true }
+            .get(verified) as ArrayDeque<Location>
+        assertEquals(0, queue.size)
+
+        verified.offer(fix())
+        assertEquals(1, queue.size)
+
+        busy.set(false)
+        Prefs.setDriveVerificationEnabled(context, false)
+        AccountClient.endpointOverrideForTests = ""
+        verified.close()
+    }
+
     @Test fun busyVerificationBuffersTheNewestLiveFixesWithinABound() {
         val context = RuntimeEnvironment.getApplication()
         val verified = VerifiedDriving(context)
