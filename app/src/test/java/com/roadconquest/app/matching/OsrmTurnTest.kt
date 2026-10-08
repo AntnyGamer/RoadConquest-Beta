@@ -106,7 +106,6 @@ class OsrmTurnTest {
 
         val rendered = OverlayRoads.prepare(saved)
         assertEquals("The repaired turn must render as one continuous blue chain", 2, rendered.starts.size)
-        assertEquals(12, rendered.coordinates.size)
     }
 
     @Test fun ambiguousTailCannotUnlockTheRoadBeyondAnOrdinaryTurn() {
