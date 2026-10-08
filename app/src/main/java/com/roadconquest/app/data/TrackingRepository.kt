@@ -301,15 +301,15 @@ class TrackingRepository(context: Context) {
             }
         }
 
-        // Once a newer-side anchor exists this is a hole retry, not a live batch.
-        // One incoming anchor preserves the approach direction; spend the additional context
-        // budget on the exit side instead of unnecessarily reaching farther back in history.
-        // Live newest batches have no newer anchor, so they still keep the full older overlap.
+        // For a retry hole, include two approach and two exit points where possible:
+        // one incoming anchor alone can still leave a turn ambiguous. Trim the incoming
+        // context if necessary to stay within OSRM's public ten-fix request limit.
+        // Live batches keep their existing three-anchor overlap and throughput.
         val olderSlots = if (newerAnchors.isNotEmpty()) {
-            // A single unresolved point commonly sits at a junction between two already
-            // matched stretches. One older point cannot establish the approach direction;
-            // two approach + two exit anchors fit comfortably in a ten-fix OSRM request.
-            if (newestFirst.size == 1 && maxPoints >= 6) 2 else 1
+            minOf(
+                if (maxPoints >= 6) 2 else 1,
+                maxPoints - newestFirst.size - newerAnchors.size
+            )
         } else anchorSlots
         val olderAnchors = ArrayList<TrackPoint>(olderSlots)
         if (olderSlots > 0) {
