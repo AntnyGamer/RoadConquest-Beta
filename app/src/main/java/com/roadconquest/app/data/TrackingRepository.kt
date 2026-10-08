@@ -855,6 +855,14 @@ class TrackingRepository(context: Context) {
             coordinates = JSONArray()
         }
         fun add(point: TrackPoint) { coordinates.put(JSONArray().put(point.longitude).put(point.latitude)) }
+        fun noteVisiblePending(point: TrackPoint) {
+            if (!point.matched && point.timestampMillis >= visibleSinceMillis) {
+                oldestVisiblePendingTimestampMillis = minOf(
+                    oldestVisiblePendingTimestampMillis ?: point.timestampMillis,
+                    point.timestampMillis
+                )
+            }
+        }
         dbHelper.readableDatabase.rawQuery(
             sql,
             arrayOf(
@@ -875,14 +883,8 @@ class TrackingRepository(context: Context) {
                     add(point)
                     // A lone unmatched fix contributes no visible line and must not
                     // schedule needless expiry refreshes for unrelated nearby traces.
-                    for (fix in arrayOf(start, point)) {
-                        if (!fix.matched && fix.timestampMillis >= visibleSinceMillis) {
-                            oldestVisiblePendingTimestampMillis = minOf(
-                                oldestVisiblePendingTimestampMillis ?: fix.timestampMillis,
-                                fix.timestampMillis
-                            )
-                        }
-                    }
+                    noteVisiblePending(start)
+                    noteVisiblePending(point)
                 } else finish()
                 previous = point
             }
