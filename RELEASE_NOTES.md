@@ -1,9 +1,10 @@
-# Road Conquest 1.0 Beta 19
+# Road Conquest 1.0 Beta 20
 
-- Fix Beta 18's immediate startup crash. R8 had removed the public constructor that Room uses to instantiate the WorkManager database introduced by the ad SDK. Preserve that constructor without disabling app shrinking or removing ads.
-- Require cold-start runtime checks of the actual minified release APK on Android 12 and 17 before publication, in addition to the existing unit, lint, server, native map, packaging, and signing checks.
-- Retain all Beta 18 ads, privacy controls, reward protection, and Beta 17 map/tracking optimizations.
+- Fix Android App Bundle packaging that can make Beta 19 fail Google Play upload validation. Native debug-symbol packaging now omits forbidden ZIP directory entries.
+- Reject invalid bundle ZIP directory entries before and after signing; verify that the upload AAB is signed by the permanent Play upload key.
+- Label intermediate CI bundles as UNSIGNED / DO NOT UPLOAD so the Play-ready AAB is unambiguous.
+- Retain Beta 19's release-startup fix, Android emulator checks, ads, privacy controls, and mapping/tracking functionality without changing app features.
 
-Android version code is 45. Android 12 or newer is required. Install the signed APK over the existing app to keep local driving data; do not uninstall or clear app storage.
+Android version code is 46. Android 12 or newer is required. Install the signed APK over the existing app to preserve local driving data; do not uninstall or clear app storage.
 
-This hotfix is published from the review branch and merged into main after verification. Live ad fill and AdMob/Play account settings remain separate publisher checks. If verified scoring is enabled on your service, allow version code 45.
+Upload only the signed `RoadConquest-1.0-beta.20.aab` from GitHub Releases to Play Console. The upload signing key and application ID remain unchanged. If verified scoring is enabled on your account service, allow version code 46.
