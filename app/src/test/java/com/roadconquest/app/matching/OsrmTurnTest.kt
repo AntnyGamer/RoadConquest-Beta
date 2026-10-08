@@ -202,6 +202,22 @@ class OsrmTurnTest {
         assertEquals(2, result.roads.size)
     }
 
+    @Test fun sameSnappedJunctionWithSubstantialRawTravelStaysPending() {
+        val p0 = coord(-74.0, 40.00050)
+        val junctionPoint = coord(-74.0, 40.00020)
+        val p3 = coord(-74.0, 39.99990)
+        val rawBefore = coord(-74.0, 40.00031)
+        val rawAfter = coord(-74.0, 40.00009)
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, p0), trace(0, 1, junctionPoint),
+            trace(1, 0, junctionPoint), trace(1, 1, p3)
+        ), matching(leg("Main Road", p0, junctionPoint)),
+            matching(leg("Main Road", junctionPoint, p3))),
+            points(p0, rawBefore, rawAfter, p3)))
+        assertEquals(2, result.roads.size)
+        assertEquals(setOf(1L, 2L, 4L), result.matchedPointConfidences.keys)
+    }
+
     @Test fun splitTraceStartKeepsTheMissingIncomingIntervalPending() {
         val result = requireNotNull(OsrmMatcher().parse(response(listOf(
             trace(0, 0, a), trace(0, 1, b), trace(1, 0, d), trace(1, 1, e)
