@@ -20,7 +20,13 @@ class LiveLocation {
     }
 
     fun current(now: Long): Fix? = fix?.takeIf { now < it.expiresAt }
-    fun clear() { fix = null }
+
+    /** Returns true only when a stored fix actually existed. */
+    fun clear(): Boolean {
+        if (fix == null) return false
+        fix = null
+        return true
+    }
 
     companion object { const val MAX_AGE_MS = 60_000L }
 }
