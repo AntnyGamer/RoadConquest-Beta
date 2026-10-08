@@ -73,7 +73,6 @@ object ShopCatalog {
         ShopItem("ui_gold", "Golden Road Conquest", "Gold/cream app UI plus a golden launcher icon.", 3_000, CosmeticType.APP_THEME, "gold")
     )
 
-    fun find(id: String): ShopItem? = items.firstOrNull { it.id == id }
 }
 
 object Cosmetics {
