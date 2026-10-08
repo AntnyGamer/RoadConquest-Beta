@@ -481,7 +481,8 @@ jobs:
           fi
           cp "${native_symbol_zips[0]}" "$out/RoadConquest-$version-native-debug-symbols.zip"
           # ProGuard mapping remains embedded automatically by AGP. Native symbols
-          # are shipped separately, ready for manual upload in Play Console.
+          # remain available as an optional backup in the GitHub release; the user
+          # only needs to upload the signed AAB to Play Console.
           unzip -Z1 "$out/RoadConquest-$version.aab" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
 
           # Sign the direct-install APK and the Play upload bundle with the permanent upload identity.
