@@ -348,6 +348,8 @@ class TrackingRepositoryTest {
         val retry = repository.loadMatchingWindow(limit = 10, nowMillis = 200L, maxPendingId = cap)
         assertEquals(setOf(ids[2]), retry.markableIds)
         assertTrue(retry.points.size >= 3)
+        repository.markMatched(listOf(ids[2], ids[7]))
+        assertNull(repository.oldestEligibleRetryId(nowMillis = 200L))
     }
 
     @Test fun expiredRetryCanBeSelectedWithoutGivingUpFreshFirstBatchOrdering() {
