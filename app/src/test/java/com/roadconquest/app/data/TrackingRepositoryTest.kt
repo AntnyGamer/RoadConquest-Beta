@@ -156,13 +156,44 @@ class TrackingRepositoryTest {
         assertEquals(1L, repository.getSummary().roadsUnlockedCount)
     }
 
-    @Test fun turnRetryGetsTwoNewerContextPointsAtProductionBatchSize() {
+    @Test fun shortTurnRetryUsesSpareContextSlotsAtProductionBatchSize() {
         val ids = (0..6).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
         repository.markMatched(listOf(ids[0], ids[1], ids[3], ids[4], ids[5], ids[6]))
 
         val retry = repository.loadMatchingWindow(limit = com.roadconquest.app.matching.OsrmMatcher.MAX_MATCH_POINTS)
         assertEquals(setOf(ids[2]), retry.markableIds)
-        assertEquals(listOf(ids[0], ids[1], ids[2], ids[3], ids[4]), retry.points.map { it.id })
+        assertEquals(ids, retry.points.map { it.id })
+    }
+
+    @Test fun retryBalancesContextWithoutMarkingAlreadyResolvedNeighbors() {
+        val ids = (0..16).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.markMatched(ids.filter { it != ids[8] })
+
+        val retry = repository.loadMatchingWindow(limit = 10)
+        assertEquals(ids.subList(3, 13), retry.points.map { it.id })
+        assertEquals(setOf(ids[8]), retry.markableIds)
+    }
+
+    @Test fun retryNearDriveEndUsesRemainingExitFixAndStaysWithinServerLimit() {
+        val ids = (0..8).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.markMatched(ids.filter { it != ids[4] && it != ids[5] })
+
+        val retry = repository.loadMatchingWindow(limit = 10)
+        assertEquals(ids, retry.points.map { it.id })
+        assertEquals(setOf(ids[4], ids[5]), retry.markableIds)
+    }
+
+    @Test fun expandedRetryContextStopsAtMissingRawFixesAndTripBoundaries() {
+        val ids = (0..10).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.markMatched(ids.filter { it != ids[5] })
+        repository.readableDatabase().delete("track_points", "id = ?", arrayOf(ids[2].toString()))
+        repository.readableDatabase().delete("track_points", "id = ?", arrayOf(ids[8].toString()))
+        point(2_000_000L)
+        repository.markMatched(listOf(ids.last() + 1))
+
+        val retry = repository.loadMatchingWindow(limit = 10)
+        assertEquals(ids.subList(3, 8), retry.points.map { it.id })
+        assertEquals(setOf(ids[5]), retry.markableIds)
     }
 
     @Test fun finalizationMakesDeferredTurnPointsImmediatelyEligible() {

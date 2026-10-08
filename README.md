@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 20
+# Road Conquest 1.0 Beta 21
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -22,7 +22,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 46.
+This release uses Android application ID `com.roadconquest.app` and internal version code 47.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -88,6 +88,9 @@ and user-saved exported files are separate.
 
 Moving GPS gaps longer than 30 seconds start a new matching interval; nearby stationary pauses can
 still reconnect without inventing a route across a location outage.
+Short unmatched turn gaps retry with adjacent approach and exit fixes, using spare space within
+the same ten-fix request limit. Confidence, accuracy and detour checks still govern road credit;
+an ambiguous final endpoint can remain pending until later driving provides more evidence.
 
 The fog keeps a cached world layer ready during fast gestures and refreshes detailed reveals
 while the camera moves. A detailed reveal stays visible during a gesture while its georeferenced

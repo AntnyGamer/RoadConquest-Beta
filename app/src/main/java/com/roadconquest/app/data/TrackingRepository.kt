@@ -215,8 +215,8 @@ class TrackingRepository(context: Context) {
 
     /**
      * Returns the newest contiguous group of pending points with adjacent raw points as
-     * unmarkable context. Production windows reserve up to three context slots; hole retries
-     * keep at least one approach point and can use two exit-side points around a junction.
+     * unmarkable context. Live windows reserve three context slots. Short hole retries use
+     * spare slots on both sides of a junction without increasing the request size limit.
      */
     @Synchronized
     fun loadMatchingWindow(
@@ -274,13 +274,13 @@ class TrackingRepository(context: Context) {
         val earliest = newestFirst.first()
         val latest = newestFirst.last()
 
-        // When retrying a hole inside an otherwise matched drive, keep up to two points on
-        // the newer side so OSRM sees the exit direction as well as the junction itself. For a
-        // live newest batch these are absent, so the available context slots come from behind.
-        // Always reserve at least one slot for the older side of a retry hole. Without
-        // that incoming anchor, a tiny retry window can know the road after an intersection
-        // but not the road we approached it on, which is exactly the ambiguity we are fixing.
-        val newerAnchorLimit = minOf(2, (anchorSlots - 1).coerceAtLeast(0))
+        // A short pending island can leave most of the ten-fix request unused. Collect bounded
+        // context candidates on both sides, then share the spare slots between approach and
+        // exit. Keeping only two exit fixes can end at another nearby intersection and leave
+        // an otherwise supported turn below the confidence threshold indefinitely.
+        val contextSlots = maxPoints - newestFirst.size
+        val newerAnchorLimit = if (maxPoints >= 6) contextSlots
+            else minOf(2, (anchorSlots - 1).coerceAtLeast(0))
         val newerAnchors = ArrayList<TrackPoint>(newerAnchorLimit)
         dbHelper.readableDatabase.query(
             "track_points",
@@ -295,21 +295,18 @@ class TrackingRepository(context: Context) {
             var boundary = latest
             while (cursor.moveToNext()) {
                 val anchor = cursor.toTrackPoint()
-                if (!isMatchingContinuation(boundary, anchor, MATCH_ANCHOR_MAX_GAP_MS)) break
+                if (boundary.id + 1 != anchor.id ||
+                    !isMatchingContinuation(boundary, anchor, MATCH_ANCHOR_MAX_GAP_MS)
+                ) break
                 newerAnchors += anchor
                 boundary = anchor
             }
         }
 
-        // For a retry hole, include two approach and two exit points where possible:
-        // one incoming anchor alone can still leave a turn ambiguous. Trim the incoming
-        // context if necessary to stay within OSRM's public ten-fix request limit.
-        // Live batches keep their existing three-anchor overlap and throughput.
+        // Live batches keep their existing three-anchor overlap and throughput. For retries,
+        // collect enough incoming context to use slots left over by a short exit or vice versa.
         val olderSlots = if (newerAnchors.isNotEmpty()) {
-            minOf(
-                if (maxPoints >= 6) 2 else 1,
-                maxPoints - newestFirst.size - newerAnchors.size
-            )
+            if (maxPoints >= 6) contextSlots else 1
         } else anchorSlots
         val olderAnchors = ArrayList<TrackPoint>(olderSlots)
         if (olderSlots > 0) {
@@ -326,7 +323,9 @@ class TrackingRepository(context: Context) {
                 var boundary = earliest
                 while (cursor.moveToNext()) {
                     val anchor = cursor.toTrackPoint()
-                    if (!isMatchingContinuation(anchor, boundary, MATCH_ANCHOR_MAX_GAP_MS)) break
+                    if (anchor.id + 1 != boundary.id ||
+                        !isMatchingContinuation(anchor, boundary, MATCH_ANCHOR_MAX_GAP_MS)
+                    ) break
                     olderAnchors += anchor
                     boundary = anchor
                 }
@@ -334,10 +333,15 @@ class TrackingRepository(context: Context) {
             olderAnchors.reverse()
         }
 
+        val preferredNewerSlots = if (maxPoints >= 6) maxOf(2, contextSlots / 2)
+            else newerAnchorLimit
+        var newerCount = minOf(newerAnchors.size, preferredNewerSlots)
+        val olderCount = minOf(olderAnchors.size, contextSlots - newerCount)
+        newerCount = minOf(newerAnchors.size, contextSlots - olderCount)
         return MatchingWindow(buildList {
-            addAll(olderAnchors)
+            addAll(olderAnchors.takeLast(olderCount))
             addAll(newestFirst)
-            addAll(newerAnchors)
+            addAll(newerAnchors.take(newerCount))
         }, markableIds)
     }
 
