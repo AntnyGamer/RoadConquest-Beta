@@ -141,7 +141,7 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 
 ## Google Play submission
 
-The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. The build verifies that neither the unsigned nor signed AAB contains forbidden ZIP directory entries (including those from embedded native debugging symbols).
+The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. GitHub validates the original Gradle-built AAB with Google's `bundletool` before publishing; unlike previous versions, it does not modify the AAB to embed MapLibre native debugging symbols. The release still includes the full native-symbol ZIP, which should be uploaded separately in Play Console under the version's Downloads → Assets. ProGuard/R8 mapping metadata remains embedded.
 CI verifies 16 KB native-library packaging/alignment before publication, in addition to unit tests, lint,
 release builds, account-server tests, and native map tests on supported Android generations.
 The account service exposes browser pages at `/privacy` and `/delete-account`. The app links the privacy policy from
@@ -152,14 +152,23 @@ Play Console still requires the publisher to complete the Data safety form, back
 developer/package registration, store listing assets, review access where applicable, and the other account-level
 declarations that cannot be supplied by source code alone.
 
-## Beta 20 Play bundle ZIP validation
+## Beta 20 Play bundle packaging and size
 
-Beta 19 could pass JAR-signature verification but fail Play upload validation because
-`zip -r` inserted explicit directory entries while embedding native debug symbols.
-App Bundles do not allow directory entries. Beta 20 uses `zip -D -r` to omit them,
-rejects any AAB with directory entries before and after signing, and checks the final
-AAB's signing certificate against the permanent registered upload key. No signing
-key, app ID, map behavior or feature code is changed.
+Beta 19's AAB was reported by Play Console as having an invalid signature even though
+`jarsigner` verified it. The exact Play-side cause is not confirmed. As a conservative
+repair, Beta 20 no longer alters Gradle's AAB after building it. MapLibre's full native
+symbols remain available as a separate ZIP in GitHub Releases instead of being embedded
+in the AAB; this significantly reduces the upload artifact size while preserving the
+same runtime app. Google's `bundletool` validates both unsigned and signed bundles
+before publication. ZIP directory entries are valid AAB content and were not a proven
+cause of the rejection.
+
+For full native crash symbolication, manually upload
+`RoadConquest-1.0-beta.20-native-debug-symbols.zip` to Play Console's
+**Test and release → App bundle explorer → Downloads → Assets** for this version.
+This is separate from the AAB itself and is not installed on users' devices.
+Reducing the symbols themselves using SYMBOL_TABLE/strip-debug would sacrifice
+source-file and line-number information; Beta 20 keeps the full symbols.
 
 ## Beta 19 startup hotfix
 
