@@ -11,10 +11,11 @@ enum class UiTheme(val label: String) { SYSTEM("Use phone setting"), LIGHT("Ligh
 object Appearance {
     fun wrap(context: Context): Context {
         val selected = Prefs.uiTheme(context)
-        if (selected == UiTheme.SYSTEM && !Prefs.isGoldUiEnabled(context)) return context
+        val gold = Prefs.isGoldUiEnabled(context)
+        if (selected == UiTheme.SYSTEM && !gold) return context
         val config = Configuration(context.resources.configuration)
         val night = when {
-            Prefs.isGoldUiEnabled(context) -> Configuration.UI_MODE_NIGHT_NO
+            gold -> Configuration.UI_MODE_NIGHT_NO
             selected == UiTheme.LIGHT -> Configuration.UI_MODE_NIGHT_NO
             selected == UiTheme.DARK -> Configuration.UI_MODE_NIGHT_YES
             else -> config.uiMode and Configuration.UI_MODE_NIGHT_MASK
