@@ -6,6 +6,7 @@ import com.roadconquest.app.data.TrackPoint
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.URL
 import java.net.URI
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -39,6 +40,7 @@ class OsrmMatcher(
             previousSecond = normalizedSecond
             normalizedSecond.toString()
         }
+        val supportedGap = supportedTurnGap(points)
         val radiuses = points.mapIndexed { index, point ->
             // OSRM interprets radiuses as GPS standard deviations, not a fixed snapping
             // distance. A sharp, well-supported turn can momentarily offset the GPS fix
@@ -47,7 +49,8 @@ class OsrmMatcher(
             val ordinary = kotlin.math.ceil(
                 point.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toDouble()
             ).toInt()
-            maxOf(ordinary, if (isSharpTurn(points, index)) TURN_MATCH_RADIUS_M else ordinary).toString()
+            maxOf(ordinary, if (isSharpTurn(points, index) || supportedGap?.contains(index) == true)
+                TURN_MATCH_RADIUS_M else ordinary).toString()
         }.joinToString(";")
         // Keep a leg per surviving fix so an ambiguous batch tail can be withheld without
         // persisting its guessed junction spur. Named-road counts do not count these legs.
@@ -58,13 +61,31 @@ class OsrmMatcher(
         val bearings = buildBearingGuidance(points)
         // The driving filter already removes bad fixes. Preserve dense accepted samples;
         // server-side tidy can turn otherwise usable samples into unmatched tracepoints.
-        val url = URI(
-            "$baseUrl/match/v1/driving/$coordinates" +
-                "?steps=true&geometries=geojson&overview=full&annotations=false&tidy=false&gaps=ignore" +
-                "&waypoints=$waypoints&timestamps=$timestamps&radiuses=$radiuses" +
-                (bearings?.let { "&bearings=$it" } ?: "")
-        ).toURL()
+        val path = "$baseUrl/match/v1/driving/$coordinates" +
+            "?steps=true&geometries=geojson&overview=full&annotations=false&tidy=false&gaps=ignore" +
+            "&waypoints=$waypoints&timestamps=$timestamps&radiuses=$radiuses"
+        val first = requestMatch(URI(path + (bearings?.let { "&bearings=$it" } ?: "")).toURL(), points)
+        // A short, resolved-on-both-sides junction gap can remain unmatched because course
+        // guidance conflicts with a GPS fix at the turn. Retry once without bearings, never
+        // on a live/unanchored trace or a fully resolved result. All acceptance guards remain.
+        val gap = supportedGap ?: return first
+        if (bearings == null || gap.all { index ->
+                (first?.matchedPointConfidences?.get(points[index].id) ?: 0.0) >= MIN_ACCEPTABLE_CONFIDENCE
+            }
+        ) return first
+        val second = requestMatch(URI(path).toURL(), points) ?: return first
+        if (first == null) return second
+        fun resolvedCount(result: MatchResult, indices: Iterable<Int>) = indices.count { index ->
+            (result.matchedPointConfidences[points[index].id] ?: 0.0) >= MIN_ACCEPTABLE_CONFIDENCE
+        }
+        val newGap = resolvedCount(second, gap)
+        val oldGap = resolvedCount(first, gap)
+        return if (newGap > oldGap &&
+            resolvedCount(second, points.indices) >= resolvedCount(first, points.indices) - 1
+        ) second else first
+    }
 
+    private fun requestMatch(url: URL, points: List<TrackPoint>): MatchResult? {
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8_000
@@ -456,6 +477,30 @@ class OsrmMatcher(
 
     private fun bearingDifferenceDegrees(a: Double, b: Double): Double =
         kotlin.math.abs(((a - b + 540.0) % 360.0) - 180.0)
+
+    private fun supportedTurnGap(points: List<TrackPoint>): IntRange? {
+        // Retry only a short pending island bracketed by two already matched GPS fixes
+        // on both sides. The approach and exit must provide a clear, changing course.
+        val first = points.indexOfFirst { !it.matched }
+        if (first < 2) return null
+        val last = points.indexOfLast { !it.matched }
+        if (last >= points.size - 2 || last - first >= 3 ||
+            (first..last).any { points[it].matched }
+        ) return null
+        val approachFrom = points[first - 2]
+        val approachTo = points[first - 1]
+        val exitFrom = points[last + 1]
+        val exitTo = points[last + 2]
+        if (pointDistanceMeters(approachFrom, approachTo) < MIN_BEARING_EVIDENCE_DISTANCE_M ||
+            pointDistanceMeters(exitFrom, exitTo) < MIN_BEARING_EVIDENCE_DISTANCE_M
+        ) return null
+        return (first..last).takeIf {
+            bearingDifferenceDegrees(
+                initialBearingDegrees(approachFrom, approachTo),
+                initialBearingDegrees(exitFrom, exitTo)
+            ) >= SHARP_TURN_DEGREES
+        }
+    }
 
     private fun isSharpTurn(points: List<TrackPoint>, index: Int): Boolean {
         if (index == 0 || index == points.lastIndex) return false
