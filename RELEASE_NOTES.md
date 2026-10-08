@@ -1,14 +1,10 @@
-# Road Conquest 1.0 Beta 15
+# Road Conquest 1.0 Beta 16
 
-- Make local road matching substantially less prone to tiny provisional gaps: keep valid sibling OSRM legs, prevent expired retries from starving behind fresh points, and repair only tightly bounded same-road split seams.
-- Never let seam repair reintroduce an interval that failed local plausibility checks.
-- Balance genuine low-speed road-centerline/GNSS offset against nearby parallel-road false snaps with the audited 11 m low-speed snap floor; normal-speed matching keeps its previous generous allowance.
-- Handle missing or unreliable Android speed metadata consistently across driving acceptance, persistence, bearing guidance, long-gap continuity, and matching, using displacement only when it beats GNSS uncertainty.
-- Never round OSRM candidate radiuses below reported GNSS uncertainty.
-- Respect Android 14+ location foreground-service startup prerequisites and skip database, progression, verification, and notification setup on starts that cannot legally proceed.
-- Reduce invisible runtime work without changing sampling or visuals: avoid repeated preview-listener removal, reject permanently ineligible verified-drive fixes before copying/queueing them, query enabled location providers once per decision, remove redundant provider-state preflights, reuse appearance decisions, use exact compile-time overlay colors, and reuse invariant place-overlay regexes/membership tables.
-- Remove source helpers/exports proven unused by repository-wide reference checks while preserving the intentionally future rewarded-ad integration.
-- Keep GPS sampling cadence, map/fog visual quality and render thresholds, road-counting rules, package/signing identity, Android 12+ support, and local/cloud deletion semantics unchanged.
-- Continue publishing R8 mapping metadata, native MapLibre debug symbols, 16 KB compatibility checks, signed APK/AAB artifacts, source, checksums, and the tested account-function bundle.
+- Include the post-Beta 15 refinements currently on `main`.
+- Reuse compiled place-overlay and place-resolver regular expressions and immutable lookup collections instead of reconstructing them repeatedly.
+- Use equivalent literal overlay color values instead of runtime color-string parsing, without altering the displayed overlay colors.
+- Remove an obsolete, unreferenced Mapzen terrain-credits asset.
+- Preserve the Beta 15 road gap fixes, audited 11 m low-speed snap tolerance, existing fog appearance, location sampling cadence, and the Android 12+ minimum.
+- Continue publishing signed APK and Play-ready AAB artifacts, R8 mapping, MapLibre native debug symbols, project source, checksums, and the tested account-service bundle.
 
-Android version code is 41. Android 12 or newer is required.
+Android version code is 42. Android 12 or newer is required.
