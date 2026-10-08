@@ -141,7 +141,7 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 
 ## Google Play submission
 
-The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. GitHub validates the original Gradle-built AAB with Google's `bundletool` before publishing; unlike previous versions, it does not modify the AAB to embed MapLibre native debugging symbols. The full native-symbol ZIP is preserved as an optional diagnostic backup in GitHub Releases. No second upload is needed to install, test, or publish the app. Play may not automatically symbolicate MapLibre native crashes without these symbols; ProGuard/R8 mapping metadata remains embedded.
+The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. GitHub embeds all four full MapLibre native debug-symbol libraries into the AAB, along with the R8 mapping, and validates it with Google's `bundletool` both before and after signing. No extra Play Console uploads are needed. Only the signed release AAB is submitted. The standalone symbol ZIP is omitted because its full contents are already stored in the AAB.
 CI verifies 16 KB native-library packaging/alignment before publication, in addition to unit tests, lint,
 release builds, account-server tests, and native map tests on supported Android generations.
 The account service exposes browser pages at `/privacy` and `/delete-account`. The app links the privacy policy from
@@ -152,24 +152,26 @@ Play Console still requires the publisher to complete the Data safety form, back
 developer/package registration, store listing assets, review access where applicable, and the other account-level
 declarations that cannot be supplied by source code alone.
 
-## Beta 20 Play bundle packaging and size
+## Beta 20 embedded native debug symbols and Play validation
 
-Beta 19's AAB was reported by Play Console as having an invalid signature even though
-`jarsigner` verified it. The exact Play-side cause is not confirmed. As a conservative
-repair, Beta 20 no longer alters Gradle's AAB after building it. MapLibre's full native
-symbols remain available as a separate ZIP in GitHub Releases instead of being embedded
-in the AAB; this significantly reduces the upload artifact size while preserving the
-same runtime app. Google's `bundletool` validates both unsigned and signed bundles
-before publication. ZIP directory entries are valid AAB content and were not a proven
-cause of the rejection.
+Beta 19's signed AAB was rejected by Play Console even though its JAR
+signature verified and the upload key matched the registered certificate.
+The exact cause is not confirmed. Beta 20 validates the AAB with Google's
+`bundletool` both after packaging and after signing; it also verifies the
+actual signature and upload-key fingerprint.
 
-There is **no additional file to upload** for this release: only the signed AAB
-is needed in Play Console. The full MapLibre native symbol archive is kept as
-an optional developer backup rather than bundled with the AAB. Consequently,
-Play Console will not automatically provide fully symbolicated MapLibre native
-crash traces. Keeping the symbol backup does not use storage on users' devices.
-Stripping debug data to shrink the backup would sacrifice source-file and
-line-number information; Beta 20 preserves it without requiring any setup.
+All four **full, unstripped** MapLibre native debug-symbol libraries remain
+**embedded directly in the AAB** alongside the automatically embedded R8
+mapping. GitHub verifies their build IDs match the packaged libraries and
+checks that each embedded symbol file is byte-for-byte identical to its
+original. Metadata uses lossless maximum ZIP compression. Nothing is
+stripped and **only one AAB upload** is needed for Google Play.
+
+The large native debug data increases the GitHub AAB download size, but
+is not installed as application code on users' devices. Beta 20 omits
+the redundant standalone native-symbol ZIP from release assets to avoid
+storing the same full symbols twice. The full symbols can be extracted
+from the AAB if needed. This does not change the app's runtime behavior.
 
 ## Beta 19 startup hotfix
 
