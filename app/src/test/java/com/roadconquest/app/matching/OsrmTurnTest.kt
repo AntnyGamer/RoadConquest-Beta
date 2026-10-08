@@ -146,6 +146,60 @@ class OsrmTurnTest {
         assertEquals(p2.toString(), coordinates.getJSONArray(1).toString())
     }
 
+    @Test fun highConfidenceStraightUnnamedSplitGetsOnlyItsMissingShortSeam() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p2 = coord(-74.0, 40.00010)
+        val p3 = coord(-74.0, 40.00000)
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, p0), trace(0, 1, p1), trace(1, 0, p2), trace(1, 1, p3)
+        ), matching(leg("Unnamed road", p0, p1)),
+            matching(leg("Unnamed road", p2, p3))), points(p0, p1, p2, p3)))
+        assertEquals(setOf(1L, 2L, 3L, 4L), result.matchedPointConfidences.keys)
+        assertEquals(3, result.roads.size)
+        assertEquals(JSONArray().put(p1).put(p2).toString(),
+            result.roads.last().coordinatesJson)
+    }
+
+    @Test fun unnamedRoadSplitNeverDrawsAcrossARealCorner() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p2 = coord(-73.99990, 40.00020)
+        val p3 = coord(-73.99990, 40.00030)
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, p0), trace(0, 1, p1), trace(1, 0, p2), trace(1, 1, p3)
+        ), matching(leg("Unnamed road", p0, p1)),
+            matching(leg("Unnamed road", p2, p3))), points(p0, p1, p2, p3)))
+        assertEquals(2, result.roads.size)
+        assertEquals(setOf(1L, 2L, 4L), result.matchedPointConfidences.keys)
+    }
+
+    @Test fun lowerConfidenceUnnamedSplitStaysPending() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p2 = coord(-74.0, 40.00010)
+        val p3 = coord(-74.0, 40.00000)
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, p0), trace(0, 1, p1), trace(1, 0, p2), trace(1, 1, p3)
+        ), matchingWithConfidence(0.6, leg("Unnamed road", p0, p1)),
+            matchingWithConfidence(0.6, leg("Unnamed road", p2, p3))),
+            points(p0, p1, p2, p3)))
+        assertEquals(2, result.roads.size)
+        assertFalse(3L in result.matchedPointConfidences)
+    }
+
+    @Test fun sharedSnappedEndpointResolvesWithoutSavingZeroLengthRoad() {
+        val p0 = coord(-74.0, 40.00030)
+        val p1 = coord(-74.0, 40.00020)
+        val p3 = coord(-74.0, 40.00010)
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, p0), trace(0, 1, p1), trace(1, 0, p1), trace(1, 1, p3)
+        ), matching(leg("Main Road", p0, p1)),
+            matching(leg("Main Road", p1, p3))), points(p0, p1, p1, p3)))
+        assertEquals(setOf(1L, 2L, 3L, 4L), result.matchedPointConfidences.keys)
+        assertEquals(2, result.roads.size)
+    }
+
     @Test fun splitTraceStartKeepsTheMissingIncomingIntervalPending() {
         val result = requireNotNull(OsrmMatcher().parse(response(listOf(
             trace(0, 0, a), trace(0, 1, b), trace(1, 0, d), trace(1, 1, e)
