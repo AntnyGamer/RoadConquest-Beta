@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 16
+# Road Conquest 1.0 Beta 17
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 42.
+This release uses Android application ID `com.roadconquest.app` and internal version code 43.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -39,6 +39,9 @@ the Google Play listing is created; changing it later would create a different a
 - Export driving history, road geometry, explored places, place discoveries, point awards,
   purchases and progression counters from Settings.
 - Create an optional account, change your username and manage leaderboard visibility. There are exactly two destructive account/data actions in the app: Account → Delete account removes the cloud account while keeping saved device history and requires the current account password; Settings → Data and privacy → Delete all data removes all local Road Conquest data while keeping the cloud account and leaderboard scores and requires typing the exact local confirmation phrase. Local full-data deletion works while signed out, stops tracking, disables verified-drive sharing and removes private interrupted-export snapshots.
+
+Map drawing and viewport refresh timers stop while the map activity is hidden. Returning reloads
+roads changed during background tracking; GPS sampling and saved driving history are unaffected.
 
 Turning Show fog off changes only its visibility. Tracking continues and the saved reveals return
 when fog is enabled again. Manual tracking stays off until you enable it. On Android 12-13,
@@ -112,7 +115,10 @@ map integration tests on Android 12, 15 and 17. The release job publishes the ve
 all required jobs pass and only when that version tag does not already exist; ordinary commits at an
 already-published version are verified without retargeting or overwriting the release. It also attaches the exact account-function bundle produced by the tested
 backend job, so the deployable server artifact for that release is preserved alongside the Android release artifacts. It verifies the permanent signing-certificate digest and includes the source
-ZIP and checksums for the APK, AAB, source archive and server bundle. Configure these repository secrets from the private signing backup:
+ZIP and checksums for the APK, AAB, source archive and server bundle. Beta 17 is published from
+`perf/battery-and-rendering-review` without merging the optimization PR. Release publication from
+that branch is restricted to Beta 17; normal release publication continues from `main`.
+Configure these repository secrets from the private signing backup:
 
 - `ROADCONQUEST_RELEASE_KEYSTORE_BASE64`
 - `ROADCONQUEST_RELEASE_KEY_ALIAS`

@@ -1,7 +1,7 @@
 name: Android checks
 on:
   push:
-    branches: [main]
+    branches: [main, perf/battery-and-rendering-review]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -325,7 +325,7 @@ jobs:
           retention-days: 14
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/perf/battery-and-rendering-review')
     needs: [account-server, verify, map-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -354,6 +354,11 @@ jobs:
           set -euo pipefail
           version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
           [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-beta(\.[0-9]+)?)?$ ]]
+          # Scope publication from the unmerged optimization branch to this beta only.
+          if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$version" != "1.0-beta.17" ]; then
+            echo "::notice::This branch publishes only 1.0-beta.17."
+            exit 0
+          fi
           tag="v$version"
           if gh release view "$tag" >/dev/null 2>&1; then
             existing_target=$(gh release view "$tag" --json targetCommitish --jq '.targetCommitish')

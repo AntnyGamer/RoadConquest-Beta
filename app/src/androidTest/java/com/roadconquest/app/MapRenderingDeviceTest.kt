@@ -328,6 +328,29 @@ class MapRenderingDeviceTest {
                 renderer.setFogEnabled(true)
             }
 
+            // A notification-shade-style pause keeps the map visible and accepting fixes.
+            scenario.moveToState(Lifecycle.State.STARTED)
+            scenario.onActivity {
+                renderer.clearCurrentLocation()
+                renderer.updateCar(car.latitude, car.longitude, 15.0)
+                val live = MapRenderer::class.java.getDeclaredField("liveLocation")
+                    .apply { isAccessible = true }.get(renderer) as LiveLocation
+                val fix = live.current(SystemClock.elapsedRealtime())
+                assertNotNull("A visible paused map still accepts live fixes", fix)
+                assertEquals(car.latitude, fix!!.latitude, 0.0)
+                assertEquals(car.longitude, fix.longitude, 0.0)
+                renderer.pauseViewport()
+                renderer.resumeViewport(false)
+                assertEquals("Resuming preserves the fresh fix's original expiry",
+                    fix.expiresAt, live.current(SystemClock.elapsedRealtime())!!.expiresAt)
+                val handler = MapRenderer::class.java.getDeclaredField("mainHandler")
+                    .apply { isAccessible = true }.get(renderer) as Handler
+                val expiry = MapRenderer::class.java.getDeclaredField("expireLocation")
+                    .apply { isAccessible = true }.get(renderer) as Runnable
+                assertTrue("Resuming rearms fresh-location expiry", handler.hasCallbacks(expiry))
+            }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+
             // Reproduce a resume immediately followed by backgrounding before the map is
             // visible. The old 16 ms visibility loop kept running for the hidden activity.
             lateinit var visibilityCheck: Runnable
