@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 11
+# Road Conquest 1.0 Beta 14
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 37.
+This release uses Android application ID `com.roadconquest.app` and internal version code 40.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -41,13 +41,15 @@ the Google Play listing is created; changing it later would create a different a
 - Create an optional account, change your username and manage leaderboard visibility. There are exactly two destructive account/data actions in the app: Account → Delete account removes the cloud account while keeping saved device history and requires the current account password; Settings → Data and privacy → Delete all data removes all local Road Conquest data while keeping the cloud account and leaderboard scores and requires typing the exact local confirmation phrase. Local full-data deletion works while signed out, stops tracking, disables verified-drive sharing and removes private interrupted-export snapshots.
 
 Turning Show fog off changes only its visibility. Tracking continues and the saved reveals return
-when fog is enabled again. Manual tracking stays off until you enable it. In automatic mode,
-Road Conquest can stay armed while Android Location is off and begins using the first good live fix
-after Location is enabled. After a fresh install or device-data reset, that first current fix defines
-the zero-point starting town/state/country and awards no discovery points. Cached fixes from before
-the new location request cannot become that baseline. Automatic tracking still depends on location
-permissions and Android's background-execution rules; a force-stopped app must be opened manually
-before it can resume.
+when fog is enabled again. Manual tracking stays off until you enable it. On Android 12-13,
+automatic mode can keep its foreground service ready while Android Location is off. Android 14+
+requires system Location to be enabled before a location foreground service can start; while the
+app is open, Road Conquest starts tracking as soon as Location is enabled. If a reboot happens with
+Location off on Android 14+, enable Location and open Road Conquest to restart tracking. After a
+fresh install or device-data reset, the first good live fix defines the zero-point starting
+town/state/country and awards no discovery points. Cached fixes from before the new location request
+cannot become that baseline. Automatic tracking still depends on location permissions and Android's
+background-execution rules; a force-stopped app must be opened manually before it can resume.
 
 Mileage estimates distance between accepted driving fixes, including repeat drives. GPS speed is
 a heuristic and cannot prove you are in a car. Long gaps, reversed timestamps and implausible jumps
@@ -71,8 +73,8 @@ Competitive roads count distinct OSM way sections, rather than whole named stree
 
 Leaderboard visibility and live GPS sharing are separate settings. New accounts can be visible on
 leaderboards, but verified-drive GPS sharing remains off until the user explicitly enables it in Settings.
-Deleting an account revokes its sessions and removes its cloud competitive data; the default
-deletion option also clears history on this phone. Deleting device data also disables verified-drive
+Deleting an account revokes its sessions and removes its cloud competitive data while leaving
+saved device history in place. Deleting device data also disables verified-drive
 GPS sharing before tracking shuts down, so queued evidence is not submitted afterward. Other devices
 and user-saved exported files are separate.
 
@@ -93,7 +95,7 @@ These choices keep the progression system from adding continuous background netw
 ## Build and verify
 
 Open the project in Android Studio with JDK 21 or newer, Android SDK 37.0 and Build Tools 36.0.0.
-The wrapper pins Gradle 9.6.0 with a verified checksum and Android Gradle Plugin 9.4.1.
+The wrapper pins Gradle 9.6.1 with a verified checksum and Android Gradle Plugin 9.4.1.
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease
