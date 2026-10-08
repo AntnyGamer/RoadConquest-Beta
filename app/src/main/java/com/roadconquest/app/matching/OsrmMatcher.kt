@@ -569,10 +569,10 @@ class OsrmMatcher(
         // especially plausible; normal driving keeps the previous distance allowance. Keep a
         // generous low-speed floor so this protection does not turn ordinary centerline/GNSS
         // offset into a permanent gap. The supplied false Lake Boulevard match was ~16 m away,
-        // so a 14 m floor still rejects that observed false snap while adding substantial room
-        // beyond every confirmed genuine low-speed endpoint in the same drive.
+        // so an 11 m floor remains well below that observed false snap while retaining more
+        // tolerance than the original 8 m floor for genuine low-speed centerline/GNSS offset.
         private const val STRICT_SNAP_MAX_SPEED_MPS = 4f
-        private const val MIN_SNAP_TOLERANCE_M = 14.0
+        private const val MIN_SNAP_TOLERANCE_M = 11.0
         private const val SNAP_TOLERANCE_EXTRA_M = 3.0
         private const val MAX_SNAP_TOLERANCE_M = 30.0
         private const val MAX_SPLIT_BRIDGE_GAP_MS = 5_000L
