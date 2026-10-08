@@ -175,7 +175,7 @@ class MapRenderer(
     }
 
     fun setFogEnabled(enabled: Boolean) {
-        if (destroyed) return
+        if (destroyed || enabled == fogEnabled) return
         fogEnabled = enabled
         val cameraPosition = map.cameraPosition
         updateFogCoverage(force = true, cameraPosition = cameraPosition)
@@ -359,7 +359,10 @@ class MapRenderer(
     fun clearCurrentLocation() {
         if (destroyed) return
         mainHandler.removeCallbacks(expireLocation)
-        liveLocation.clear()
+        // refreshControls can ask for a clear repeatedly while Location stays unavailable.
+        // Once the fix is already gone, another MapLibre upload and fog render cannot change
+        // anything visible, so skip that work entirely.
+        if (!liveLocation.clear()) return
         updateCarLayer()
         scheduleFogRender()
     }
