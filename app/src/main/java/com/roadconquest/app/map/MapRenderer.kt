@@ -842,12 +842,6 @@ class MapRenderer(
     }
 
     private fun setDisplayedRoads(roads: OverlayRoads, features: FeatureCollection) {
-        // A viewport query can legitimately return the exact same geometry again (resume,
-        // overlapping padded bounds, or a metadata-only road update). Avoid re-uploading
-        // identical GeoJSON to MapLibre and rebuilding identical fog in that case.
-        if (displayedRoads.starts.contentEquals(roads.starts) &&
-            displayedRoads.coordinates.contentEquals(roads.coordinates)
-        ) return
         displayedRoads = roads
         displayedRoadFeatures = features
         roadDataRevision++
