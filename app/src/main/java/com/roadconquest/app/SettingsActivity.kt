@@ -2,6 +2,7 @@ package com.roadconquest.app
 
 import android.Manifest
 import android.app.Activity
+import com.roadconquest.app.ads.ScreenAds
 import android.app.AlertDialog
 import android.content.Context
 import android.content.ActivityNotFoundException
@@ -40,6 +41,7 @@ import java.util.concurrent.Executors
 import android.util.Log
 
 class SettingsActivity : Activity() {
+    private lateinit var ads: ScreenAds
     private var enteredForeground = false
     private var recreatingForAppearance = false
     override fun onStart() {
@@ -81,6 +83,7 @@ class SettingsActivity : Activity() {
             isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_settings)
+        ads = ScreenAds(this, findViewById(R.id.settingsRoot))
         applySafeAreaInsets()
         setupAppearance()
 
@@ -170,6 +173,7 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        ads.onResume()
         if (appliedGoldUi != Prefs.isGoldUiEnabled(this)) {
             recreate()
             return
@@ -538,7 +542,13 @@ class SettingsActivity : Activity() {
         }
     }
 
+    override fun onPause() {
+        ads.onPause()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        ads.destroy()
         summaryGeneration++
         summaryExecutor.shutdownNow()
         // Confirmed account/privacy writes must finish even if Settings closes immediately.

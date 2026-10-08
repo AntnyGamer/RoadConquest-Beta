@@ -360,13 +360,20 @@ class ProgressionRepository(context: Context) {
         true
     }
 
-    /** Future rewarded-ad SDK callbacks should call this only after a completed view is confirmed. */
-    fun recordCompletedAd(): Long = synchronized(dbHelper.historyLock) {
+    /** Credit points and the completed-view counter together, once per SDK reward receipt. */
+    fun recordCompletedAd(receiptId: String, points: Long): Boolean = synchronized(dbHelper.historyLock) {
+        require(receiptId.isNotBlank() && points > 0L)
+        if (!isCurrentHistory()) return@synchronized false
         val db = dbHelper.writableDatabase
-        if (!isCurrentHistory()) return@synchronized counter(db, COUNTER_ADS_WATCHED)
-        val next = counter(db, COUNTER_ADS_WATCHED) + 1L
-        putCounter(db, COUNTER_ADS_WATCHED, next)
-        next
+        db.beginTransaction()
+        try {
+            val inserted = awardOnce(db, "ad:$receiptId", points)
+            if (inserted) putCounter(db, COUNTER_ADS_WATCHED, counter(db, COUNTER_ADS_WATCHED) + 1L)
+            db.setTransactionSuccessful()
+            inserted
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun purchase(itemId: String, cost: Long): PurchaseResult {

@@ -1,11 +1,12 @@
-# Road Conquest 1.0 Beta 17
+# Road Conquest 1.0 Beta 18
 
-- Stop hidden-map visibility polling, redraw timers, and follow-up viewport work when the activity stops. Ordinary pauses keep the visible map active; returning refreshes saved roads and preserves the original expiry of live location fixes.
-- Reduce repeated native camera reads and avoid temporary collections for empty road overlays, while preserving fog resolution and appearance.
-- Include the road-matching fixes made since Beta 16: richer turn-retry context, safer bearing guidance at sharp turns, and conservative repair of short, confidently aligned unnamed-road seams without awarding extra road-unlock credit.
-- Expire each provisional GPS trail at its actual age, including on an idle map, while retaining recorded GPS evidence for matching retries. Do not schedule expiry refreshes for disconnected points that draw no trail.
-- Keep location sampling cadence, tracking filters, fog quality, and the Android 12+ minimum unchanged by the map optimizations.
-- Publish signed APK and AAB artifacts, R8 mapping, MapLibre native debug symbols, exact project source, SHA-256 checksums, and the tested account-service bundle.
+- Add anchored adaptive AdMob banners in separate footers on Garage, Achievements, Leaderboards, and Settings. Keep the driving map and account forms clear; do not show automatic full-screen ads.
+- Add voluntary rewarded ads in the Garage. Load on request, show the configured point amount before playback, and grant points only on the SDK-confirmed reward callback.
+- Persist the point reward and completed-view counter atomically, reject duplicate callbacks, and reject late rewards from a history session deleted by the user. Completed ads also unlock the existing ad achievements.
+- Gate ad initialization and requests with Google UMP, expose applicable privacy choices, use Google demo IDs in debug builds, and clean up ad views when their screen closes.
+- Include the updated advertising privacy-policy source and retain all Beta 17 battery/rendering and road-matching changes.
+- Publish signed APK/AAB artifacts, mapping, native symbols, exact project source, checksums, and the tested account-service bundle from the same branch. Main remains unmerged.
 
-This beta is published from `perf/battery-and-rendering-review`; the optimization PR remains unmerged.
-Android version code is 43. Android 12 or newer is required.
+Android version code is 44. Android 12 or newer is required.
+
+Publisher setup remains necessary in AdMob Privacy & messaging and app readiness review, and in Play Console's ads/Data safety declarations. Deploy the attached account-service bundle to update the public privacy page and allow version code 44 for verified scoring. Ad inventory and live consent messages depend on the publisher account; build tests do not verify live ad fill. Ads introduce SDK and network overhead.

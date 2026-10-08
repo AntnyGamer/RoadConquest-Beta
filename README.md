@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 17
+# Road Conquest 1.0 Beta 18
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -17,7 +17,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 43.
+This release uses Android application ID `com.roadconquest.app` and internal version code 44.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -34,7 +34,7 @@ the Google Play listing is created; changing it later would create a different a
 - Use the map overlay button to highlight explored countries in blue, states/regions in purple, or towns in green. Only one overlay type is active at a time; tap a highlighted area for population and area when available.
 - Tap an unlocked road for its name, saved length, first-unlocked time, last-driven time and times driven.
 - Browse achievements by **Road Conquest**, **Mileage**, **Exploration**, **Ad Rewards**, and **Bonus** categories. Battery challenges live under Bonus; ad milestones have their own Ad Rewards category.
-  Ad milestones are wired for a future rewarded-ad SDK; ads are not included in this release.
+  Optional rewarded ads in the Garage grant the displayed points only after confirmed completion, and count toward ad milestones.
 - Use automatic tracking or control it manually. Stop tracking from the foreground notification.
 - Export driving history, road geometry, explored places, place discoveries, point awards,
   purchases and progression counters from Settings.
@@ -146,6 +146,31 @@ covering precise location, background use, road matching, and optional verified 
 Play Console still requires the publisher to complete the Data safety form, background-location declaration,
 developer/package registration, store listing assets, review access where applicable, and the other account-level
 declarations that cannot be supplied by source code alone.
+
+## Ads
+
+AdMob anchored adaptive banners appear in separate footers on Garage, Achievements, Leaderboards,
+and Settings. The driving map and account forms remain clear. No automatic full-screen ads are used.
+Banners pause while their screen is hidden and are destroyed with it. Rewarded ads load only after
+pressing **Load rewarded ad** in the Garage; **Watch ad** shows the exact point reward configured in
+AdMob before playback. The SDK-confirmed reward is persisted once, together with the completed-view
+counter; callbacks from a deleted history session are rejected. There is no automatic rewarded-ad
+preloading or retry loop. These local points do not add verified leaderboard credit.
+
+Release builds use the publisher's AdMob App ID and banner/rewarded units in `app/build.gradle.kts`.
+Debug builds use Google's demo App ID and ad units; use debug builds for testing to avoid invalid
+traffic on live ads. Google UMP updates consent on entry to an ad-supported screen and gates SDK
+initialization/loading through `canRequestAds()`. Applicable **Ad privacy choices** stay reachable
+in the footer even if no banner fills. Ads require a network connection and eligible inventory;
+ad failures never block the rest of the screen.
+
+Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
+complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
+collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
+advertising disclosure, and allow version code 44 for verified scoring. GitHub release publication
+builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
+Ad requests have their own network, memory, storage, and battery costs; this release retains the
+Beta 17 map/tracking optimizations but does not claim ads have zero overhead.
 
 ## Privacy and map credits
 

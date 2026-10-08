@@ -23,6 +23,8 @@
         android:theme="@style/Theme.RoadConquest"
         android:usesCleartextTraffic="false">
 
+        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="${admobAppId}" />
+
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />

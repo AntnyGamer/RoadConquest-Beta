@@ -1,6 +1,7 @@
 package com.roadconquest.app
 
 import android.app.Activity
+import com.roadconquest.app.ads.ScreenAds
 import android.content.Context
 import android.os.Bundle
 import android.view.View
@@ -17,6 +18,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 
 class LeaderboardActivity : Activity() {
+    private lateinit var ads: ScreenAds
     private val executor = Executors.newSingleThreadExecutor()
     private var generation = 0
     private var metric = "miles"
@@ -33,6 +35,7 @@ class LeaderboardActivity : Activity() {
             isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_leaderboard)
+        ads = ScreenAds(this, findViewById(R.id.leaderboardRoot))
         val root = findViewById<View>(R.id.leaderboardRoot)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -50,7 +53,7 @@ class LeaderboardActivity : Activity() {
         ForegroundSession.app.onStart()
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    override fun onResume() { super.onResume(); refresh(); ads.onResume() }
 
     private fun refresh() {
         val current = ++generation
@@ -93,5 +96,7 @@ class LeaderboardActivity : Activity() {
         super.onStop()
     }
 
-    override fun onDestroy() { generation++; executor.shutdownNow(); super.onDestroy() }
+    override fun onPause() { ads.onPause(); super.onPause() }
+
+    override fun onDestroy() { ads.destroy(); generation++; executor.shutdownNow(); super.onDestroy() }
 }

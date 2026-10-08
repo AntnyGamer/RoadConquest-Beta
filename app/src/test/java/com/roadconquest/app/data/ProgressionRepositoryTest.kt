@@ -334,15 +334,26 @@ class ProgressionRepositoryTest {
     }
 
     @Test fun completedAdHookUnlocksRequestedFiveAndTenViewMilestones() {
-        repeat(4) { AdRewardBridge.onCompletedAd(context) }
-        assertEquals(0L, ProgressionRepository(context).snapshot().balance)
-        assertEquals(5L, AdRewardBridge.onCompletedAd(context))
-        assertEquals(100L, ProgressionRepository(context).snapshot().balance)
+        repeat(4) { assertTrue(AdRewardBridge(context, 10L).onCompletedAd()) }
+        assertEquals(40L, ProgressionRepository(context).snapshot().balance)
+        val fifth = AdRewardBridge(context, 10L)
+        assertTrue(fifth.onCompletedAd())
+        assertFalse(fifth.onCompletedAd())
+        assertEquals(150L, ProgressionRepository(context).snapshot().balance)
 
-        repeat(5) { AdRewardBridge.onCompletedAd(context) }
+        repeat(5) { assertTrue(AdRewardBridge(context, 10L).onCompletedAd()) }
         val snapshot = ProgressionRepository(context).snapshot()
         assertEquals(10L, snapshot.adsWatched)
-        assertEquals(300L, snapshot.balance)
+        assertEquals(400L, snapshot.balance)
+
+        val pending = AdRewardBridge(context, 10L)
+        TrackingRepository(context).clearHistory()
+        ProgressionRepository(context).clearProgression()
+        assertFalse(pending.onCompletedAd())
+        assertFalse(fifth.onCompletedAd())
+        val reset = ProgressionRepository(context).snapshot()
+        assertEquals(0L, reset.adsWatched)
+        assertEquals(0L, reset.balance)
     }
     @Test fun partialBaselineKeepsRetryingMissingKindsWithoutAwardingThem() {
         val progression = ProgressionRepository(context)
