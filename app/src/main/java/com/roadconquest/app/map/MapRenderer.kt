@@ -429,7 +429,7 @@ class MapRenderer(
             setDisplayedPlaces(doubleArrayOf())
             if (loadRoads) {
                 loadedRoadBounds = null
-                setDisplayedRoads(OverlayRoads.EMPTY, emptyRoadFeatures())
+                setDisplayedRoads(OverlayRoads.EMPTY, EMPTY_FEATURES)
             } else {
                 scheduleFogRender()
             }
@@ -700,7 +700,7 @@ class MapRenderer(
     }
 
     private fun installRecordedRouteLayer(style: Style) {
-        style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, emptyRoadFeatures()))
+        style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, EMPTY_FEATURES))
         // Pending evidence is raw GPS, not final road geometry. Keep a faint, narrow
         // provisional trace so the map never appears to have a random hole while OSRM is
         // resolving the interval. Confirmed traveled roads remain thicker and nearly opaque,
@@ -819,7 +819,7 @@ class MapRenderer(
         updateCarImage(style)
         appliedCarStyle = Prefs.carStyle(context)
         appliedCarColor = Prefs.carColor(context)
-        style.addSource(GeoJsonSource(CAR_SOURCE_ID, emptyRoadFeatures()))
+        style.addSource(GeoJsonSource(CAR_SOURCE_ID, EMPTY_FEATURES))
         style.addLayer(
             SymbolLayer(CAR_LAYER_ID, CAR_SOURCE_ID).withProperties(
                 iconImage(CAR_IMAGE_ID),
@@ -902,7 +902,7 @@ class MapRenderer(
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val source = style.getSource(CAR_SOURCE_ID) as? GeoJsonSource ?: return
         if (fix == null) {
-            source.setGeoJson(emptyRoadFeatures())
+            source.setGeoJson(EMPTY_FEATURES)
             return
         }
         source.setGeoJson(Point.fromLngLat(fix.longitude, fix.latitude))
