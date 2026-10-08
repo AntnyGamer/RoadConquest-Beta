@@ -332,6 +332,24 @@ class TrackingRepositoryTest {
         assertEquals(newer, repository.loadMatchingWindow(nowMillis = 11_000_000).points.map { it.id })
     }
 
+    @Test fun olderUnattemptedTurnGetsSpareBatchBeforeNewerExpiredRetry() {
+        val ids = (0..8).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
+        repository.markMatched(ids.filter { it != ids[2] && it != ids[7] })
+        repository.deferMatching(listOf(ids[7]), 100L)
+
+        // Live matching stays focused on the newest unfinished section.
+        assertEquals(
+            setOf(ids[7]),
+            repository.loadMatchingWindow(limit = 10, nowMillis = 200L).markableIds
+        )
+        // Spare batches must not overlook an old corner merely because it has no backoff.
+        val cap = repository.oldestEligibleRetryId(nowMillis = 200L)
+        assertEquals(ids[2], cap)
+        val retry = repository.loadMatchingWindow(limit = 10, nowMillis = 200L, maxPendingId = cap)
+        assertEquals(setOf(ids[2]), retry.markableIds)
+        assertTrue(retry.points.size >= 3)
+    }
+
     @Test fun expiredRetryCanBeSelectedWithoutGivingUpFreshFirstBatchOrdering() {
         val ids = (0..5).map { point(1_000_000L + it * 3_000L) }
         repository.markMatched(listOf(ids[0], ids[2], ids[3], ids[5]))
