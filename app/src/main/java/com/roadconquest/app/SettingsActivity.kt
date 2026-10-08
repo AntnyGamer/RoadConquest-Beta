@@ -75,9 +75,10 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         appliedGoldUi = Prefs.isGoldUiEnabled(this)
         WindowCompat.enableEdgeToEdge(window)
+        val lightSystemBars = !Appearance.isDark(this)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !Appearance.isDark(this@SettingsActivity)
-            isAppearanceLightNavigationBars = !Appearance.isDark(this@SettingsActivity)
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_settings)
         applySafeAreaInsets()
