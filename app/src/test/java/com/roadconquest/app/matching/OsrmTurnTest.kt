@@ -159,6 +159,8 @@ class OsrmTurnTest {
         assertEquals(3, result.roads.size)
         assertEquals(JSONArray().put(p1).put(p2).toString(),
             result.roads.last().coordinatesJson)
+        assertFalse("An inferred seam must not count as an unlocked road",
+            result.roads.last().countTowardsRoads)
     }
 
     @Test fun unnamedRoadSplitNeverDrawsAcrossARealCorner() {
