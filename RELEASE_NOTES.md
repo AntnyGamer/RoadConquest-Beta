@@ -1,10 +1,12 @@
-# Road Conquest 1.0 Beta 14
+# Road Conquest 1.0 Beta 15
 
-- Enable R8 minification for release builds so Google Play receives a real Java/Kotlin deobfuscation mapping for crashes and ANRs.
-- Keep resource shrinking disabled, preserving resource packaging behavior while still reducing/obfuscating bytecode.
-- Embed exact MapLibre Native 13.6.1 OpenGL release debug symbols into the signed Play App Bundle.
-- Pin the MapLibre symbol archive by SHA-256 and verify every ABI's ELF Build ID against the exact libmaplibre.so packaged in Road Conquest before publication.
-- Publish the R8 mapping file and a standalone native-symbol archive alongside the release as debugging/recovery assets.
-- Preserve the permanent package ID/signing identity, Android 12+ support, tracking cadence and accuracy, road matching/counting, fog behavior, account behavior, and local/cloud deletion semantics.
+- Reduce tiny random road gaps by retrying older eligible unresolved fixes instead of allowing fresh matching work to starve the retry backlog.
+- Preserve valid sibling road geometry when one OSRM leg is locally implausible, and repair only small, high-confidence same-road seams without crossing an explicitly rejected interval.
+- Keep normal-driving snap tolerance unchanged while using an 11 m low-speed floor: substantially more room than the original strict floor while still rejecting the supplied roughly 16 m nearby-road false snap.
+- Treat missing or unreliable Android speed metadata consistently, using displacement only when it beats combined GNSS uncertainty; measured low speed remains authoritative.
+- Never round OSRM candidate radiuses below reported fractional GNSS uncertainty.
+- Respect Android 14+ location foreground-service runtime prerequisites instead of attempting impossible starts while system Location is off.
+- Remove strictly redundant map/provider work: use one enabled-provider snapshot for cached-location lookup, skip listener-removal IPC when no tracking listener is registered, reuse the existing empty GeoJSON singleton directly, and use compile-time overlay colors instead of parsing fixed strings.
+- Keep R8 minification, Play deobfuscation metadata, exact MapLibre native debug symbols, 16 KB native-library verification, the permanent package/signing identity, Android 12+ support, and existing local/cloud deletion semantics.
 
-Android version code is 40. Android 12 or newer is required.
+Android version code is 41. Android 12 or newer is required.
