@@ -273,6 +273,7 @@ class MainActivity : Activity() {
             }
             renderer = MapRenderer(this, map, repository, mapView, mapWasCentered).also { renderer ->
                 renderer.initialize { showFreshCachedOrStartingLocation() }
+                if (!resumed) renderer.pauseViewport()
             }
         }
     }
@@ -412,6 +413,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         resumed = false
+        renderer?.pauseViewport()
         statsHandler.removeCallbacks(statsRefresh)
         statsRefreshScheduled = false
         stopPreviewLocation()

@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.graphics.Color
 import android.view.TextureView
+import android.view.View
+import android.os.Handler
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import android.os.Build
@@ -18,6 +20,7 @@ import com.roadconquest.app.data.MatchedRoad
 import com.roadconquest.app.data.TrackingRepository
 import com.roadconquest.app.map.MapMode
 import com.roadconquest.app.map.MapRenderer
+import com.roadconquest.app.map.LiveLocation
 import com.roadconquest.app.util.Prefs
 import org.junit.Assert.*
 import org.junit.Rule
@@ -324,6 +327,42 @@ class MapRenderingDeviceTest {
                 renderer.setFogEnabled(false)
                 renderer.setFogEnabled(true)
             }
+
+            // Reproduce a resume immediately followed by backgrounding before the map is
+            // visible. The old 16 ms visibility loop kept running for the hidden activity.
+            lateinit var visibilityCheck: Runnable
+            lateinit var mapHandler: Handler
+            scenario.onActivity {
+                view.visibility = View.INVISIBLE
+                renderer.clearCurrentLocation()
+                renderer.updateCar(car.latitude, car.longitude, 15.0, LiveLocation.MAX_AGE_MS - 100L)
+                renderer.resumeViewport(false)
+                visibilityCheck = MapRenderer::class.java.getDeclaredField("resumeVisibilityCheck")
+                    .apply { isAccessible = true }.get(renderer) as Runnable
+                mapHandler = MapRenderer::class.java.getDeclaredField("mainHandler")
+                    .apply { isAccessible = true }.get(renderer) as Handler
+            }
+            scenario.moveToState(Lifecycle.State.STARTED)
+            scenario.onActivity {
+                assertFalse("Hidden-map visibility polling is cancelled", mapHandler.hasCallbacks(visibilityCheck))
+                for (name in listOf("renderFog", "expirePendingRoutes", "expireLocation")) {
+                    val callback = MapRenderer::class.java.getDeclaredField(name)
+                        .apply { isAccessible = true }.get(renderer) as Runnable
+                    assertFalse("Paused map does not keep its $name timer", mapHandler.hasCallbacks(callback))
+                }
+            }
+            SystemClock.sleep(150L)
+            scenario.onActivity {
+                assertFalse("A fix still expires while the map is paused", renderer.centerOnCar())
+                view.visibility = View.VISIBLE
+            }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            scenario.onActivity { activity ->
+                MainActivity::class.java.getDeclaredMethod("stopPreviewLocation")
+                    .apply { isAccessible = true }.invoke(activity)
+                renderer.updateCar(car.latitude, car.longitude, 15.0)
+            }
+            moveAndAssert(car, 20.0, 125.0)
 
             val terrainReady = CountDownLatch(1)
             scenario.onActivity {

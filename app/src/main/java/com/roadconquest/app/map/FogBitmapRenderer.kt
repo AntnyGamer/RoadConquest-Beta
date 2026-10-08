@@ -22,6 +22,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
         val EMPTY = OverlayRoads(doubleArrayOf(), intArrayOf(0))
 
         fun prepare(roads: List<RoadRecord>): OverlayRoads {
+            if (roads.isEmpty()) return EMPTY
             val segments = ArrayList<Segment>(roads.size)
             val nodes = ArrayList<Node>(roads.size * 2)
             val buckets = HashMap<Cell, MutableList<Int>>(roads.size * 2)
