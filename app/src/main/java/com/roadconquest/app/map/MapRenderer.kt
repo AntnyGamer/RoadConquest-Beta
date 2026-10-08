@@ -92,7 +92,7 @@ class MapRenderer(
     private val liveLocation = LiveLocation()
     private val fogTextureTransform = FogTextureTransform()
     private var displayedRoads = OverlayRoads.EMPTY
-    private var displayedRoadFeatures = emptyRoadFeatures()
+    private var displayedRoadFeatures = EMPTY_FEATURES
     private var displayedPlaces = doubleArrayOf()
     private var loadedRoadBounds: RoadQueryBounds? = null
     private var loadedPlaceBounds: RoadQueryBounds? = null
@@ -424,7 +424,7 @@ class MapRenderer(
             return
         }
         if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
-            (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(emptyRoadFeatures())
+            (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
             loadedPlaceBounds = null
             setDisplayedPlaces(doubleArrayOf())
             if (loadRoads) {
@@ -1105,8 +1105,6 @@ class MapRenderer(
         }
         return FeatureCollection.fromFeatures(features)
     }
-
-    private fun emptyRoadFeatures(): FeatureCollection = EMPTY_FEATURES
 
     private data class RoadDisplay(
         val overlay: OverlayRoads?,
