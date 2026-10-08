@@ -343,7 +343,9 @@ class TrackingService : Service(), LocationListener {
             // matcher pass. A single provider handoff does not need this.
             if (!locationManager.isLocationEnabled) queueFinalMatchingFlush()
         }
-        if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
+        if (ready && locationManager.isLocationEnabled &&
+            LocationProviders.enabledProviders(locationManager).isNotEmpty()
+        ) {
             requestLocations()
         }
     }
