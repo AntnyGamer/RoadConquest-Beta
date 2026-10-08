@@ -26,8 +26,7 @@ class LocationProviderRecoveryTest {
         shadow.setProviderEnabled("fused", true)
         shadow.setProviderEnabled("gps", true)
         shadow.setProviderEnabled("network", true)
-        assertEquals("fused", LocationProviders.preferred(manager))
-        assertEquals(listOf("gps", "network"), LocationProviders.fallback(manager))
+        assertEquals(listOf("fused", "gps", "network"), LocationProviders.available(manager))
         val registered = mutableListOf<String>()
         LocationProviders.registerHighAccuracy(manager) { registered.add(it); true }
         assertEquals(listOf("fused", "gps"), registered)
@@ -35,7 +34,7 @@ class LocationProviderRecoveryTest {
         LocationProviders.registerHighAccuracy(manager) { registered.add(it); it == "network" }
         assertEquals(listOf("fused", "gps", "network"), registered)
         shadow.setProviderEnabled("gps", false)
-        assertEquals("fused", LocationProviders.preferred(manager))
+        assertEquals(listOf("fused", "network"), LocationProviders.available(manager))
     }
 
     @Test fun startingPlaceRejectsFixesOlderThanTheCurrentLocationRequest() {
