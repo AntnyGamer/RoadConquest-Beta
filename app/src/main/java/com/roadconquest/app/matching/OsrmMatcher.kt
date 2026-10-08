@@ -436,7 +436,9 @@ class OsrmMatcher(
                 lastTimestamp = to.timestampMillis,
                 confidence = minOf(left.confidence, right.confidence),
                 reference = left.reference,
-                countTowardsRoads = left.countTowardsRoads
+                // An inferred anonymous connector is display geometry, not evidence that
+                // another independently countable road was unlocked.
+                countTowardsRoads = left.countTowardsRoads && !unnamedBridge
             )
             resolved[to.id] = minOf(left.confidence, right.confidence)
         }
