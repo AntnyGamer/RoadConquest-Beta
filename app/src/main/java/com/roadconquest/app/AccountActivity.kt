@@ -49,9 +49,10 @@ class AccountActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         WindowCompat.enableEdgeToEdge(window)
+        val lightSystemBars = !Appearance.isDark(this)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !Appearance.isDark(this@AccountActivity)
-            isAppearanceLightNavigationBars = !Appearance.isDark(this@AccountActivity)
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_account)
         applySafeAreaInsets()
