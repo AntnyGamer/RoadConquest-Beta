@@ -38,10 +38,11 @@ This checklist is for final device-level validation on supported Android 12+ pho
 
 1. In **Always** mode, leave Road Conquest and confirm tracking continues.
 2. Reboot the phone with background location granted and verify Road Conquest resumes according to the device's Android background-execution policy.
-3. In **Always** mode, turn Android Location off, fresh-reset device data, then turn Location back on. Confirm Road Conquest waits while Location is off and uses the first new live fix after it is enabled as the zero-point starting location; an older cached fix must not become the baseline.
+3. In **Always** mode, turn Android Location off, fresh-reset device data, then turn Location back on. On Android 12-13, confirm the existing foreground service can remain ready. On Android 14+, confirm Road Conquest does not try to keep an invalid location foreground service alive while Location is off. In both cases, with the app open when Location returns, confirm the first new live fix becomes the zero-point starting location; an older cached fix must not become the baseline.
 4. Switch to **Manual** mode, disable tracking, leave/reopen the app, and confirm it stays off until **Enable** is pressed.
-5. Switch Manual -> Always while Android Location is off, then enable Location and confirm tracking starts without another app restart.
-6. Force-stop Road Conquest and confirm it does **not** restart itself until manually launched; this is expected Android behavior.
+5. Switch Manual -> Always while Android Location is off, then enable Location. On Android 14+, return to Road Conquest/Settings if needed; confirm tracking starts at the first foreground-safe opportunity without requiring a process restart.
+6. Reboot on Android 14+ with system Location off, then turn Location on. Confirm opening Road Conquest starts automatic tracking normally; the platform does not permit a location foreground service to start at boot while Location itself is disabled.
+7. Force-stop Road Conquest and confirm it does **not** restart itself until manually launched; this is expected Android behavior.
 
 ## Progression and achievements
 
