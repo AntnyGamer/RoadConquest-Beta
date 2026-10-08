@@ -267,7 +267,10 @@ def main():
     (args.out / 'location-initial.txt').write_text(locations)
     services = adb('shell', 'dumpsys', 'activity', 'services', PACKAGE)
     (args.out / 'services-initial.txt').write_text(services)
-    assert PACKAGE+'.TrackingService' in services, 'Tracking service did not start'
+    print('Tracking service diagnostics:', services, flush=True)
+    print('Initial UI:', [(n.get('text'), n.get('resource-id')) for n in ui.iter('node')
+                          if n.get('text')], flush=True)
+    assert '.TrackingService' in services, 'Tracking service did not start'
     start = time.monotonic()
     plan['start_wall_ms'] = round(time.time() * 1000)
     (args.out / 'planned-drive.json').write_text(json.dumps(plan, indent=2))
