@@ -1,9 +1,11 @@
-# Road Conquest 1.0 Beta 19
+# Road Conquest 1.0 Beta 20
 
-- Fix Beta 18's immediate startup crash. R8 had removed the public constructor that Room uses to instantiate the WorkManager database introduced by the ad SDK. Preserve that constructor without disabling app shrinking or removing ads.
-- Require cold-start runtime checks of the actual minified release APK on Android 12 and 17 before publication, in addition to the existing unit, lint, server, native map, packaging, and signing checks.
-- Retain all Beta 18 ads, privacy controls, reward protection, and Beta 17 map/tracking optimizations.
+- Keep **complete unstripped native MapLibre debug symbols for all four ABIs embedded directly in the Play-upload AAB**, plus the R8/ProGuard mapping. No separate Play Console upload is needed.
+- Losslessly compress native symbols with ZIP level 9, verify matching native-library build IDs, and compare embedded symbol bytes against their source files.
+- Eliminate the duplicate standalone native debug-symbol ZIP from GitHub Releases; the full debug data remains inside the AAB.
+- Verify the AAB structure using checksum-pinned official Google bundletool after embedding symbols and again after signing. Enforce an actual JAR signature and the same registered upload key.
+- Clearly label unsigned CI intermediate bundles, retaining Beta 19's ads, runtime stability, map/tracking features, and privacy improvements unchanged.
 
-Android version code is 45. Android 12 or newer is required. Install the signed APK over the existing app to keep local driving data; do not uninstall or clear app storage.
+Android version code is 46. Android 12 or newer is required. Install the signed APK over the existing version to retain local history. Do not uninstall or clear app storage.
 
-This hotfix is published from the review branch and merged into main after verification. Live ad fill and AdMob/Play account settings remain separate publisher checks. If verified scoring is enabled on your service, allow version code 45.
+Upload only the signed `RoadConquest-1.0-beta.20.aab` from GitHub Releases to Google Play. The full native symbols and R8 mapping are embedded. The existing app ID and signing key are unchanged. The previous Play invalid-signature rejection's root cause remains unconfirmed; the new validation checks must pass before publication.

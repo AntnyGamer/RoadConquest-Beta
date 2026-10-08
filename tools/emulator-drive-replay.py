@@ -260,7 +260,7 @@ def main():
     if args.plan_only:
         return
     assert args.apk
-    assert hashlib.sha256(Path(args.apk).read_bytes()).hexdigest() == 'bca184bb8df4185edb9ecadb47fce670b9af4d50fdff957e1e08dd0f711c4a62'
+    assert hashlib.sha256(Path(args.apk).read_bytes()).hexdigest() == '77e8aec1810cc6c6559ca0439e12598648b4af4f496544a3fd01717dad22bf02'
     print(adb('root'), flush=True)
     adb('wait-for-device')
     adb('shell', 'wm', 'size', '1080x2340')
@@ -361,15 +361,23 @@ def main():
                     shown_turns.add(j)
         # Allow normal live matching and partial-turn retries to finish, without forcing matches.
         gps.fix(plan['rows'][-1]['position'], 0, plan['rows'][-1]['bearing'])
-        # The system Location-off dialog can remain after Location is restored.
-        # Dismiss it so the final map and car are visible in the evidence.
-        adb('shell','input','keyevent','KEYCODE_BACK')
+        # Only dismiss an observed system Location dialog. An unconditional Back
+        # exits the app in the control run and invalidates the final map screenshot.
+        if off_until:
+            dialog = dump_ui(args.out, 'location-dialog-ui')
+            if any(n.get('text') == 'No location access' for n in dialog.iter('node')):
+                for node in dialog.iter('node'):
+                    if node.get('text') == 'Close':
+                        x1,y1,x2,y2 = map(int,re.findall(r'\d+',node.get('bounds')))
+                        adb('shell','input','tap',(x1+x2)//2,(y1+y2)//2)
+                        break
         print('Waiting 60 seconds for normal matching retries', flush=True)
         time.sleep(60)
         tap_id(ui, 'centerCarButton')
         time.sleep(.8)
         screenshot(args.out, 'finished-live')
-        dump_ui(args.out, 'finished-ui')
+        final_ui = dump_ui(args.out, 'finished-ui')
+        assert any(n.get('package') == PACKAGE for n in final_ui.iter('node')), 'Final screenshot is not the app'
         logs = adb('logcat', '-d')
         (args.out / 'logcat.txt').write_text(logs)
         (args.out / 'location-final.txt').write_text(adb('shell','dumpsys','location'))

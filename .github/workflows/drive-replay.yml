@@ -21,10 +21,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Download the published signed Beta19 APK
+      - name: Download the published signed Beta20 APK
         run: |
-          curl --fail --location --retry 3 'https://github.com/AntnyGamer/RoadConquest-Beta/releases/download/v1.0-beta.19/RoadConquest-1.0-beta.19.apk' -o "$RUNNER_TEMP/Beta19.apk"
-          echo "bca184bb8df4185edb9ecadb47fce670b9af4d50fdff957e1e08dd0f711c4a62  $RUNNER_TEMP/Beta19.apk" | sha256sum -c -
+          curl --fail --location --retry 3 'https://github.com/AntnyGamer/RoadConquest-Beta/releases/download/v1.0-beta.20/RoadConquest-1.0-beta.20.apk' -o "$RUNNER_TEMP/Beta20.apk"
+          echo "77e8aec1810cc6c6559ca0439e12598648b4af4f496544a3fd01717dad22bf02  $RUNNER_TEMP/Beta20.apk" | sha256sum -c -
       - name: Update Android 37 command-line tools
         if: matrix.api == '37.0'
         run: |
@@ -54,8 +54,8 @@ jobs:
           profile: pixel_2
           disk-size: ${{ matrix.api == '37.0' && '4G' || '' }}
           emulator-boot-timeout: 300
-          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -grpc 8554
-          script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/Beta19.apk" --out "$RUNNER_TEMP/drive-evidence" --keep-location-on
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu lavapipe -grpc 8554
+          script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/Beta20.apk" --out "$RUNNER_TEMP/drive-evidence" --keep-location-on
       - name: Save driving data, screenshots and diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

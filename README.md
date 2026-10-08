@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 19
+# Road Conquest 1.0 Beta 20
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -10,14 +10,19 @@ cloud-textured fog map.
 ## Install
 
 Android 12 or newer is required. Download the signed APK from Releases for direct installation.
-For Google Play, use the signed Android App Bundle (AAB) from the same verified release. Each release
-also includes the Android Studio project and SHA-256 checksums.
+For Google Play, download the **signed** `RoadConquest-<version>.aab` from the [GitHub Releases](https://github.com/AntnyGamer/RoadConquest-Beta/releases) page, not the unsigned intermediate from GitHub Actions. The Actions artifact is named `android-build-inputs-unsigned` and contains `app-release-UNSIGNED-DO-NOT-UPLOAD.aab`, which Google Play cannot accept. Each release also includes the Android Studio project and SHA-256 checksums.
+
+If Play still reports an invalid signature for the **signed release** bundle, compare the SHA-256 fingerprint under Play Console → Test and release → App integrity → **Upload key certificate** (not the separate Google Play **App signing key certificate**) with the release upload key:
+
+`CD:3C:4B:18:0B:47:40:A0:BF:F7:7E:37:DE:10:9B:E6:CA:B2:64:CD:1B:D6:6E:0C:ED:05:44:12:52:AD:9A:E1`
+
+If these fingerprints differ, use the previously registered upload key or request an upload-key reset in Play Console. Do not generate a new keystore for an existing app or put signing keys in Git.
 
 Grant Precise location. For automatic background tracking, choose Allow all the time in Android's
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 45.
+This release uses Android application ID `com.roadconquest.app` and internal version code 46.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -136,7 +141,7 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 
 ## Google Play submission
 
-The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload.
+The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. GitHub embeds all four full MapLibre native debug-symbol libraries into the AAB, along with the R8 mapping, and validates it with Google's `bundletool` both before and after signing. No extra Play Console uploads are needed. Only the signed release AAB is submitted. The standalone symbol ZIP is omitted because its full contents are already stored in the AAB.
 CI verifies 16 KB native-library packaging/alignment before publication, in addition to unit tests, lint,
 release builds, account-server tests, and native map tests on supported Android generations.
 The account service exposes browser pages at `/privacy` and `/delete-account`. The app links the privacy policy from
@@ -146,6 +151,27 @@ covering precise location, background use, road matching, and optional verified 
 Play Console still requires the publisher to complete the Data safety form, background-location declaration,
 developer/package registration, store listing assets, review access where applicable, and the other account-level
 declarations that cannot be supplied by source code alone.
+
+## Beta 20 embedded native debug symbols and Play validation
+
+Beta 19's signed AAB was rejected by Play Console even though its JAR
+signature verified and the upload key matched the registered certificate.
+The exact cause is not confirmed. Beta 20 validates the AAB with Google's
+`bundletool` both after packaging and after signing; it also verifies the
+actual signature and upload-key fingerprint.
+
+All four **full, unstripped** MapLibre native debug-symbol libraries remain
+**embedded directly in the AAB** alongside the automatically embedded R8
+mapping. GitHub verifies their build IDs match the packaged libraries and
+checks that each embedded symbol file is byte-for-byte identical to its
+original. Metadata uses lossless maximum ZIP compression. Nothing is
+stripped and **only one AAB upload** is needed for Google Play.
+
+The large native debug data increases the GitHub AAB download size, but
+is not installed as application code on users' devices. Beta 20 omits
+the redundant standalone native-symbol ZIP from release assets to avoid
+storing the same full symbols twice. The full symbols can be extracted
+from the AAB if needed. This does not change the app's runtime behavior.
 
 ## Beta 19 startup hotfix
 
@@ -175,7 +201,7 @@ ad failures never block the rest of the screen.
 Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
 complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
 collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
-advertising disclosure, and allow version code 45 for verified scoring. GitHub release publication
+advertising disclosure, and allow version code 46 for verified scoring. GitHub release publication
 builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
 Ad requests have their own network, memory, storage, and battery costs; this release retains the
 Beta 17 map/tracking optimizations but does not claim ads have zero overhead.
