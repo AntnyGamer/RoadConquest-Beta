@@ -42,6 +42,24 @@ class OsrmTurnTest {
             1_000_000L + index * 3_000L, false)
     }
 
+    @Test fun bearingGuidanceDoesNotForceExitDirectionAtASharpTurn() {
+        val approach = coord(-74.0006, 40.0)
+        val corner = coord(-74.0003, 40.0)
+        val exit = coord(-74.0003, 40.0003)
+        val matcher = OsrmMatcher()
+        val atTurn = requireNotNull(matcher.buildBearingGuidance(points(approach, corner, exit)))
+            .split(';')
+        assertEquals(3, atTurn.size)
+        assertTrue(atTurn[0].isNotEmpty())
+        assertEquals("", atTurn[1])
+        assertTrue(atTurn[2].isNotEmpty())
+
+        val straight = requireNotNull(matcher.buildBearingGuidance(
+            points(approach, corner, coord(-74.0, 40.0))
+        )).split(';')
+        assertTrue(straight.all { it.isNotEmpty() })
+    }
+
     @Test fun ambiguousTurnHeadIsNotSavedAndRetryFillsTheJunctionFromBothSides() {
         val repo = TrackingRepository(RuntimeEnvironment.getApplication())
         repo.readableDatabase().execSQL("DELETE FROM track_points")
