@@ -365,9 +365,9 @@ class OsrmTurnTest {
         assertNotEquals(rawEnd.toString(), parallelEnd.toString())
     }
 
-    @Test fun lowSpeedCenterlineOffsetNearFourteenMetersStillMatches() {
-        val snappedStart = coord(-73.99984, 40.0)
-        val snappedEnd = coord(-73.99984, 40.0001)
+    @Test fun lowSpeedCenterlineOffsetNearElevenMetersStillMatches() {
+        val snappedStart = coord(-73.999875, 40.0)
+        val snappedEnd = coord(-73.999875, 40.0001)
         val rawPoints = listOf(
             TrackPoint(1, 40.0, -74.0, 10f, 3f, 0f, 1_000_000L, false),
             TrackPoint(2, 40.0001, -74.0, 10f, 3f, 0f, 1_003_000L, false)
