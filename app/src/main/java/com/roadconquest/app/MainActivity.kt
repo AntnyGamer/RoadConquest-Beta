@@ -579,7 +579,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Allow all-the-time location")
             .setMessage(
-                "For Road Conquest to restart tracking automatically after a reboot or service restart, " +
+                "For Road Conquest to restart tracking automatically after a reboot or service restart when Android Location is on, " +
                     "set Location permission to ‘Allow all the time’ in Android settings. A tracking service that you start while Road Conquest is open can continue after you leave the app."
             )
             .setPositiveButton("Open settings") { _, _ -> openAppSettings() }
