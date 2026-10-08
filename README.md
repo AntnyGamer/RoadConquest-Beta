@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 19
+# Road Conquest 1.0 Beta 20
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -22,7 +22,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 45.
+This release uses Android application ID `com.roadconquest.app` and internal version code 46.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -141,7 +141,7 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 
 ## Google Play submission
 
-The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload.
+The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. The build verifies that neither the unsigned nor signed AAB contains forbidden ZIP directory entries (including those from embedded native debugging symbols).
 CI verifies 16 KB native-library packaging/alignment before publication, in addition to unit tests, lint,
 release builds, account-server tests, and native map tests on supported Android generations.
 The account service exposes browser pages at `/privacy` and `/delete-account`. The app links the privacy policy from
@@ -151,6 +151,15 @@ covering precise location, background use, road matching, and optional verified 
 Play Console still requires the publisher to complete the Data safety form, background-location declaration,
 developer/package registration, store listing assets, review access where applicable, and the other account-level
 declarations that cannot be supplied by source code alone.
+
+## Beta 20 Play bundle ZIP validation
+
+Beta 19 could pass JAR-signature verification but fail Play upload validation because
+`zip -r` inserted explicit directory entries while embedding native debug symbols.
+App Bundles do not allow directory entries. Beta 20 uses `zip -D -r` to omit them,
+rejects any AAB with directory entries before and after signing, and checks the final
+AAB's signing certificate against the permanent registered upload key. No signing
+key, app ID, map behavior or feature code is changed.
 
 ## Beta 19 startup hotfix
 
@@ -180,7 +189,7 @@ ad failures never block the rest of the screen.
 Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
 complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
 collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
-advertising disclosure, and allow version code 45 for verified scoring. GitHub release publication
+advertising disclosure, and allow version code 46 for verified scoring. GitHub release publication
 builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
 Ad requests have their own network, memory, storage, and battery costs; this release retains the
 Beta 17 map/tracking optimizations but does not claim ads have zero overhead.
