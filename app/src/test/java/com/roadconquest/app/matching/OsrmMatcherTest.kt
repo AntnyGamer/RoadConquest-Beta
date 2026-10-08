@@ -1,6 +1,8 @@
 package com.roadconquest.app.matching
 
 import com.roadconquest.app.data.TrackPoint
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -10,6 +12,44 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
 class OsrmMatcherTest {
+    @Test fun candidateUncertaintyGrowsOnlyAtAnObservedSharpTurn() {
+        val turn = listOf(
+            TrackPoint(1L, 40.0, -74.00030, 3.8f, 8f, 0f, 100_000L, false),
+            TrackPoint(2L, 40.0, -74.00000, 3.8f, 8f, 0f, 103_000L, false),
+            TrackPoint(3L, 40.00030, -74.00000, 3.8f, 8f, 0f, 106_000L, false)
+        )
+        val straight = listOf(turn[0], turn[1],
+            turn[2].copy(latitude = 40.0, longitude = -73.99970))
+        MockWebServer().use { server ->
+            repeat(2) { server.enqueue(MockResponse().setBody("""{"code":"NoMatch"}""")) }
+            server.start()
+            val matcher = OsrmMatcher(server.url("/").toString().trimEnd('/'))
+            assertNull(matcher.match(turn))
+            assertEquals("10;18;10", server.takeRequest().requestUrl?.queryParameter("radiuses"))
+            assertNull(matcher.match(straight))
+            assertEquals("10;10;10", server.takeRequest().requestUrl?.queryParameter("radiuses"))
+        }
+    }
+
+    @Test fun candidateRadiusNeverOverridesPermanentSnapPlausibility() {
+        // A candidate 30+ m from the recorded route is not made valid merely because
+        // OSRM was allowed to consider a wider area at a turn.
+        val recorded = listOf(
+            TrackPoint(1L, 40.0, -74.00030, 3.8f, 8f, 0f, 100_000L, false),
+            TrackPoint(2L, 40.0, -74.00000, 3.8f, 8f, 0f, 103_000L, false),
+            TrackPoint(3L, 40.00030, -74.00000, 3.8f, 8f, 0f, 106_000L, false)
+        )
+        val response = """{"code":"Ok","tracepoints":[
+          {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74.00030,40.00030]},
+          {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-74.00000,40.00030]},
+          {"matchings_index":0,"waypoint_index":2,"alternatives_count":0,"location":[-74.00000,40.00060]}],
+          "matchings":[{"confidence":0.99,"legs":[
+          {"steps":[{"name":"Wrong road","distance":25,"geometry":{"type":"LineString","coordinates":[[-74.00030,40.00030],[-74.00000,40.00030]]}}]},
+          {"steps":[{"name":"Wrong road","distance":33,"geometry":{"type":"LineString","coordinates":[[-74.00000,40.00030],[-74.00000,40.00060]]}}]}
+          ]}]}"""
+        assertNull(OsrmMatcher().parse(response, recorded))
+    }
+
     @Test fun recordedTurnNeedsExitContextToMeetExistingConfidenceGate() {
         val fixture = org.json.JSONObject(requireNotNull(javaClass.classLoader)
             .getResourceAsStream("matching/turn17-replay.json")!!.bufferedReader().use { it.readText() })
