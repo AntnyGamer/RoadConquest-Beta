@@ -35,10 +35,6 @@ class AppDatabase private constructor(context: Context) :
     internal var lastTrackPointCache: LastTrackPointCache? = null
     internal var summaryCachingEnabled = true
 
-    internal fun invalidateTrackSummary() {
-        trackSummaryCache = null
-    }
-
     internal fun invalidateRoadSummary() {
         roadSummaryCache = null
     }
