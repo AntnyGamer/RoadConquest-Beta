@@ -27,9 +27,10 @@ class LeaderboardActivity : Activity() {
         setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
         WindowCompat.enableEdgeToEdge(window)
+        val lightSystemBars = !Appearance.isDark(this)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !Appearance.isDark(this@LeaderboardActivity)
-            isAppearanceLightNavigationBars = !Appearance.isDark(this@LeaderboardActivity)
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_leaderboard)
         val root = findViewById<View>(R.id.leaderboardRoot)
