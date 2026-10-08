@@ -409,7 +409,7 @@ class OsrmMatcher(
             if (connectorMeters <= DUPLICATE_POINT_TOLERANCE_M) {
                 // Only consider this a zero-length seam when the raw fixes agree. Two fixes
                 // far apart may snap to the same junction even though the car actually moved.
-                if (rawMeters <= maxOf(MIN_ZERO_SEAM_RAW_DISTANCE_M, uncertainty)) {
+                if (rawMeters <= maxOf(MIN_ZERO_SEAM_RAW_DISTANCE_M, uncertainty.toDouble())) {
                     resolved[to.id] = minOf(left.confidence, right.confidence)
                 }
                 continue
