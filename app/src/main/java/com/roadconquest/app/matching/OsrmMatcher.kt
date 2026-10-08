@@ -409,7 +409,7 @@ class OsrmMatcher(
             if (connectorMeters <= DUPLICATE_POINT_TOLERANCE_M) {
                 // Only consider this a zero-length seam when the raw fixes agree. Two fixes
                 // far apart may snap to the same junction even though the car actually moved.
-                if (rawMeters <= maxOf(MIN_ZERO_SEAM_RAW_DISTANCE_M, uncertainty.toDouble())) {
+                if (rawMeters <= minOf(MAX_ZERO_SEAM_RAW_DISTANCE_M, maxOf(MIN_ZERO_SEAM_RAW_DISTANCE_M, uncertainty.toDouble()))) {
                     resolved[to.id] = minOf(left.confidence, right.confidence)
                 }
                 continue
@@ -628,6 +628,7 @@ class OsrmMatcher(
         private const val MIN_UNNAMED_DIRECTION_M = 5.0
         private const val MAX_UNNAMED_BRIDGE_BEARING_DEGREES = 20.0
         private const val MIN_ZERO_SEAM_RAW_DISTANCE_M = 3.0
+        private const val MAX_ZERO_SEAM_RAW_DISTANCE_M = 10.0
         private const val MIN_BEARING_GUIDANCE_SPEED_MPS = 4f
         private const val MIN_BEARING_EVIDENCE_DISTANCE_M = 8.0
         private const val BEARING_ACCURACY_DISTANCE_FACTOR = 0.75
