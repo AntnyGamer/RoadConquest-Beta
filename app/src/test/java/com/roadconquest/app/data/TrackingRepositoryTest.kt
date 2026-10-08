@@ -114,6 +114,18 @@ class TrackingRepositoryTest {
         assertEquals(ids, repository.loadMatchingWindow().points.map { it.id })
     }
 
+    @Test fun isolatedPendingFixCannotAccelerateAnotherLineExpiry() {
+        point(1_000_000L)
+        point(1_200_000L, lon = -73.9998)
+        point(1_203_000L, lon = -73.9997)
+        val pending = repository.getPendingRouteInBoundsResult(
+            41.0, -73.0, 39.0, -75.0, visibleSinceMillis = 999_000L
+        )
+        assertEquals(1, pending.roads.size)
+        assertEquals(2, org.json.JSONArray(pending.roads.single().geometryJson).length())
+        assertEquals(1_200_000L, pending.oldestVisiblePendingTimestampMillis)
+    }
+
     @Test fun recordedRouteNeverConnectsSeparateTripsOrMissingRawSamples() {
         point(1_000_000L)
         point(1_003_000L, lon = -73.9999)
