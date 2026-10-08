@@ -133,11 +133,11 @@ jobs:
             exit 1
           fi
 
+          # Do not modify the Gradle-built AAB after compilation. Keep the
+          # full MapLibre native symbols in a separate Play Console upload ZIP.
+          # Embedding these with a post-build ZIP mutation unnecessarily inflates
+          # the Play-upload bundle and makes its packaging harder to audit.
           aab="app/build/outputs/bundle/release/app-release.aab"
-          metadata_root="$RUNNER_TEMP/roadconquest-aab-metadata"
-          metadata_dir="$metadata_root/BUNDLE-METADATA/com.android.tools.build.debugsymbols"
-          rm -rf "$metadata_root"
-          mkdir -p "$metadata_dir"
           for symbol_so in "${symbol_libs[@]}"; do
             abi=$(basename "$(dirname "$symbol_so")")
             packaged_so="$RUNNER_TEMP/roadconquest-$abi-libmaplibre.so"
@@ -149,26 +149,24 @@ jobs:
               echo "::error::MapLibre symbol Build ID mismatch for $abi (symbols=$symbol_build_id packaged=$packaged_build_id)."
               exit 1
             fi
-            mkdir -p "$metadata_dir/$abi"
-            cp "$symbol_so" "$metadata_dir/$abi/libmaplibre.so.dbg"
           done
-
-          # Android App Bundles forbid explicit ZIP directory entries. zip -r adds
-          # entries such as BUNDLE-METADATA/; omit them with -D.
-          (cd "$metadata_root" && zip -q -D -r "$GITHUB_WORKSPACE/$aab" BUNDLE-METADATA)
-          if unzip -Z1 "$aab" | grep -E '/$'; then
-            echo "::error::The app bundle contains forbidden ZIP directory entries."
-            exit 1
-          fi
-          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
-            unzip -Z1 "$aab" | grep -qx "BUNDLE-METADATA/com.android.tools.build.debugsymbols/$abi/libmaplibre.so.dbg"
-          done
-          unzip -Z1 "$aab" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
 
           symbol_zip="app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip"
           mkdir -p "$(dirname "$symbol_zip")"
-          (cd "$symbols_dir" && zip -q -r "$GITHUB_WORKSPACE/$symbol_zip" .)
+          # Maximum standard ZIP deflate compression, with unchanged symbol data.
+          (cd "$symbols_dir" && zip -q -9 -r "$GITHUB_WORKSPACE/$symbol_zip" .)
           test -s "$symbol_zip"
+
+      - name: Validate the unmodified Play bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundletool="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar" \
+            --output "$bundletool"
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $bundletool" | sha256sum -c -
+          java -jar "$bundletool" validate --bundle=app/build/outputs/bundle/release/app-release.aab
 
       - name: Verify 16 KB native-library compatibility
         shell: bash
@@ -482,9 +480,8 @@ jobs:
             exit 1
           fi
           cp "${native_symbol_zips[0]}" "$out/RoadConquest-$version-native-debug-symbols.zip"
-          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
-            unzip -Z1 "$out/RoadConquest-$version.aab" | grep -qx "BUNDLE-METADATA/com.android.tools.build.debugsymbols/$abi/libmaplibre.so.dbg"
-          done
+          # ProGuard mapping remains embedded automatically by AGP. Native symbols
+          # are shipped separately, ready for manual upload in Play Console.
           unzip -Z1 "$out/RoadConquest-$version.aab" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
 
           # Sign the direct-install APK and the Play upload bundle with the permanent upload identity.
@@ -511,10 +508,6 @@ jobs:
           jarsigner -verify "$out/RoadConquest-$version.aab" | tee "$RUNNER_TEMP/roadconquest-aab-verify.txt"
           if ! grep -qx 'jar verified\.' "$RUNNER_TEMP/roadconquest-aab-verify.txt"; then
             echo "::error::The Play upload AAB is not signed and verified."
-            exit 1
-          fi
-          if unzip -Z1 "$out/RoadConquest-$version.aab" | grep -E '/$'; then
-            echo "::error::Signed AAB contains forbidden ZIP directory entries; Google Play would reject it."
             exit 1
           fi
           bundle_cert=$(keytool -printcert -jarfile "$out/RoadConquest-$version.aab" | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
