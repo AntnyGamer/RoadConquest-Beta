@@ -92,7 +92,7 @@ class MapRenderer(
     private val liveLocation = LiveLocation()
     private val fogTextureTransform = FogTextureTransform()
     private var displayedRoads = OverlayRoads.EMPTY
-    private var displayedRoadFeatures = emptyRoadFeatures()
+    private var displayedRoadFeatures = EMPTY_FEATURES
     private var displayedPlaces = doubleArrayOf()
     private var loadedRoadBounds: RoadQueryBounds? = null
     private var loadedPlaceBounds: RoadQueryBounds? = null
@@ -424,12 +424,12 @@ class MapRenderer(
             return
         }
         if (map.cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
-            (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(emptyRoadFeatures())
+            (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
             loadedPlaceBounds = null
             setDisplayedPlaces(doubleArrayOf())
             if (loadRoads) {
                 loadedRoadBounds = null
-                setDisplayedRoads(OverlayRoads.EMPTY, emptyRoadFeatures())
+                setDisplayedRoads(OverlayRoads.EMPTY, EMPTY_FEATURES)
             } else {
                 scheduleFogRender()
             }
@@ -700,7 +700,7 @@ class MapRenderer(
     }
 
     private fun installRecordedRouteLayer(style: Style) {
-        style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, emptyRoadFeatures()))
+        style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, EMPTY_FEATURES))
         // Pending evidence is raw GPS, not final road geometry. Keep a faint, narrow
         // provisional trace so the map never appears to have a random hole while OSRM is
         // resolving the interval. Confirmed traveled roads remain thicker and nearly opaque,
@@ -819,7 +819,7 @@ class MapRenderer(
         updateCarImage(style)
         appliedCarStyle = Prefs.carStyle(context)
         appliedCarColor = Prefs.carColor(context)
-        style.addSource(GeoJsonSource(CAR_SOURCE_ID, emptyRoadFeatures()))
+        style.addSource(GeoJsonSource(CAR_SOURCE_ID, EMPTY_FEATURES))
         style.addLayer(
             SymbolLayer(CAR_LAYER_ID, CAR_SOURCE_ID).withProperties(
                 iconImage(CAR_IMAGE_ID),
@@ -902,7 +902,7 @@ class MapRenderer(
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val source = style.getSource(CAR_SOURCE_ID) as? GeoJsonSource ?: return
         if (fix == null) {
-            source.setGeoJson(emptyRoadFeatures())
+            source.setGeoJson(EMPTY_FEATURES)
             return
         }
         source.setGeoJson(Point.fromLngLat(fix.longitude, fix.latitude))
@@ -1105,8 +1105,6 @@ class MapRenderer(
         }
         return FeatureCollection.fromFeatures(features)
     }
-
-    private fun emptyRoadFeatures(): FeatureCollection = EMPTY_FEATURES
 
     private data class RoadDisplay(
         val overlay: OverlayRoads?,
