@@ -966,10 +966,7 @@ class MainActivity : Activity() {
     private fun showFreshCachedLocation() {
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) return
         if (!hasLocationPermission() || !::locationManager.isInitialized || !locationManager.isLocationEnabled) return
-        val providers = buildList {
-            LocationProviders.preferred(locationManager)?.let(::add)
-            addAll(LocationProviders.fallback(locationManager))
-        }.distinct()
+        val providers = LocationProviders.enabledProviders(locationManager)
         val cached = providers.mapNotNull { provider ->
             try {
                 locationManager.getLastKnownLocation(provider)
