@@ -510,9 +510,14 @@ class MainActivity : Activity() {
             }
             return
         }
-        if (!locationManager.isLocationEnabled && requestIfMissing) {
-            showLocationOffDialog()
-            return
+        if (!locationManager.isLocationEnabled) {
+            if (requestIfMissing) {
+                showLocationOffDialog()
+                return
+            }
+            // Android 14+ rejects promotion to a location foreground service while system
+            // Location is off. The receiver below starts tracking as soon as Location returns.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
         }
         if (!TrackingService.isRunning) {
             stopPreviewLocation()
