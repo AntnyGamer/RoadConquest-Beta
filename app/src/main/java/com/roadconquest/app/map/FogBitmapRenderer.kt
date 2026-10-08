@@ -130,7 +130,13 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             // drive. These are display-only links: no roads, miles or achievements are awarded.
             // Snap to the intersection of the two already-matched centerline directions;
             // never draw a long straight chord that cuts through the inside of a turn.
+            val originalSegmentCount = segments.size
             appendSupportedJunctions(segments, segmentFirstTimes, nodes, degree)
+            // Give each synthetic segment the same graph-adjacency treatment as actual roads.
+            for (index in originalSegmentCount until segments.size) {
+                addAdjacent(segments[index].startNode, index)
+                addAdjacent(segments[index].endNode, index)
+            }
 
             val output = DoubleBuffer((segments.sumOf { it.coordinates.size }).coerceAtLeast(16))
             val starts = IntArray(segments.size + 1)
@@ -253,8 +259,6 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                     left.endNode,
                     right.startNode
                 )
-                degree[left.endNode]++
-                degree[right.startNode]++
             }
         }
 
