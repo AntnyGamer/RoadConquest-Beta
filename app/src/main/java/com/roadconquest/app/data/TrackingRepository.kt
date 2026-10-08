@@ -305,7 +305,12 @@ class TrackingRepository(context: Context) {
         // One incoming anchor preserves the approach direction; spend the additional context
         // budget on the exit side instead of unnecessarily reaching farther back in history.
         // Live newest batches have no newer anchor, so they still keep the full older overlap.
-        val olderSlots = if (newerAnchors.isNotEmpty()) 1 else anchorSlots
+        val olderSlots = if (newerAnchors.isNotEmpty()) {
+            // A single unresolved point commonly sits at a junction between two already
+            // matched stretches. One older point cannot establish the approach direction;
+            // two approach + two exit anchors fit comfortably in a ten-fix OSRM request.
+            if (newestFirst.size == 1 && maxPoints >= 6) 2 else 1
+        } else anchorSlots
         val olderAnchors = ArrayList<TrackPoint>(olderSlots)
         if (olderSlots > 0) {
             dbHelper.readableDatabase.query(
@@ -787,9 +792,12 @@ class TrackingRepository(context: Context) {
 
     data class RoadQueryResult(val roads: List<RoadRecord>, val complete: Boolean)
 
-    /** Recorded driving evidence remains visible until road matching confirms each interval. */
+    /** Pending raw evidence can be time-bounded for display without deleting retryable fixes. */
     @Synchronized
-    fun getPendingRouteInBounds(north: Double, east: Double, south: Double, west: Double): List<RoadRecord> {
+    fun getPendingRouteInBounds(
+        north: Double, east: Double, south: Double, west: Double,
+        visibleSinceMillis: Long = Long.MIN_VALUE
+    ): List<RoadRecord> {
         val latitudePad = PENDING_ROUTE_QUERY_PAD_M / METERS_PER_DEGREE
         val centerLatitude = ((north + south) / 2.0).coerceIn(-89.0, 89.0)
         val longitudePad = (PENDING_ROUTE_QUERY_PAD_M /
@@ -810,7 +818,7 @@ class TrackingRepository(context: Context) {
         val sql = """
             WITH pending(id) AS (
                 SELECT id FROM track_points
-                WHERE matched = 0 AND latitude BETWEEN ? AND ? AND $longitudeSelection
+                WHERE matched = 0 AND timestamp_ms >= ? AND latitude BETWEEN ? AND ? AND $longitudeSelection
             ),
             context(id) AS (
                 SELECT id FROM pending
@@ -837,7 +845,7 @@ class TrackingRepository(context: Context) {
         dbHelper.readableDatabase.rawQuery(
             sql,
             arrayOf(
-                querySouth.toString(), queryNorth.toString(),
+                visibleSinceMillis.toString(), querySouth.toString(), queryNorth.toString(),
                 queryWest.toString(), queryEast.toString()
             )
         ).use { cursor ->
