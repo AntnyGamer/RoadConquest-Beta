@@ -127,9 +127,6 @@ class TrackingService : Service(), LocationListener {
 
     override fun onCreate() {
         super.onCreate()
-        repository = TrackingRepository(this)
-        progressionRepository = ProgressionRepository(this)
-        verifiedDriving = VerifiedDriving(this)
         locationManager = getSystemService(LocationManager::class.java)
         createNotificationChannel()
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
@@ -148,6 +145,14 @@ class TrackingService : Service(), LocationListener {
             stopSelf()
             return
         }
+
+        // None of the persistence/verification objects are needed unless the service can
+        // actually become a location foreground service. Delaying them avoids unnecessary
+        // setup on blocked restarts (paused tracking, missing permission, or Location off).
+        repository = TrackingRepository(this)
+        progressionRepository = ProgressionRepository(this)
+        verifiedDriving = VerifiedDriving(this)
+
         baselineRequestElapsedNanos = SystemClock.elapsedRealtimeNanos()
         baselineRequestWallMillis = System.currentTimeMillis()
         ready = true
