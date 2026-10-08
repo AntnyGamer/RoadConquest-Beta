@@ -985,7 +985,7 @@ class MapRenderer(
             mainHandler.postDelayed(renderFog, delay)
             return
         }
-        val capture = captureFog(position) ?: return
+        val capture = captureFog() ?: return
         lastFogRenderAt = SystemClock.elapsedRealtime()
         fogAgain = false
         fogRunning = true
@@ -1028,8 +1028,11 @@ class MapRenderer(
         }
     }
 
-    private fun captureFog(position: CameraPosition): FogCapture? {
+    private fun captureFog(): FogCapture? {
         if (mapView.width <= 0 || mapView.height <= 0 || map.style == null) return null
+        // Capture after camera-limit updates; the caller's move-event snapshot may predate
+        // a native zoom clamp. Reuse this fresh snapshot throughout the bitmap calculation.
+        val position = map.cameraPosition
         val padX = mapView.width * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER
         val padY = mapView.height * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER
         val left = -padX
