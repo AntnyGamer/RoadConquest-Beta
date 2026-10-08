@@ -108,7 +108,7 @@ jobs:
           test -s "$mapping"
           unzip -Z1 "$bundle" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
 
-      - name: Embed and verify native debug symbols
+      - name: Verify and package separate native debug symbols
         shell: bash
         run: |
           set -euo pipefail
