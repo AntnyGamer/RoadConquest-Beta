@@ -264,6 +264,7 @@ def analyze(plan, at, points, roads):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--apk')
+    parser.add_argument('--expected-sha256', default='77e8aec1810cc6c6559ca0439e12598648b4af4f496544a3fd01717dad22bf02')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--plan-only', action='store_true')
     parser.add_argument('--keep-location-on', action='store_true',
@@ -277,7 +278,7 @@ def main():
     if args.plan_only:
         return
     assert args.apk
-    assert hashlib.sha256(Path(args.apk).read_bytes()).hexdigest() == '77e8aec1810cc6c6559ca0439e12598648b4af4f496544a3fd01717dad22bf02'
+    assert hashlib.sha256(Path(args.apk).read_bytes()).hexdigest() == args.expected_sha256
     print(adb('root'), flush=True)
     adb('wait-for-device')
     adb('shell', 'wm', 'size', '1080x2340')

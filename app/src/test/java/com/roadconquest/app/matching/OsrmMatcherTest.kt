@@ -10,6 +10,34 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
 class OsrmMatcherTest {
+    @Test fun recordedTurnNeedsExitContextToMeetExistingConfidenceGate() {
+        val fixture = org.json.JSONObject(requireNotNull(javaClass.classLoader)
+            .getResourceAsStream("matching/turn17-replay.json")!!.bufferedReader().use { it.readText() })
+        val raw = fixture.getJSONArray("points")
+        val recorded = (0 until raw.length()).map { index ->
+            val p = raw.getJSONObject(index)
+            TrackPoint(p.getLong("id"), p.getDouble("latitude"), p.getDouble("longitude"),
+                p.getDouble("accuracy_m").toFloat(), p.getDouble("speed_mps").toFloat(),
+                p.getDouble("bearing_deg").toFloat(), p.getLong("timestamp_ms"),
+                p.getInt("matched") != 0)
+        }
+        val turnIds = setOf(116L, 117L)
+        val current = requireNotNull(OsrmMatcher().parse(
+            fixture.getJSONObject("current_response").toString(), recorded.subList(2, 8)))
+        assertTrue(current.matchedPointConfidences.none {
+            it.key in turnIds && it.value >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE
+        })
+
+        val expanded = requireNotNull(OsrmMatcher().parse(
+            fixture.getJSONObject("expanded_response").toString(), recorded))
+        assertTrue(turnIds.all { (expanded.matchedPointConfidences[it] ?: 0.0) >=
+            OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE })
+        assertTrue(expanded.roads.any { it.name == "Clover Street" })
+        assertTrue(expanded.roads.any { it.name == "South 13th Street" })
+        // The final, ambiguous endpoint must still wait for evidence from a future drive.
+        assertFalse(expanded.matchedPointConfidences.containsKey(120L))
+    }
+
     private val points = listOf(
         TrackPoint(10, 40.0, -74.0, 5f, 5f, 0f, 100_000, false),
         TrackPoint(11, 40.0, -74.001, 5f, 5f, 0f, 110_000, false),
