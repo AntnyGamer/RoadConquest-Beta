@@ -52,6 +52,15 @@ class DrivingFilterTest {
         assertFalse(accepts(point(40.0002, 13), point(40.0, 10).apply { isMock = true }))
     }
 
+    @Test fun staleLocationSubscriptionHasRecoveryCooldown() {
+        val now = 1_000_000L
+        assertFalse(TrackingService.shouldRecoverLocationUpdates(now, now - 119_999L, now - 600_000L))
+        assertFalse(TrackingService.shouldRecoverLocationUpdates(now, now - 180_000L, now - 299_999L))
+        assertTrue(TrackingService.shouldRecoverLocationUpdates(now, now - 180_000L, now - 300_000L))
+        assertFalse(TrackingService.shouldRecoverLocationUpdates(now, now + 1L, now - 300_000L))
+        assertFalse(TrackingService.shouldRecoverLocationUpdates(now, now - 180_000L, now + 1L))
+    }
+
     @Test fun nanAccuracyCannotAuthorizeDriving() {
         assertFalse(accepts(point(40.0002, 13).apply { accuracy = Float.NaN }, point(40.0, 10)))
     }
