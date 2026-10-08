@@ -101,6 +101,10 @@ class MainActivity : Activity() {
     }
 
     private var lastPreviewLocation: Location? = null
+    // TrackingService location broadcasts arrive every few seconds while the map is open.
+    // Remember whether this listener is actually registered so each broadcast does not perform
+    // another unnecessary LocationManager.removeUpdates() IPC after preview already stopped.
+    private var previewLocationRegistered = false
     private var baselinePreviewCapturedForRegistration = false
     private var baselinePreviewRequestElapsedNanos = 0L
     private var baselinePreviewRequestWallMillis = 0L
@@ -1012,6 +1016,7 @@ class MainActivity : Activity() {
                 mainExecutor,
                 previewLocationListener
             )
+            previewLocationRegistered = true
             true
         } catch (_: SecurityException) {
             false
@@ -1037,7 +1042,10 @@ class MainActivity : Activity() {
     }
 
     private fun stopPreviewLocation() {
-        if (::locationManager.isInitialized) runCatching { locationManager.removeUpdates(previewLocationListener) }
+        if (previewLocationRegistered && ::locationManager.isInitialized) {
+            runCatching { locationManager.removeUpdates(previewLocationListener) }
+            previewLocationRegistered = false
+        }
         lastPreviewLocation = null
     }
 

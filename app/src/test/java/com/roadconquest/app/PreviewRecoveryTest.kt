@@ -52,6 +52,7 @@ class PreviewRecoveryTest {
         try {
             invoke("startPreviewLocation")
             assertTrue(listener in shadow.getLocationUpdateListeners("gps"))
+            assertTrue(field("previewLocationRegistered").getBoolean(activity))
             assertEquals(0f, shadow.getLegacyLocationRequests("gps").single().minUpdateDistanceMeters, 0f)
             shadow.setProviderEnabled("gps", false)
             listener.onProviderDisabled("gps")
@@ -69,6 +70,13 @@ class PreviewRecoveryTest {
         } finally {
             field("resumed").set(activity, false)
             invoke("stopPreviewLocation")
+            assertFalse(field("previewLocationRegistered").getBoolean(activity))
+            assertFalse(listener in shadow.getLocationUpdateListeners("gps"))
+            assertFalse(listener in shadow.getLocationUpdateListeners("network"))
+            // A second stop is the common tracking-broadcast case after preview is already off.
+            // It must stay a no-op rather than re-registering or leaving stale listener state.
+            invoke("stopPreviewLocation")
+            assertFalse(field("previewLocationRegistered").getBoolean(activity))
             (field("summaryExecutor").get(activity) as ExecutorService).shutdownNow()
             (field("statsHandler").get(activity) as Handler).removeCallbacksAndMessages(null)
         }
