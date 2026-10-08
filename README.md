@@ -141,7 +141,7 @@ See [server setup](server/README.md) and the [physical-device checklist](ANDROID
 
 ## Google Play submission
 
-The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. GitHub validates the original Gradle-built AAB with Google's `bundletool` before publishing; unlike previous versions, it does not modify the AAB to embed MapLibre native debugging symbols. The release still includes the full native-symbol ZIP, which should be uploaded separately in Play Console under the version's Downloads → Assets. ProGuard/R8 mapping metadata remains embedded.
+The release bundle targets API 37, uses application ID `com.roadconquest.app`, and is signed for Play upload. GitHub validates the original Gradle-built AAB with Google's `bundletool` before publishing; unlike previous versions, it does not modify the AAB to embed MapLibre native debugging symbols. The full native-symbol ZIP is preserved as an optional diagnostic backup in GitHub Releases. No second upload is needed to install, test, or publish the app. Play may not automatically symbolicate MapLibre native crashes without these symbols; ProGuard/R8 mapping metadata remains embedded.
 CI verifies 16 KB native-library packaging/alignment before publication, in addition to unit tests, lint,
 release builds, account-server tests, and native map tests on supported Android generations.
 The account service exposes browser pages at `/privacy` and `/delete-account`. The app links the privacy policy from
@@ -163,12 +163,13 @@ same runtime app. Google's `bundletool` validates both unsigned and signed bundl
 before publication. ZIP directory entries are valid AAB content and were not a proven
 cause of the rejection.
 
-For full native crash symbolication, manually upload
-`RoadConquest-1.0-beta.20-native-debug-symbols.zip` to Play Console's
-**Test and release → App bundle explorer → Downloads → Assets** for this version.
-This is separate from the AAB itself and is not installed on users' devices.
-Reducing the symbols themselves using SYMBOL_TABLE/strip-debug would sacrifice
-source-file and line-number information; Beta 20 keeps the full symbols.
+There is **no additional file to upload** for this release: only the signed AAB
+is needed in Play Console. The full MapLibre native symbol archive is kept as
+an optional developer backup rather than bundled with the AAB. Consequently,
+Play Console will not automatically provide fully symbolicated MapLibre native
+crash traces. Keeping the symbol backup does not use storage on users' devices.
+Stripping debug data to shrink the backup would sacrifice source-file and
+line-number information; Beta 20 preserves it without requiring any setup.
 
 ## Beta 19 startup hotfix
 
