@@ -108,7 +108,7 @@ jobs:
           test -s "$mapping"
           unzip -Z1 "$bundle" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
 
-      - name: Verify and package separate native debug symbols
+      - name: Embed and verify complete native debug symbols
         shell: bash
         run: |
           set -euo pipefail
@@ -133,11 +133,14 @@ jobs:
             exit 1
           fi
 
-          # Do not modify the Gradle-built AAB after compilation. Keep the
-          # full MapLibre native symbols in a separate Play Console upload ZIP.
-          # Embedding these with a post-build ZIP mutation unnecessarily inflates
-          # the Play-upload bundle and makes its packaging harder to audit.
+          # Keep all four full, unstripped MapLibre symbol files embedded
+          # in the Play AAB. The ABI build IDs must match the packaged native
+          # libraries so Play can symbolicate native crash reports automatically.
           aab="app/build/outputs/bundle/release/app-release.aab"
+          metadata_root="$RUNNER_TEMP/roadconquest-aab-metadata"
+          metadata_dir="$metadata_root/BUNDLE-METADATA/com.android.tools.build.debugsymbols"
+          rm -rf "$metadata_root"
+          mkdir -p "$metadata_dir"
           for symbol_so in "${symbol_libs[@]}"; do
             abi=$(basename "$(dirname "$symbol_so")")
             packaged_so="$RUNNER_TEMP/roadconquest-$abi-libmaplibre.so"
@@ -149,15 +152,23 @@ jobs:
               echo "::error::MapLibre symbol Build ID mismatch for $abi (symbols=$symbol_build_id packaged=$packaged_build_id)."
               exit 1
             fi
+            mkdir -p "$metadata_dir/$abi"
+            cp "$symbol_so" "$metadata_dir/$abi/libmaplibre.so.dbg"
           done
 
-          symbol_zip="app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip"
-          mkdir -p "$(dirname "$symbol_zip")"
-          # Maximum standard ZIP deflate compression, with unchanged symbol data.
-          (cd "$symbols_dir" && zip -q -9 -r "$GITHUB_WORKSPACE/$symbol_zip" .)
-          test -s "$symbol_zip"
+          # Lossless maximum ZIP deflate compression; do not strip any symbols.
+          # -D avoids adding directory-only ZIP entries (not a Play requirement).
+          (cd "$metadata_root" && zip -q -9 -D -r "$GITHUB_WORKSPACE/$aab" BUNDLE-METADATA)
+          for symbol_so in "${symbol_libs[@]}"; do
+            abi=$(basename "$(dirname "$symbol_so")")
+            entry="BUNDLE-METADATA/com.android.tools.build.debugsymbols/$abi/libmaplibre.so.dbg"
+            unzip -p "$aab" "$entry" | cmp - "$symbol_so" || {
+              echo "::error::Missing or modified embedded full native symbols for $abi."
+              exit 1
+            }
+          done
 
-      - name: Validate the unmodified Play bundle
+      - name: Validate Play bundle with embedded native symbols
         shell: bash
         run: |
           set -euo pipefail
@@ -228,7 +239,6 @@ jobs:
             app/build/outputs/apk/release/app-release-unsigned.apk
             app/build/outputs/bundle/release/app-release-UNSIGNED-DO-NOT-UPLOAD.aab
             app/build/outputs/mapping/release/mapping.txt
-            app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip
           retention-days: 14
   map-integration:
     runs-on: ubuntu-latest
@@ -474,16 +484,12 @@ jobs:
           fi
           cp "${account_bundles[0]}" "$out/RoadConquest-account-function-$version.mjs"
 
-          mapfile -t native_symbol_zips < <(find "$build_dir" -type f -name 'native-debug-symbols.zip' -print)
-          if [ "${#native_symbol_zips[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one verified native debug-symbol archive."
-            exit 1
-          fi
-          cp "${native_symbol_zips[0]}" "$out/RoadConquest-$version-native-debug-symbols.zip"
-          # ProGuard mapping remains embedded automatically by AGP. Native symbols
-          # remain available as an optional backup in the GitHub release; the user
-          # only needs to upload the signed AAB to Play Console.
+          # ProGuard mapping and all four full MapLibre native-symbol files
+          # must be embedded in the ONE Play upload AAB.
           unzip -Z1 "$out/RoadConquest-$version.aab" | grep -qx 'BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map'
+          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+            unzip -Z1 "$out/RoadConquest-$version.aab" | grep -qx "BUNDLE-METADATA/com.android.tools.build.debugsymbols/$abi/libmaplibre.so.dbg"
+          done
 
           # Sign the direct-install APK and the Play upload bundle with the permanent upload identity.
           build_tools="$ANDROID_HOME/build-tools/36.0.0"
