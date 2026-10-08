@@ -498,7 +498,8 @@ class MapRenderer(
                     footprint.takeIf { roadQuery?.complete == true },
                     footprint.takeIf { queryPlaces },
                     roadFeatures(OverlayRoads.prepare(repository.getPendingRouteInBounds(
-                        queryNorth, queryEast, querySouth, queryWest
+                        queryNorth, queryEast, querySouth, queryWest,
+                        visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
                     )))
                 )
             }
@@ -1197,6 +1198,9 @@ class MapRenderer(
         // Native MapLibre transforms the georeferenced bitmap between refreshes, so ~8 fps
         // while actively gesturing is visually continuous without wasting battery on 12.5 fps
         // off-screen bitmap redraws. Idle renders still happen immediately.
+        // Live raw fixes are a short-lived preview, not permanently unlocked roads.
+        // Their matching/retry state and GPS history remain in the database.
+        private const val PENDING_ROUTE_MAX_AGE_MS = 120_000L
         private const val FOG_RENDER_INTERVAL_MS = 120L
         private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.50
         private const val FOG_HANDOFF_RENDERED_FRAMES = 2
