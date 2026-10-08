@@ -26,6 +26,7 @@ class LocationProviderRecoveryTest {
         shadow.setProviderEnabled("fused", true)
         shadow.setProviderEnabled("gps", true)
         shadow.setProviderEnabled("network", true)
+        assertEquals(listOf("fused", "gps", "network"), LocationProviders.enabledProviders(manager))
         assertEquals("fused", LocationProviders.preferred(manager))
         assertEquals(listOf("gps", "network"), LocationProviders.fallback(manager))
         val registered = mutableListOf<String>()
@@ -82,18 +83,23 @@ class LocationProviderRecoveryTest {
         shadow.setProviderEnabled("network", true)
         val controller = Robolectric.buildService(TrackingService::class.java)
         val service = controller.get()
-        fun set(name: String, value: Any) = TrackingService::class.java.getDeclaredField(name).apply { isAccessible = true }.set(service, value)
-        set("locationManager", manager); set("ready", true)
+        fun field(name: String) = TrackingService::class.java.getDeclaredField(name).apply { isAccessible = true }
+        field("locationManager").set(service, manager)
+        field("ready").set(service, true)
+        val registration = field("locationUpdatesRegistered")
         try {
             val register = TrackingService::class.java.getDeclaredMethod("requestLocations").apply { isAccessible = true }
             register.invoke(service)
+            assertTrue(registration.getBoolean(service))
             assertTrue(service in shadow.getLocationUpdateListeners("gps"))
             assertEquals(0f, shadow.getLegacyLocationRequests("gps").single().minUpdateDistanceMeters, 0f)
             shadow.setProviderEnabled("gps", false)
             service.onProviderDisabled("gps")
+            assertTrue(registration.getBoolean(service))
             assertTrue(service in shadow.getLocationUpdateListeners("network"))
         } finally {
             controller.destroy()
+            assertFalse(registration.getBoolean(service))
         }
     }
 
