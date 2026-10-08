@@ -249,6 +249,8 @@ def main():
     parser.add_argument('--apk')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--plan-only', action='store_true')
+    parser.add_argument('--keep-location-on', action='store_true',
+                        help='Control replay: keep system GPS on through all corners')
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     plan, at = route_plan()
@@ -323,7 +325,7 @@ def main():
                 background = False
                 events.append({'t':row['t'], 'wall_ms':round(time.time()*1000),
                                'event':'return-to-app'})
-            if 2900 < row['s'] < 2970 and not location_off and off_until == 0:
+            if not args.keep_location_on and 2900 < row['s'] < 2970 and not location_off and off_until == 0:
                 adb('shell', 'settings', 'put', 'secure', 'location_mode', '0')
                 location_off = True
                 off_until = row['t'] + 12
@@ -353,6 +355,8 @@ def main():
                 assert adb('shell', 'pidof', PACKAGE), 'App died during drive'
             for j, turn in enumerate(plan['turns']):
                 if j not in shown_turns and 35 < row['s'] - turn['at_m'] < 75 and not background:
+                    tap_id(ui, 'centerCarButton')
+                    time.sleep(.8)
                     screenshot(args.out, f'turn-{j+1:02d}-{turn["direction"]}')
                     shown_turns.add(j)
         # Allow normal live matching and partial-turn retries to finish, without forcing matches.
@@ -362,6 +366,8 @@ def main():
         adb('shell','input','keyevent','KEYCODE_BACK')
         print('Waiting 60 seconds for normal matching retries', flush=True)
         time.sleep(60)
+        tap_id(ui, 'centerCarButton')
+        time.sleep(.8)
         screenshot(args.out, 'finished-live')
         dump_ui(args.out, 'finished-ui')
         logs = adb('logcat', '-d')

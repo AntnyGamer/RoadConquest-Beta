@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [31, '37.0']
+        api: [35]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -54,8 +54,8 @@ jobs:
           profile: pixel_2
           disk-size: ${{ matrix.api == '37.0' && '4G' || '' }}
           emulator-boot-timeout: 300
-          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -grpc 8554 ${{ matrix.api == 31 && '-feature -GnssGrpcV1' || '' }}
-          script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/Beta19.apk" --out "$RUNNER_TEMP/drive-evidence"
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -grpc 8554
+          script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/Beta19.apk" --out "$RUNNER_TEMP/drive-evidence" --keep-location-on
       - name: Save driving data, screenshots and diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
