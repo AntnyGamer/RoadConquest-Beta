@@ -55,6 +55,8 @@ class DataExporterTest {
         assertEquals(1L, metadata.getLong("track_point_count"))
         assertEquals(1L, metadata.getLong("road_segment_count"))
         assertEquals(8, metadata.getInt("schema_version"))
+        assertEquals(com.roadconquest.app.BuildConfig.VERSION_NAME, metadata.getString("app_version"))
+        assertEquals(com.roadconquest.app.BuildConfig.VERSION_CODE, metadata.getInt("app_version_code"))
         assertEquals(1L, metadata.getLong("explored_place_count"))
         assertEquals(1L, metadata.getLong("road_visit_count"))
         assertEquals(0L, metadata.getLong("points_balance"))
