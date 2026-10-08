@@ -96,12 +96,13 @@ class TrackingService : Service(), LocationListener {
     private val providerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
-            if (locationManager.isLocationEnabled) {
+            val locationEnabled = locationManager.isLocationEnabled
+            if (locationEnabled) {
                 requestLocations()
             } else {
                 queueFinalMatchingFlush()
             }
-            refreshForegroundNotification()
+            refreshForegroundNotification(locationEnabled)
             sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         }
     }
@@ -334,16 +335,12 @@ class TrackingService : Service(), LocationListener {
     // Keep the existing registration while Location is off so the provider can resume when
     // the user turns Location back on; re-registering while disabled can lose that callback.
     override fun onProviderDisabled(provider: String) {
-        if (ready) {
-            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
-            // No more fixes may arrive while Android Location is off. Flush any queued
-            // accepted fixes first, then give unresolved corner/end-of-drive intervals a final
-            // matcher pass. A single provider handoff does not need this.
-            if (!locationManager.isLocationEnabled) queueFinalMatchingFlush()
-        }
-        if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
-            requestLocations()
-        }
+        if (!ready) return
+        sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
+        // No more fixes may arrive while Android Location is off. Flush any queued
+        // accepted fixes first, then give unresolved corner/end-of-drive intervals a final
+        // matcher pass. A single provider handoff does not need this.
+        if (locationManager.isLocationEnabled) requestLocations() else queueFinalMatchingFlush()
     }
 
     /**
@@ -671,9 +668,8 @@ class TrackingService : Service(), LocationListener {
         )
     }
 
-    private fun refreshForegroundNotification() {
+    private fun refreshForegroundNotification(locationEnabled: Boolean) {
         if (!isRunning) return
-        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
         // Provider broadcasts can repeat while the visible notification state is unchanged.
         // Avoid rebuilding the same notification and sending another system-service IPC.
         if (lastNotificationLocationEnabled == locationEnabled) return
