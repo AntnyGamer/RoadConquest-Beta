@@ -38,6 +38,16 @@ class VerifiedDriving(context: Context) {
     // Integrity calls cannot make the foreground service drop every fix received meanwhile.
     fun offer(location: Location) {
         if (!accepting || !Prefs.isDriveVerificationEnabled(context) || !AccountClient.isConfigured()) return
+        // Tracking intentionally listens to fused + GPS for local reliability, but verified
+        // scoring only ever accepts live GPS fixes with usable accuracy/speed metadata. Reject
+        // permanently-ineligible fixes before copying/enqueueing them; accept() repeats these
+        // checks as defense in depth. Do not move the age check here because a queued fix's age
+        // is intentionally evaluated at consumption time.
+        if (location.isMock || location.provider != "gps" ||
+            !location.hasAccuracy() || location.accuracy !in 0.01f..25f ||
+            !location.hasSpeed() || location.speed !in 0f..65f ||
+            location.elapsedRealtimeNanos <= 0L
+        ) return
         synchronized(queueLock) {
             if (!accepting) return
             if (pendingLocations.size >= MAX_BUFFERED_FIXES) pendingLocations.removeFirst()
