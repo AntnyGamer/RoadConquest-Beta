@@ -301,8 +301,8 @@ object FogBitmapRenderer {
             reusable?.recycle()
             Bitmap.createBitmap(request.bitmapWidth, request.bitmapHeight, Bitmap.Config.ARGB_8888)
         }
+        val canvas = Canvas(bitmap)
         val scratch = renderScratch.get()
-        val canvas = scratch.outputCanvas.apply { setBitmap(bitmap) }
         scratch.textureMatrix.setValues(request.textureMatrix)
         scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
         canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
@@ -311,7 +311,7 @@ object FogBitmapRenderer {
         // Combine the strongest reveal once. Repeated DST_OUT operations multiply the
         // remaining alpha, widening the clear area as roads/visited places overlap.
         val reveal = scratch.acquireRevealBitmap(request.bitmapWidth, request.bitmapHeight)
-        val revealCanvas = scratch.revealCanvas.apply { setBitmap(reveal) }
+        val revealCanvas = Canvas(reveal)
         val erasePaint = scratch.revealPaint
         val capBounds = scratch.capBounds
         val roadLinear = scratch.roadLinear
@@ -449,10 +449,6 @@ object FogBitmapRenderer {
     private val cloudTexture by lazy { FogTexture.create() }
 
     private class RenderScratch {
-        // Rebind two thread-confined Canvas instances instead of allocating native Canvas
-        // wrappers for every fog frame. Pixel output is unchanged.
-        val outputCanvas = Canvas()
-        val revealCanvas = Canvas()
         val textureMatrix = Matrix()
         val cloudShader = BitmapShader(cloudTexture, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
         val cloudPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
