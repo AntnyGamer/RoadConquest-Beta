@@ -221,6 +221,7 @@ jobs:
             app/build/outputs/apk/release/app-release-unsigned.apk
             app/build/outputs/bundle/release/app-release.aab
             app/build/outputs/mapping/release/mapping.txt
+            app/build/outputs/mapping/release/usage.txt
             app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip
           retention-days: 14
   map-integration:
