@@ -7,4 +7,4 @@
 
 Android version code is 46. Android 12 or newer is required. Install the signed APK over the existing app to retain local driving data; do not uninstall or clear app storage.
 
-Upload only `RoadConquest-1.0-beta.20.aab` from GitHub Releases to Play Console. Then manually upload `RoadConquest-1.0-beta.20-native-debug-symbols.zip` under the version's App bundle explorer → Downloads → Assets to retain full native crash symbolication. The app signing key and application ID remain unchanged. If verified scoring is enabled on your service, allow version code 46.
+Upload only `RoadConquest-1.0-beta.20.aab` from GitHub Releases to Play Console. No separate debug-symbol upload is required. The native-symbol archive is retained as an optional GitHub diagnostic backup; Play will not automatically show fully symbolicated MapLibre native crashes from this bundle. The upload signing key and application ID remain unchanged. If verified scoring is enabled on your service, allow version code 46.
