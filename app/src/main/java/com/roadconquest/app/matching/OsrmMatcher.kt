@@ -429,7 +429,7 @@ class OsrmMatcher(
     private fun bearingDifferenceDegrees(a: Double, b: Double): Double =
         kotlin.math.abs(((a - b + 540.0) % 360.0) - 180.0)
 
-    private fun buildBearingGuidance(points: List<TrackPoint>): String? {
+    internal fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
             // A forward-only course at a junction describes the exit road, not necessarily
