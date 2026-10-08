@@ -213,7 +213,8 @@ class OsrmTurnTest {
             trace(1, 0, junctionPoint), trace(1, 1, p3)
         ), matching(leg("Main Road", p0, junctionPoint)),
             matching(leg("Main Road", junctionPoint, p3))),
-            points(p0, rawBefore, rawAfter, p3)))
+            // Even inaccurate GPS must not erase a 20+ meter recorded movement.
+            points(p0, rawBefore, rawAfter, p3).map { it.copy(accuracyMeters = 25f) }))
         assertEquals(2, result.roads.size)
         assertEquals(setOf(1L, 2L, 4L), result.matchedPointConfidences.keys)
     }
