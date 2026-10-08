@@ -372,18 +372,16 @@ class TrackingRepository(context: Context) {
         ).use { it.moveToFirst() }
 
     /**
-     * Returns the oldest retry whose backoff has expired. Matching normally favors fresh driving
-     * for low latency; callers can use this id as a window cap to spend spare batch slots on old
-     * holes so a continuous stream of new fixes cannot starve them indefinitely.
+     * Return the oldest eligible hole for spare matching batches, including points without a
+     * scheduled backoff. Otherwise old zero-deadline corners can starve behind newer retries.
+     * The first batch still selects the newest pending driving fixes for low live latency.
      */
     @Synchronized
     fun oldestEligibleRetryId(nowMillis: Long = System.currentTimeMillis()): Long? =
         dbHelper.readableDatabase.rawQuery(
-            "SELECT id FROM track_points " +
-                "WHERE matched = 0 AND next_match_attempt_ms > 0 AND next_match_attempt_ms <= ? " +
-                "ORDER BY next_match_attempt_ms ASC, id ASC LIMIT 1",
+            "SELECT MIN(id) FROM track_points WHERE matched = 0 AND next_match_attempt_ms <= ?",
             arrayOf(nowMillis.toString())
-        ).use { if (it.moveToFirst()) it.getLong(0) else null }
+        ).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
 
     @Synchronized
     fun nextDeferredMatchAttempt(nowMillis: Long = System.currentTimeMillis()): Long? =
