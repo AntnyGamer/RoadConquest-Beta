@@ -362,7 +362,7 @@ class MapRenderingDeviceTest {
                     .apply { isAccessible = true }.invoke(activity)
                 renderer.updateCar(car.latitude, car.longitude, 15.0)
             }
-            moveAndAssert(car, 20.0, 125.0)
+            moveAndAssert(LatLng(car.latitude + 0.00004, car.longitude), 19.5, 65.0)
 
             val terrainReady = CountDownLatch(1)
             scenario.onActivity {
