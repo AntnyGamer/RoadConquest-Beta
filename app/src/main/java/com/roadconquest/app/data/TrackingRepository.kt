@@ -379,11 +379,9 @@ class TrackingRepository(context: Context) {
     @Synchronized
     fun oldestEligibleRetryId(nowMillis: Long = System.currentTimeMillis()): Long? =
         dbHelper.readableDatabase.rawQuery(
-            "SELECT id FROM track_points " +
-                "WHERE matched = 0 AND next_match_attempt_ms <= ? " +
-                "ORDER BY id ASC LIMIT 1",
+            "SELECT MIN(id) FROM track_points WHERE matched = 0 AND next_match_attempt_ms <= ?",
             arrayOf(nowMillis.toString())
-        ).use { if (it.moveToFirst()) it.getLong(0) else null }
+        ).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
 
     @Synchronized
     fun nextDeferredMatchAttempt(nowMillis: Long = System.currentTimeMillis()): Long? =
