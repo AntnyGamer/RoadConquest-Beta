@@ -792,12 +792,24 @@ class TrackingRepository(context: Context) {
 
     data class RoadQueryResult(val roads: List<RoadRecord>, val complete: Boolean)
 
+    data class PendingRouteResult(
+        val roads: List<RoadRecord>,
+        val oldestVisiblePendingTimestampMillis: Long?
+    )
+
     /** Pending raw evidence can be time-bounded for display without deleting retryable fixes. */
-    @Synchronized
     fun getPendingRouteInBounds(
         north: Double, east: Double, south: Double, west: Double,
         visibleSinceMillis: Long = Long.MIN_VALUE
-    ): List<RoadRecord> {
+    ): List<RoadRecord> = getPendingRouteInBoundsResult(
+        north, east, south, west, visibleSinceMillis
+    ).roads
+
+    @Synchronized
+    fun getPendingRouteInBoundsResult(
+        north: Double, east: Double, south: Double, west: Double,
+        visibleSinceMillis: Long = Long.MIN_VALUE
+    ): PendingRouteResult {
         val latitudePad = PENDING_ROUTE_QUERY_PAD_M / METERS_PER_DEGREE
         val centerLatitude = ((north + south) / 2.0).coerceIn(-89.0, 89.0)
         val longitudePad = (PENDING_ROUTE_QUERY_PAD_M /
@@ -831,6 +843,7 @@ class TrackingRepository(context: Context) {
             ORDER BY id ASC
         """.trimIndent()
         val output = ArrayList<RoadRecord>()
+        var oldestVisiblePendingTimestampMillis: Long? = null
         var previous: TrackPoint? = null
         var coordinates = JSONArray()
         fun finish() {
@@ -851,6 +864,12 @@ class TrackingRepository(context: Context) {
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 val point = cursor.toTrackPoint()
+                if (!point.matched && point.timestampMillis >= visibleSinceMillis) {
+                    oldestVisiblePendingTimestampMillis = minOf(
+                        oldestVisiblePendingTimestampMillis ?: point.timestampMillis,
+                        point.timestampMillis
+                    )
+                }
                 val before = previous
                 val continuous = before != null && before.id + 1 == point.id &&
                     (!before.matched || !point.matched) &&
@@ -864,7 +883,7 @@ class TrackingRepository(context: Context) {
             }
         }
         finish()
-        return output
+        return PendingRouteResult(output, oldestVisiblePendingTimestampMillis.takeIf { output.isNotEmpty() })
     }
 
     fun getRoadsInBounds(
