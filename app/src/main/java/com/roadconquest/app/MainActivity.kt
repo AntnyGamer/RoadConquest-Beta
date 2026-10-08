@@ -510,9 +510,14 @@ class MainActivity : Activity() {
             }
             return
         }
-        if (!locationManager.isLocationEnabled && requestIfMissing) {
-            showLocationOffDialog()
-            return
+        if (!locationManager.isLocationEnabled) {
+            if (requestIfMissing) {
+                showLocationOffDialog()
+                return
+            }
+            // Android 14+ rejects promotion to a location foreground service while system
+            // Location is off. The receiver below starts tracking as soon as Location returns.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
         }
         if (!TrackingService.isRunning) {
             stopPreviewLocation()
@@ -574,7 +579,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Allow all-the-time location")
             .setMessage(
-                "For Road Conquest to restart tracking automatically after a reboot or service restart, " +
+                "For Road Conquest to restart tracking automatically after a reboot or service restart when Android Location is on, " +
                     "set Location permission to ‘Allow all the time’ in Android settings. A tracking service that you start while Road Conquest is open can continue after you leave the app."
             )
             .setPositiveButton("Open settings") { _, _ -> openAppSettings() }

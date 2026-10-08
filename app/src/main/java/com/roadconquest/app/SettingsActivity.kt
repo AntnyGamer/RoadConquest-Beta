@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import android.content.pm.PackageManager
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -182,6 +183,14 @@ class SettingsActivity : Activity() {
         if (::manualOnlySwitch.isInitialized) {
             manualOnlySwitch.isChecked = Prefs.isManualOnly(this)
             manualOnlySwitch.isEnabled = !Prefs.isDeviceDataDeletionPending(this)
+        }
+        // If automatic mode was armed while system Location was off, Android 14+
+        // could not legally start the location foreground service. Returning after enabling
+        // Location is the first foreground-safe opportunity to start it.
+        if (!Prefs.isManualOnly(this) && !Prefs.isDeviceDataDeletionPending(this) &&
+            !Prefs.isTrackingPaused(this)
+        ) {
+            startAutomaticTrackingIfPossible()
         }
         if (::repository.isInitialized) refreshSummary()
         if (::accountSummaryText.isInitialized) refreshAccountControls()
@@ -478,6 +487,9 @@ class SettingsActivity : Activity() {
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this) ||
             TrackingService.isRunning ||
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            !getSystemService(LocationManager::class.java).isLocationEnabled
         ) return
 
         runCatching {
