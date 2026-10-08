@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Replay real street geometry into the unchanged, signed release on a fresh AVD.
 
-The replay uses the emulator's GNSS console, never mock-provider app code or
+The replay uses the emulator's GNSS controller, never mock-provider app code or
 direct database inserts. Root is used only to configure first-run prompts and
 copy the emulator's private SQLite files for inspection. No real account is used.
 """
@@ -147,10 +147,42 @@ def tap_id(root, resource_id):
     return False
 
 
-def send_fix(point, speed):
-    # Current AVD GNSS implementations acknowledge raw NMEA without changing position.
-    # geo fix uses their supported location interface; velocity is specified in knots.
-    adb('emu', 'geo', 'fix', *point, '10', '10', f'{speed/0.514444:.5f}')
+class GpsController:
+    def __init__(self):
+        import grpc
+        from google.protobuf import descriptor_pb2, descriptor_pool, empty_pb2, message_factory
+        # The small GpsState schema from AOSP emulator_controller.proto. The emulator
+        # receives speed in m/s and bearing in degrees; Android supplies fix timing.
+        schema = descriptor_pb2.FileDescriptorProto(
+            name='drive-gps.proto', package='android.emulation.control', syntax='proto3')
+        message = schema.message_type.add(name='GpsState')
+        for name, number, kind in [('passiveUpdate',1,8), ('latitude',2,1),
+                                   ('longitude',3,1), ('speed',4,1), ('bearing',5,1),
+                                   ('altitude',6,1), ('satellites',7,5)]:
+            message.field.add(name=name, number=number, type=kind, label=1)
+        pool = descriptor_pool.DescriptorPool()
+        pool.Add(schema)
+        self.state = message_factory.GetMessageClass(
+            pool.FindMessageTypeByName('android.emulation.control.GpsState'))
+        self.channel = grpc.insecure_channel('127.0.0.1:8554')
+        grpc.channel_ready_future(self.channel).result(timeout=20)
+        self.send = self.channel.unary_unary(
+            '/android.emulation.control.EmulatorController/setGps',
+            request_serializer=self.state.SerializeToString,
+            response_deserializer=empty_pb2.Empty.FromString)
+
+    def fix(self, point, speed, bearing):
+        self.send(self.state(passiveUpdate=False, latitude=point[1], longitude=point[0],
+                             speed=speed, bearing=bearing, altitude=10, satellites=10), timeout=5)
+
+
+def check_gps_clock(location):
+    gps = re.search(r'last location=Location\[gps[^\n]*et=\+([^ ]+)', location)
+    assert gps, 'Emulator did not provide a GPS timestamp'
+    units = {'d':86400, 'h':3600, 'm':60, 's':1, 'ms':.001}
+    elapsed = sum(float(n)*units[u] for n,u in re.findall(r'(\d+(?:\.\d+)?)(ms|d|h|m|s)',gps[1]))
+    uptime = float(adb('shell','cat','/proc/uptime').split()[0])
+    assert 0 <= uptime-elapsed <= 15, f'Invalid emulator GPS elapsed time: {gps[1]}, uptime {uptime}s'
 
 
 def snapshot(out):
@@ -251,7 +283,8 @@ def main():
     adb('push', str(prefs), folder+'/roadconquest_preferences.xml')
     adb('shell', 'chown', '-R', uid+':'+uid, folder)
     adb('shell', 'restorecon', '-R', folder)
-    adb('emu', 'geo', 'fix', *plan['path'][0], '10', '10', '0')
+    gps = GpsController()
+    gps.fix(plan['path'][0], 0, plan['rows'][0]['bearing'])
     adb('logcat', '-c')
     print(adb('shell', 'am', 'start', '-W', '-n', PACKAGE+'/.DefaultLauncher'), flush=True)
     time.sleep(8)
@@ -301,10 +334,11 @@ def main():
                 location_off = False
                 events.append({'t':row['t'], 'wall_ms':round(time.time()*1000),
                                'event':'system-location-restored'})
-            send_fix(row['position'], row['speed'])
+            gps.fix(row['position'], row['speed'], row['bearing'])
             if i == 6:
                 location = adb('shell', 'dumpsys', 'location')
                 (args.out / 'location-early.txt').write_text(location)
+                check_gps_clock(location)
                 fixes = re.findall(r'last location=Location\[(?:gps|fused) (-?[\d.]+),(-?[\d.]+)',location)
                 assert any(meters(plan['path'][0],[float(lon),float(lat)])>50
                            for lat,lon in fixes), 'Emulator GPS coordinates did not move'
@@ -322,8 +356,12 @@ def main():
                     screenshot(args.out, f'turn-{j+1:02d}-{turn["direction"]}')
                     shown_turns.add(j)
         # Allow normal live matching and partial-turn retries to finish, without forcing matches.
-        print('Waiting 45 seconds for normal matching retries', flush=True)
-        time.sleep(45)
+        gps.fix(plan['rows'][-1]['position'], 0, plan['rows'][-1]['bearing'])
+        # The system Location-off dialog can remain after Location is restored.
+        # Dismiss it so the final map and car are visible in the evidence.
+        adb('shell','input','keyevent','KEYCODE_BACK')
+        print('Waiting 60 seconds for normal matching retries', flush=True)
+        time.sleep(60)
         screenshot(args.out, 'finished-live')
         dump_ui(args.out, 'finished-ui')
         logs = adb('logcat', '-d')

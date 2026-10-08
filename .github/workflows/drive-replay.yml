@@ -43,6 +43,8 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Install emulator GPS client dependencies
+        run: python3 -m pip install grpcio==1.71.0 protobuf==6.30.2
       - name: Replay GPS through the actual release tracking service
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
@@ -52,6 +54,7 @@ jobs:
           profile: pixel_2
           disk-size: ${{ matrix.api == '37.0' && '4G' || '' }}
           emulator-boot-timeout: 300
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -grpc 8554 ${{ matrix.api == 31 && '-feature -GnssGrpcV1' || '' }}
           script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/Beta19.apk" --out "$RUNNER_TEMP/drive-evidence"
       - name: Save driving data, screenshots and diagnostics
         if: always()
