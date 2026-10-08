@@ -1,11 +1,12 @@
-# Road Conquest 1.0 Beta 22
+# Road Conquest 1.0 Beta 23
 
-- Give older unresolved corner and road-matching gaps a chance to retry during spare matching batches, including GPS points that have no scheduled backoff. The freshest drive still gets the first matching batch.
-- Use the existing indexed SQLite matching queue without an unnecessary sort. Add regression tests for competing older and newer gaps and the empty-queue case.
-- Retain Beta 21's expanded approach/exit GPS context for turns, while preserving the ten-fix OSRM request limit, confidence and snap-distance safeguards, detour rejection, and separate-trip boundaries.
-- Preserve all existing local road data, mileage, achievements, verified-scoring rules, and GPS sampling rates. Do not infer connections across ambiguous intersections.
-- Retain minified-app startup checks, the established release signing identity, and fully embedded native MapLibre debug symbols plus R8 mapping in the Play bundle.
+- Recover from stalled high-accuracy Android location delivery while the foreground tracking service remains active: check for two minutes without usable GPS callbacks and retry the location-provider registration with a five-minute cooldown.
+- Ignore normal GPS updates, deliberately paused tracking and disabled Android Location when deciding whether to recover; stop the lightweight check when tracking stops. Do not change driving-speed filters, mileage, fog rendering, matcher confidence thresholds, or map geometry acceptance.
+- Preserve the Beta 22 fairness improvement for retrying older unmatched turns. Record app version and version code in future driving-data exports so GPS gaps can be correlated with the exact installed build.
+- Retain existing local history, signed-release identity, startup-crash repair, and complete native debug symbols and R8 mapping embedded in the Play bundle.
 
-Android version code is 48. Android 12 or newer is required. Install the signed APK over the existing version to retain local history. Do not uninstall or clear app storage.
+**Limit:** No update can reconstruct roads for a period with no stored GPS evidence. Android can also stop or restrict an entire foreground service, in which case this in-service recovery check cannot run; grant precise all-the-time location and unrestricted battery use for reliable background tracking.
 
-Upload only the signed `RoadConquest-1.0-beta.22.aab` from GitHub Releases to Google Play. The full native symbols and R8 mapping are embedded. The app ID and signing key are unchanged.
+Android version code is 49. Android 12 or newer is required. Install the signed APK over the previous version to retain local driving history. Do not uninstall or clear app data.
+
+For Google Play, upload only the signed `RoadConquest-1.0-beta.23.aab` from GitHub Releases. Its full native symbols and R8 mapping are embedded. The app ID and permanent signing key are unchanged.
