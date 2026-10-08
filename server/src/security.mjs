@@ -57,5 +57,3 @@ export function createSessionToken() {
 export function hashSessionToken(token) {
   return createHash("sha256").update(token, "utf8").digest();
 }
-
-export const PASSWORD_RULES = Object.freeze({ min: PASSWORD_MIN, max: PASSWORD_MAX });

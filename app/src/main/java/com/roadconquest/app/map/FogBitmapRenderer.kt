@@ -426,7 +426,6 @@ object FogBitmapRenderer {
 
     const val ROAD_CLEAR_M = 50f * 0.3048f
     const val ROAD_FULL_M = 1500f * 0.3048f
-    const val LOCATION_CLEAR_M = ROAD_CLEAR_M
     const val LOCATION_FULL_M = ROAD_FULL_M
     const val MAX_FOG_ALPHA = 0.80f
     // Confirmed/pending blue roads stay visible farther out than the cleared fog corridor.

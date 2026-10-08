@@ -38,9 +38,10 @@ class AchievementsActivity : Activity() {
         setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
         WindowCompat.enableEdgeToEdge(window)
+        val lightSystemBars = !Appearance.isDark(this)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !Appearance.isDark(this@AchievementsActivity)
-            isAppearanceLightNavigationBars = !Appearance.isDark(this@AchievementsActivity)
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_achievements)
         val root = findViewById<android.view.View>(R.id.achievementsRoot)

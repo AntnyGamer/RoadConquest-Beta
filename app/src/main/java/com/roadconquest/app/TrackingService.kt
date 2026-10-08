@@ -72,6 +72,7 @@ class TrackingService : Service(), LocationListener {
     @Volatile private var ready = false
     private var providerReceiverRegistered = false
     private var batteryReceiverRegistered = false
+    private var locationUpdatesRegistered = false
     private var lowestBatteryPercentSeen = 101
     private var lastNotificationLocationEnabled: Boolean? = null
     private val notificationManager by lazy(LazyThreadSafetyMode.NONE) {
@@ -96,12 +97,13 @@ class TrackingService : Service(), LocationListener {
     private val providerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!ready) return
-            if (locationManager.isLocationEnabled) {
+            val locationEnabled = locationManager.isLocationEnabled
+            if (locationEnabled) {
                 requestLocations()
             } else {
                 queueFinalMatchingFlush()
             }
-            refreshForegroundNotification()
+            refreshForegroundNotification(locationEnabled)
             sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
         }
     }
@@ -334,15 +336,15 @@ class TrackingService : Service(), LocationListener {
     // Keep the existing registration while Location is off so the provider can resume when
     // the user turns Location back on; re-registering while disabled can lose that callback.
     override fun onProviderDisabled(provider: String) {
-        if (ready) {
-            sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
-            // No more fixes may arrive while Android Location is off. Flush any queued
-            // accepted fixes first, then give unresolved corner/end-of-drive intervals a final
-            // matcher pass. A single provider handoff does not need this.
-            if (!locationManager.isLocationEnabled) queueFinalMatchingFlush()
-        }
-        if (ready && locationManager.isLocationEnabled && LocationProviders.preferred(locationManager) != null) {
-            requestLocations()
+        if (!ready) return
+        sendUiBroadcast(ACTION_TRACKING_STATE_CHANGED)
+        // No more fixes may arrive while Android Location is off. Flush any queued
+        // accepted fixes first, then give unresolved corner/end-of-drive intervals a final
+        // matcher pass. A single provider handoff does not need this.
+        if (locationManager.isLocationEnabled) {
+            if (LocationProviders.available(locationManager).isNotEmpty()) requestLocations()
+        } else {
+            queueFinalMatchingFlush()
         }
     }
 
@@ -397,7 +399,10 @@ class TrackingService : Service(), LocationListener {
         providerReceiverRegistered = false
         if (batteryReceiverRegistered) runCatching { unregisterReceiver(batteryReceiver) }
         batteryReceiverRegistered = false
-        if (::locationManager.isInitialized) runCatching { locationManager.removeUpdates(this) }
+        if (locationUpdatesRegistered && ::locationManager.isInitialized) {
+            runCatching { locationManager.removeUpdates(this) }
+            locationUpdatesRegistered = false
+        }
         matchingExecutor.shutdownNow()
         if (::verifiedDriving.isInitialized) verifiedDriving.close()
         // Drain accepted samples even when the user stops tracking. They were copied before enqueueing.
@@ -410,7 +415,12 @@ class TrackingService : Service(), LocationListener {
 
     private fun requestLocations() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
-        runCatching { locationManager.removeUpdates(this) }
+        // A fresh service instance has nothing to unregister. Provider/mode changes still
+        // replace every active registration before selecting the currently enabled sources.
+        if (locationUpdatesRegistered) {
+            runCatching { locationManager.removeUpdates(this) }
+            locationUpdatesRegistered = false
+        }
         LocationProviders.registerHighAccuracy(locationManager, ::registerProvider)
     }
 
@@ -418,6 +428,7 @@ class TrackingService : Service(), LocationListener {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return false
         return try {
             locationManager.requestLocationUpdates(provider, highAccuracyLocationRequest, mainExecutor, this)
+            locationUpdatesRegistered = true
             true
         } catch (_: SecurityException) {
             false
@@ -671,9 +682,8 @@ class TrackingService : Service(), LocationListener {
         )
     }
 
-    private fun refreshForegroundNotification() {
+    private fun refreshForegroundNotification(locationEnabled: Boolean) {
         if (!isRunning) return
-        val locationEnabled = ::locationManager.isInitialized && locationManager.isLocationEnabled
         // Provider broadcasts can repeat while the visible notification state is unchanged.
         // Avoid rebuilding the same notification and sending another system-service IPC.
         if (lastNotificationLocationEnabled == locationEnabled) return

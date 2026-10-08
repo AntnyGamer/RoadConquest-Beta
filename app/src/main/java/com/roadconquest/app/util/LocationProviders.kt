@@ -4,17 +4,27 @@ import android.location.LocationManager
 import android.location.Location
 
 object LocationProviders {
-    /** Fused can combine satellite and other inputs; its name alone does not determine accuracy. */
-    fun preferred(locationManager: LocationManager): String? =
-        candidates(locationManager).firstOrNull()
-
-    /** Ordered alternatives used only if registering the preferred provider fails. */
-    fun fallback(locationManager: LocationManager): List<String> =
-        candidates(locationManager).drop(1)
+    /** Enabled providers in the exact preference order used for both preview and tracking. */
+    fun available(locationManager: LocationManager): List<String> {
+        val enabled = locationManager.getProviders(true)
+        val fused = LocationManager.FUSED_PROVIDER
+        return buildList(3) {
+            if (enabled.contains(fused)) add(fused)
+            if (LocationManager.GPS_PROVIDER != fused && enabled.contains(LocationManager.GPS_PROVIDER)) {
+                add(LocationManager.GPS_PROVIDER)
+            }
+            if (LocationManager.NETWORK_PROVIDER != fused &&
+                LocationManager.NETWORK_PROVIDER != LocationManager.GPS_PROVIDER &&
+                enabled.contains(LocationManager.NETWORK_PROVIDER)
+            ) {
+                add(LocationManager.NETWORK_PROVIDER)
+            }
+        }
+    }
 
     /** Request both precise sources by default, with network only when neither registers. */
     fun registerHighAccuracy(locationManager: LocationManager, register: (String) -> Boolean) {
-        val enabled = candidates(locationManager)
+        val enabled = available(locationManager)
         var registered = false
         for (provider in enabled) {
             if (provider != LocationManager.NETWORK_PROVIDER && register(provider)) registered = true
@@ -58,23 +68,6 @@ object LocationProviders {
         if (!previous.hasAccuracy()) return true
         if (elapsed == 0L) return candidate.accuracy < previous.accuracy
         return candidate.provider == previous.provider || candidate.accuracy <= previous.accuracy
-    }
-
-    private fun candidates(locationManager: LocationManager): List<String> {
-        val enabled = locationManager.getProviders(true)
-        val fused = LocationManager.FUSED_PROVIDER
-        return buildList(3) {
-            if (enabled.contains(fused)) add(fused)
-            if (LocationManager.GPS_PROVIDER != fused && enabled.contains(LocationManager.GPS_PROVIDER)) {
-                add(LocationManager.GPS_PROVIDER)
-            }
-            if (LocationManager.NETWORK_PROVIDER != fused &&
-                LocationManager.NETWORK_PROVIDER != LocationManager.GPS_PROVIDER &&
-                enabled.contains(LocationManager.NETWORK_PROVIDER)
-            ) {
-                add(LocationManager.NETWORK_PROVIDER)
-            }
-        }
     }
 
     private const val MAX_MEASURED_SPEED_ACCURACY_MPS = 4f

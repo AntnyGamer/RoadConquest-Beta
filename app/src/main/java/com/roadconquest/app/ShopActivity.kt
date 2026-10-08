@@ -40,9 +40,10 @@ class ShopActivity : Activity() {
         setTheme(Appearance.themeRes(this))
         super.onCreate(savedInstanceState)
         WindowCompat.enableEdgeToEdge(window)
+        val lightSystemBars = !Appearance.isDark(this)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !Appearance.isDark(this@ShopActivity)
-            isAppearanceLightNavigationBars = !Appearance.isDark(this@ShopActivity)
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
         }
         setContentView(R.layout.activity_shop)
         applyInsets()

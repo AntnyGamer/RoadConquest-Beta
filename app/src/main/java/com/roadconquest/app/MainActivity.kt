@@ -966,20 +966,18 @@ class MainActivity : Activity() {
     private fun showFreshCachedLocation() {
         if (Prefs.isDeviceDataDeletionPending(this) || Prefs.isTrackingPaused(this)) return
         if (!hasLocationPermission() || !::locationManager.isInitialized || !locationManager.isLocationEnabled) return
-        val providers = buildList {
-            LocationProviders.preferred(locationManager)?.let(::add)
-            addAll(LocationProviders.fallback(locationManager))
-        }.distinct()
+        val providers = LocationProviders.available(locationManager)
         val cached = providers.mapNotNull { provider ->
-            try {
+            val location = try {
                 locationManager.getLastKnownLocation(provider)
             } catch (_: SecurityException) {
                 null // Permission may have been revoked after the earlier check.
             } catch (_: IllegalArgumentException) {
                 null // The provider may have disappeared.
+            } ?: return@mapNotNull null
+            location.takeIf {
+                isFreshLocation(it) && it.hasAccuracy() && it.accuracy <= MAX_PREVIEW_ACCURACY_M
             }
-        }.filter { location ->
-            isFreshLocation(location) && location.hasAccuracy() && location.accuracy <= MAX_PREVIEW_ACCURACY_M
         }
         val newest = cached.minByOrNull(::locationAgeMillis) ?: return
         val best = cached.filter { locationAgeMillis(it) <= locationAgeMillis(newest) + 2_000L }
