@@ -360,9 +360,17 @@ class OsrmMatcher(
         for (index in 0 until ordered.lastIndex) {
             val left = ordered[index]
             val right = ordered[index + 1]
+            // Unnamed roads have no trustworthy name identity. Only bridge a short,
+            // nearly collinear seam with high confidence on both sides; never guess a turn.
+            val unnamedBridge = left.countTowardsRoads && right.countTowardsRoads &&
+                left.reference.isBlank() && right.reference.isBlank() &&
+                RoadGrouping.normalizeName(left.name).isEmpty() &&
+                RoadGrouping.normalizeName(right.name).isEmpty() &&
+                left.confidence >= MIN_UNNAMED_BRIDGE_CONFIDENCE &&
+                right.confidence >= MIN_UNNAMED_BRIDGE_CONFIDENCE
             if (left.confidence < MIN_ACCEPTABLE_CONFIDENCE ||
                 right.confidence < MIN_ACCEPTABLE_CONFIDENCE ||
-                !sameMergeIdentity(left, right)
+                (!sameMergeIdentity(left, right) && !unnamedBridge)
             ) continue
 
             val leftPoint = points.indexOfLast { it.timestampMillis == left.lastTimestamp }
@@ -398,10 +406,27 @@ class OsrmMatcher(
                 ) > snapToleranceMeters(to, inferredSpeedMps)
             ) continue
 
+            if (connectorMeters <= DUPLICATE_POINT_TOLERANCE_M) {
+                // The snapped pieces already meet; there is no road distance to synthesize.
+                resolved[to.id] = minOf(left.confidence, right.confidence)
+                continue
+            }
             val rawBearing = initialBearingDegrees(from, to)
             val connectorBearing = coordinateBearingDegrees(start, end)
             if (bearingDifferenceDegrees(rawBearing, connectorBearing) > MAX_SPLIT_BRIDGE_BEARING_DIFFERENCE_DEGREES) {
                 continue
+            }
+            if (unnamedBridge) {
+                val before = leftCoordinates.getJSONArray(leftCoordinates.length() - 2)
+                val after = rightCoordinates.getJSONArray(1)
+                if (connectorMeters > MAX_UNNAMED_BRIDGE_M ||
+                    coordinateDistanceMeters(before, start) < MIN_UNNAMED_DIRECTION_M ||
+                    coordinateDistanceMeters(end, after) < MIN_UNNAMED_DIRECTION_M ||
+                    bearingDifferenceDegrees(coordinateBearingDegrees(before, start), connectorBearing) >
+                        MAX_UNNAMED_BRIDGE_BEARING_DEGREES ||
+                    bearingDifferenceDegrees(connectorBearing, coordinateBearingDegrees(end, after)) >
+                        MAX_UNNAMED_BRIDGE_BEARING_DEGREES
+                ) continue
             }
 
             roads += MatchedRoad(
@@ -593,6 +618,10 @@ class OsrmMatcher(
         private const val SPLIT_BRIDGE_DISTANCE_FACTOR = 1.35
         private const val SPLIT_BRIDGE_DISTANCE_PAD_M = 8.0
         private const val MAX_SPLIT_BRIDGE_BEARING_DIFFERENCE_DEGREES = 30.0
+        private const val MIN_UNNAMED_BRIDGE_CONFIDENCE = 0.8
+        private const val MAX_UNNAMED_BRIDGE_M = 18.0
+        private const val MIN_UNNAMED_DIRECTION_M = 5.0
+        private const val MAX_UNNAMED_BRIDGE_BEARING_DEGREES = 20.0
         private const val MIN_BEARING_GUIDANCE_SPEED_MPS = 4f
         private const val MIN_BEARING_EVIDENCE_DISTANCE_M = 8.0
         private const val BEARING_ACCURACY_DISTANCE_FACTOR = 0.75
