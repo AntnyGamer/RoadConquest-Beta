@@ -17,7 +17,9 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.location.LocationRequest
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -55,6 +57,27 @@ class TrackingService : Service(), LocationListener {
     // Accessed only on the matching executor; rebuilt from persistent deadlines after every run.
     private var deferredRetry: ScheduledFuture<*>? = null
     private val backlogContinuationScheduled = AtomicBoolean(false)
+    private val locationMonitorHandler = Handler(Looper.getMainLooper())
+    private var locationMonitorStarted = false
+    private var lastUsableLocationCallbackElapsedMs = 0L
+    private var lastLocationRecoveryElapsedMs = 0L
+    private val locationMonitor = object : Runnable {
+        override fun run() {
+            if (!ready) return
+            val now = SystemClock.elapsedRealtime()
+            // Recover stalled fused/GPS subscriptions while the foreground service is alive.
+            // Never repeatedly restart an active receiver or interfere when Location is off.
+            if (!Prefs.isTrackingPaused(this@TrackingService) &&
+                ::locationManager.isInitialized &&
+                runCatching { locationManager.isLocationEnabled }.getOrDefault(false) &&
+                shouldRecoverLocationUpdates(now, lastUsableLocationCallbackElapsedMs, lastLocationRecoveryElapsedMs)
+            ) {
+                lastLocationRecoveryElapsedMs = now
+                requestLocations()
+            }
+            locationMonitorHandler.postDelayed(this, LOCATION_MONITOR_CHECK_MS)
+        }
+    }
     // Coalesce duplicate provider/mode callbacks while a final Location-off flush is queued.
     private val finalMatchingFlushScheduled = AtomicBoolean(false)
     private var lastObserved: Location? = null
@@ -193,6 +216,13 @@ class TrackingService : Service(), LocationListener {
         }
         if (!ready) return START_NOT_STICKY
         requestLocations()
+        if (!locationMonitorStarted) {
+            locationMonitorStarted = true
+            val now = SystemClock.elapsedRealtime()
+            lastUsableLocationCallbackElapsedMs = now
+            lastLocationRecoveryElapsedMs = now - LOCATION_RECOVERY_COOLDOWN_MS
+            locationMonitorHandler.postDelayed(locationMonitor, LOCATION_MONITOR_CHECK_MS)
+        }
         matchingExecutor.execute {
             if (ready) maybeRunMatching(force = true)
         }
@@ -201,6 +231,9 @@ class TrackingService : Service(), LocationListener {
 
     override fun onLocationChanged(location: Location) {
         if (!ready || Prefs.isTrackingPaused(this) || !isFreshLocation(location)) return
+        if (location.hasAccuracy() && location.accuracy <= MAX_ACCURACY_M) {
+            lastUsableLocationCallbackElapsedMs = SystemClock.elapsedRealtime()
+        }
         // Verification consumes its independent live GPS stream; consent never selects tracking quality.
         verifiedDriving.offer(location)
         val previous = lastObserved
@@ -395,6 +428,8 @@ class TrackingService : Service(), LocationListener {
         // Flip readiness before shutting down the scheduler so an in-flight matcher cannot
         // enqueue more work while teardown is in progress.
         ready = false
+        locationMonitorHandler.removeCallbacks(locationMonitor)
+        locationMonitorStarted = false
         if (providerReceiverRegistered) runCatching { unregisterReceiver(providerReceiver) }
         providerReceiverRegistered = false
         if (batteryReceiverRegistered) runCatching { unregisterReceiver(batteryReceiver) }
@@ -741,6 +776,14 @@ class TrackingService : Service(), LocationListener {
         private const val LOCATION_MIN_UPDATE_INTERVAL_MS = 1_500L
         // Require time between updates, not movement: stopped cars still need fresh live fixes.
         private const val LOCATION_MIN_DISTANCE_M = 0f
+        private const val LOCATION_MONITOR_CHECK_MS = 60_000L
+        private const val LOCATION_STALE_AFTER_MS = 2 * 60_000L
+        private const val LOCATION_RECOVERY_COOLDOWN_MS = 5 * 60_000L
+
+        internal fun shouldRecoverLocationUpdates(now: Long, lastFix: Long, lastRecovery: Long): Boolean =
+            now >= lastFix && now >= lastRecovery &&
+                now - lastFix >= LOCATION_STALE_AFTER_MS &&
+                now - lastRecovery >= LOCATION_RECOVERY_COOLDOWN_MS
         private const val MAX_ACCURACY_M = 50f
         private const val MAX_PREVIEW_ACCURACY_M = 100f
         private const val MIN_DRIVING_SPEED_MPS = 2.2f
