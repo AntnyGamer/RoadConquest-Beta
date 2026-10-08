@@ -153,7 +153,13 @@ jobs:
             cp "$symbol_so" "$metadata_dir/$abi/libmaplibre.so.dbg"
           done
 
-          (cd "$metadata_root" && zip -q -r "$GITHUB_WORKSPACE/$aab" BUNDLE-METADATA)
+          # Android App Bundles forbid explicit ZIP directory entries. zip -r adds
+          # entries such as BUNDLE-METADATA/; omit them with -D.
+          (cd "$metadata_root" && zip -q -D -r "$GITHUB_WORKSPACE/$aab" BUNDLE-METADATA)
+          if unzip -Z1 "$aab" | grep -E '/$'; then
+            echo "::error::The app bundle contains forbidden ZIP directory entries."
+            exit 1
+          fi
           for abi in armeabi-v7a arm64-v8a x86 x86_64; do
             unzip -Z1 "$aab" | grep -qx "BUNDLE-METADATA/com.android.tools.build.debugsymbols/$abi/libmaplibre.so.dbg"
           done
@@ -505,6 +511,10 @@ jobs:
           jarsigner -verify "$out/RoadConquest-$version.aab" | tee "$RUNNER_TEMP/roadconquest-aab-verify.txt"
           if ! grep -qx 'jar verified\.' "$RUNNER_TEMP/roadconquest-aab-verify.txt"; then
             echo "::error::The Play upload AAB is not signed and verified."
+            exit 1
+          fi
+          if unzip -Z1 "$out/RoadConquest-$version.aab" | grep -E '/$'; then
+            echo "::error::Signed AAB contains forbidden ZIP directory entries; Google Play would reject it."
             exit 1
           fi
           bundle_cert=$(keytool -printcert -jarfile "$out/RoadConquest-$version.aab" | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
