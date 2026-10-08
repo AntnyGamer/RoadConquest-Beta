@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.location.LocationManager
 import android.location.Location
+import android.os.Build
 import com.roadconquest.app.util.LocationProviders
 import org.junit.Assert.*
 import org.junit.Test
@@ -127,7 +128,7 @@ class LocationProviderRecoveryTest {
         }
     }
 
-    @Test fun serviceStartedWhileLocationIsOffWaitsForFirstFixInsteadOfStopping() {
+    @Test fun serviceStartedWhileLocationIsOffFollowsPlatformForegroundServiceRules() {
         val app = RuntimeEnvironment.getApplication()
         Shadows.shadowOf(app).grantPermissions(
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -141,16 +142,22 @@ class LocationProviderRecoveryTest {
         val service = controller.get()
         fun field(name: String) = TrackingService::class.java.getDeclaredField(name).apply { isAccessible = true }
         try {
-            assertFalse(Shadows.shadowOf(service).isStoppedBySelf)
-            assertTrue(field("ready").getBoolean(service))
-            assertNotNull(Shadows.shadowOf(service).lastForegroundNotification)
-            assertEquals(android.app.Service.START_STICKY, service.onStartCommand(Intent(), 0, 1))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                assertTrue(Shadows.shadowOf(service).isStoppedBySelf)
+                assertFalse(field("ready").getBoolean(service))
+                assertNull(Shadows.shadowOf(service).lastForegroundNotification)
+            } else {
+                assertFalse(Shadows.shadowOf(service).isStoppedBySelf)
+                assertTrue(field("ready").getBoolean(service))
+                assertNotNull(Shadows.shadowOf(service).lastForegroundNotification)
+                assertEquals(android.app.Service.START_STICKY, service.onStartCommand(Intent(), 0, 1))
 
-            shadow.setLocationEnabled(true)
-            shadow.setProviderEnabled("gps", true)
-            val receiver = field("providerReceiver").get(service) as BroadcastReceiver
-            receiver.onReceive(service, Intent(LocationManager.MODE_CHANGED_ACTION))
-            assertTrue(service in shadow.getLocationUpdateListeners("gps"))
+                shadow.setLocationEnabled(true)
+                shadow.setProviderEnabled("gps", true)
+                val receiver = field("providerReceiver").get(service) as BroadcastReceiver
+                receiver.onReceive(service, Intent(LocationManager.MODE_CHANGED_ACTION))
+                assertTrue(service in shadow.getLocationUpdateListeners("gps"))
+            }
         } finally {
             controller.destroy()
         }
