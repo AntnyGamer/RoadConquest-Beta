@@ -401,11 +401,12 @@ class MapRenderer(
 
     fun resumeViewport(reloadRoads: Boolean) {
         if (destroyed) return
-        viewportActive = true
-        updateCarLayer()
-        mainHandler.removeCallbacks(expireLocation)
-        val now = SystemClock.elapsedRealtime()
-        liveLocation.current(now)?.let { mainHandler.postDelayed(expireLocation, it.expiresAt - now) }
+        if (!viewportActive) {
+            viewportActive = true
+            updateCarLayer()
+            val now = SystemClock.elapsedRealtime()
+            liveLocation.current(now)?.let { mainHandler.postDelayed(expireLocation, it.expiresAt - now) }
+        }
         if (reloadRoads) loadedRoadBounds = null
         loadedPlaceBounds = null
         // onResume runs just before the window becomes visible. Arming the frame callback there
