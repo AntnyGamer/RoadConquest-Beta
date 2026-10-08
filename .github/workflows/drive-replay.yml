@@ -1,0 +1,62 @@
+name: Published APK drive replay
+on:
+  push:
+    branches: [perf/battery-and-rendering-review]
+    paths:
+      - .github/workflows/drive-replay.yml
+      - tools/emulator-drive-replay.py
+      - tools/fixtures/philadelphia-drive.json
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  drive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [31, '37.0']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Download the published signed Beta19 APK
+        run: |
+          curl --fail --location --retry 3 'https://github.com/AntnyGamer/RoadConquest-Beta/releases/download/v1.0-beta.19/RoadConquest-1.0-beta.19.apk' -o "$RUNNER_TEMP/Beta19.apk"
+          echo "bca184bb8df4185edb9ecadb47fce670b9af4d50fdff957e1e08dd0f711c4a62  $RUNNER_TEMP/Beta19.apk" | sha256sum -c -
+      - name: Update Android 37 command-line tools
+        if: matrix.api == '37.0'
+        run: |
+          set -euo pipefail
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'cmdline-tools;latest' > /dev/null
+          install_status=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$install_status" -eq 0
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest-2" ]; then
+            rm -rf "$ANDROID_HOME/cmdline-tools/latest"
+            mv "$ANDROID_HOME/cmdline-tools/latest-2" "$ANDROID_HOME/cmdline-tools/latest"
+          fi
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Replay GPS through the actual release tracking service
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disk-size: ${{ matrix.api == '37.0' && '4G' || '' }}
+          emulator-boot-timeout: 300
+          script: python3 tools/emulator-drive-replay.py --apk "$RUNNER_TEMP/Beta19.apk" --out "$RUNNER_TEMP/drive-evidence"
+      - name: Save driving data, screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: drive-replay-api-${{ matrix.api }}
+          path: ${{ runner.temp }}/drive-evidence/
+          retention-days: 14
