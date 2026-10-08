@@ -91,6 +91,18 @@ class TrackingRepositoryTest {
         assertTrue(repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0).isEmpty())
     }
 
+    @Test fun oldUnmatchedEvidenceExpiresFromPreviewButRemainsRetryable() {
+        val ids = listOf(
+            point(1_000_000L, lon = -74.0),
+            point(1_003_000L, lon = -73.9999)
+        )
+        assertEquals(1, repository.getPendingRouteInBounds(41.0, -73.0, 39.0, -75.0).size)
+        assertTrue(repository.getPendingRouteInBounds(
+            41.0, -73.0, 39.0, -75.0, visibleSinceMillis = 1_003_001L
+        ).isEmpty())
+        assertEquals(ids, repository.loadMatchingWindow().points.map { it.id })
+    }
+
     @Test fun recordedRouteNeverConnectsSeparateTripsOrMissingRawSamples() {
         point(1_000_000L)
         point(1_003_000L, lon = -73.9999)
@@ -127,7 +139,7 @@ class TrackingRepositoryTest {
 
         val retry = repository.loadMatchingWindow(limit = com.roadconquest.app.matching.OsrmMatcher.MAX_MATCH_POINTS)
         assertEquals(setOf(ids[2]), retry.markableIds)
-        assertEquals(listOf(ids[1], ids[2], ids[3], ids[4]), retry.points.map { it.id })
+        assertEquals(listOf(ids[0], ids[1], ids[2], ids[3], ids[4]), retry.points.map { it.id })
     }
 
     @Test fun finalizationMakesDeferredTurnPointsImmediatelyEligible() {
