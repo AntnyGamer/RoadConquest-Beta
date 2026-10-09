@@ -48,8 +48,7 @@ internal object RoadGrouping {
      * without applying risky language-specific street-name abbreviation rules.
      */
     fun normalizeReferences(reference: String): Set<String> =
-        reference.split(';')
-            .asSequence()
+        reference.splitToSequence(';')
             .map {
                 Normalizer.normalize(it.trim(), Normalizer.Form.NFKC)
                     .uppercase(Locale.ROOT)
