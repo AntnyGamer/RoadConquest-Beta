@@ -75,8 +75,26 @@ internal class FogGeoRaster private constructor(
          * rectangles snap to the world origin at 32 bitmap-pixel intervals. A
          * typical capture covers about two to four screens, including rotation.
          */
-        fun around(latitude: Double, longitude: Double, zoom: Double, size: Int): FogGeoRaster {
-            val step = WORLD_METERS / (512.0 * 2.0.pow(floor(zoom).coerceIn(1.0, 21.0) - 1.0))
+        fun around(
+            latitude: Double, longitude: Double, zoom: Double, size: Int,
+            viewportWidth: Int = 0, viewportHeight: Int = 0,
+            viewportMetersPerPixel: Double = 0.0
+        ): FogGeoRaster {
+            var step = WORLD_METERS / (512.0 * 2.0.pow(floor(zoom).coerceIn(1.0, 21.0) - 1.0))
+            if (viewportWidth > 0 && viewportHeight > 0 &&
+                viewportMetersPerPixel.isFinite() && viewportMetersPerPixel > 0.0
+            ) {
+                // A north-up Mercator raster must also cover the diagonal of a
+                // rotated portrait viewport, plus pan slack. Raster side length
+                // formerly matched only ~1024 screen pixels at integer zoom, so
+                // tall 1500+ px phones exposed the fallback world image on pan.
+                val diagonalPixels = hypot(viewportWidth.toDouble(), viewportHeight.toDouble())
+                val requiredStep = diagonalPixels * viewportMetersPerPixel * 1.4 /
+                    (size - 64).coerceAtLeast(1)
+                // Only grow by powers of two to avoid resizing/flashing during
+                // the fractional stages of a pinch-zoom gesture.
+                while (step < requiredStep) step *= 2.0
+            }
             val cx = RADIUS * Math.toRadians(longitude)
             val cy = RADIUS * ln(tan(PI / 4 + Math.toRadians(latitude.coerceIn(-MAX_LATITUDE, MAX_LATITUDE)) / 2))
             val snap = step * 32.0
