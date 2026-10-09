@@ -299,6 +299,7 @@ class MapRenderingDeviceTest {
                 assertTrue("The geographically anchored pinch backup is ready", regionalReady)
                 var inspectedPinchFrames = 0
                 var lostClearingFrames = 0
+                val darkFrameDetails = ArrayList<String>()
                 for (zoom in listOf(11.5, 15.0, 11.5, 15.0)) {
                     val completed = CountDownLatch(1)
                     val listener = MapLibreMap.OnCameraIdleListener { completed.countDown() }
@@ -321,6 +322,21 @@ class MapRenderingDeviceTest {
                                 inspectedPinchFrames++
                                 if (Color.red(pixel) < 220 || Color.green(pixel) < 220) {
                                     lostClearingFrames++
+                                    val currentStyle = map.style
+                                    fun opacity(id: String): Any? =
+                                        (currentStyle?.getLayer(id) as? RasterLayer)?.rasterOpacity?.value
+                                    fun state(field: String): Any? = MapRenderer::class.java
+                                        .getDeclaredField(field).apply { isAccessible = true }.get(renderer)
+                                    darkFrameDetails.add(
+                                        "target=$zoom camera=${map.cameraPosition.zoom} " +
+                                            "rgb=${Color.red(pixel)},${Color.green(pixel)},${Color.blue(pixel)} " +
+                                            "world=${opacity("roadconquest-world-fog-raster")} " +
+                                            "region=${opacity("roadconquest-regional-fog-raster")} " +
+                                            "detail=${opacity("roadconquest-fog-raster")} " +
+                                            "alternate=${opacity("roadconquest-fog-buffer-raster")} " +
+                                            "detailActive=${state("showingDetailedFog")} " +
+                                            "regionActive=${state("showingRegionalFog")}"
+                                    )
                                 }
                                 bitmap.recycle()
                             }
@@ -331,8 +347,8 @@ class MapRenderingDeviceTest {
                     assertEquals("Animated pinch reaches zoom $zoom", 0L, completed.count)
                 }
                 assertTrue("Sample the active pinch, not only idle frames", inspectedPinchFrames > 2)
-                assertEquals("An already visited mile never becomes opaque during a quick pinch",
-                    0, lostClearingFrames)
+                assertEquals("An already visited mile never becomes opaque during a quick pinch: " +
+                    darkFrameDetails.take(10).joinToString(" | "), 0, lostClearingFrames)
 
                 scenario.onActivity {
                     val ids = map.style!!.layers.map { it.id }
