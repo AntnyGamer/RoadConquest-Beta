@@ -641,10 +641,20 @@ object FogBitmapRenderer {
             MIN_VISIBLE_REVEAL_RADIUS_PX * request.screenScale
         )
         if (!radius.isFinite() || radius <= 0f) return
-        if (xy.filterIndexed { index, _ -> index % 2 == 0 }.min() - radius > canvas.width ||
-            xy.filterIndexed { index, _ -> index % 2 == 0 }.max() + radius < 0f ||
-            xy.filterIndexed { index, _ -> index % 2 == 1 }.min() - radius > canvas.height ||
-            xy.filterIndexed { index, _ -> index % 2 == 1 }.max() + radius < 0f
+        var minX = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY
+        var minY = Float.POSITIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
+        for (corner in 0..3) {
+            val x = xy[corner * 2]
+            val y = xy[corner * 2 + 1]
+            minX = minOf(minX, x)
+            maxX = maxOf(maxX, x)
+            minY = minOf(minY, y)
+            maxY = maxOf(maxY, y)
+        }
+        if (minX - radius > canvas.width || maxX + radius < 0f ||
+            minY - radius > canvas.height || maxY + radius < 0f
         ) return
 
         val paint = scratch.revealPaint
