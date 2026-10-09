@@ -7,11 +7,13 @@ cloud-textured fog map.
 [Source and issues](https://github.com/AntnyGamer/RoadConquest-Beta) ·
 [GNU AGPL v3 license](LICENSE)
 
-Beta 30 stabilizes the explored mile-cell fog during pinch-zooming and panning. It keeps
-one consistent fog tint and one active native fog raster rather than rephasing clouds or
-stacking two 80%-opaque layers. Regional views use sharper, location-anchored coverage,
-while subpixel mile-cells at worldwide zoom no longer appear as huge clear squares.
-The same permanent square exploration and 1,500-foot outer fade remain unchanged.
+Beta 30 completely rebuilds the fog as three layers of soft, dark-gray clouds
+geographically attached to the map. The cloud textures and permanently unlocked mile
+squares use the same Mercator raster coordinates, so camera pans, pinch zooms and
+rotations cannot move an explored clearing separately from the map. This release also
+removes the opacity-changing double-layer transition, improves the regional raster
+resolution and prevents a tiny explored mile from becoming a huge white world pixel.
+Existing exploration and its 1,500-foot outer transition remain unchanged.
 
 ## Install
 
