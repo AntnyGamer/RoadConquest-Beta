@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 23
+# Road Conquest 1.0 Beta 24
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -22,13 +22,16 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 49.
+This release uses Android application ID `com.roadconquest.app` and internal version code 50.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
 ## Explore
 
 - Recorded driving appears while matching is pending; confirmed road geometry then refines it.
+- Confirmed road segments recorded seconds apart can display a short, uniquely supported
+  intersection join instead of leaving a visual hole. This display-only join never adds
+  driving miles, road unlocks, or verified leaderboard credit.
 - Drive to save matched road lines and reveal the map. Accurate locations also reveal nearby
   places while walking or stopped, without adding driving miles.
 - Earn points from newly unlocked roads, achievements and first visits to towns, states/regions
@@ -208,7 +211,7 @@ ad failures never block the rest of the screen.
 Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
 complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
 collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
-advertising disclosure, and allow version code 49 for verified scoring. GitHub release publication
+advertising disclosure, and allow version code 50 for verified scoring. GitHub release publication
 builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
 Ad requests have their own network, memory, storage, and battery costs; this release retains the
 Beta 17 map/tracking optimizations but does not claim ads have zero overhead.

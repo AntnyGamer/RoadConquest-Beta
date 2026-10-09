@@ -24,6 +24,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
         fun prepare(roads: List<RoadRecord>): OverlayRoads {
             if (roads.isEmpty()) return EMPTY
             val segments = ArrayList<Segment>(roads.size)
+            val segmentFirstTimes = ArrayList<Long>(roads.size)
             val nodes = ArrayList<Node>(roads.size * 2)
             val buckets = HashMap<Cell, MutableList<Int>>(roads.size * 2)
             val lookupCell = Cell(0, 0, 0)
@@ -56,7 +57,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 return index
             }
 
-            fun addSegment(coordinates: DoubleArray) {
+            fun addSegment(coordinates: DoubleArray, firstUnlockedAt: Long) {
                 if (coordinates.size < 4) return
                 val startLatitude = coordinates[0]
                 val startLongitude = coordinates[1]
@@ -72,6 +73,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                     assignNode(endLatitude, endLongitude, startNode)
                 }
                 segments += Segment(coordinates, startNode, endNode)
+                segmentFirstTimes += firstUnlockedAt
             }
 
             for (road in roads) {
@@ -98,7 +100,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                             (currentLatitude - previous.getDouble(1)) * fraction
                         part.add(crossingLatitude)
                         part.add(boundary)
-                        addSegment(part.toArray())
+                        addSegment(part.toArray(), road.firstUnlockedAt)
                         part.clear()
                         part.add(crossingLatitude)
                         part.add(-boundary)
@@ -107,7 +109,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                     part.add(currentLongitude)
                     previous = current
                 }
-                addSegment(part.toArray())
+                addSegment(part.toArray(), road.firstUnlockedAt)
             }
             if (segments.isEmpty()) return EMPTY
 
@@ -122,6 +124,18 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             for (i in segments.indices) {
                 addAdjacent(segments[i].startNode, i)
                 addAdjacent(segments[i].endNode, i)
+            }
+
+            // Repair only confirmed, dangling road ends recorded seconds apart on the same
+            // drive. These are display-only links: no roads, miles or achievements are awarded.
+            // Snap to the intersection of the two already-matched centerline directions;
+            // never draw a long straight chord that cuts through the inside of a turn.
+            val originalSegmentCount = segments.size
+            appendSupportedJunctions(segments, segmentFirstTimes, nodes, degree)
+            // Give each synthetic segment the same graph-adjacency treatment as actual roads.
+            for (index in originalSegmentCount until segments.size) {
+                addAdjacent(segments[index].startNode, index)
+                addAdjacent(segments[index].endNode, index)
             }
 
             val output = DoubleBuffer((segments.sumOf { it.coordinates.size }).coerceAtLeast(16))
@@ -168,6 +182,133 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 if (!used[i]) walk(i, segments[i].startNode)
             }
             return OverlayRoads(output.toArray(), starts.copyOf(chainCount + 1))
+        }
+
+        /**
+         * The matcher can leave a short hole exactly where one named road becomes another,
+         * despite confirming both sides. Only join orphaned endpoints from the original
+         * time-ordered drive, with a unique nearby successor and intersecting centerlines.
+         * This is strictly a visual repair; no local or verified road credit is created.
+         */
+        private fun appendSupportedJunctions(
+            segments: MutableList<Segment>,
+            firstTimes: List<Long>,
+            nodes: List<Node>,
+            degree: IntArray
+        ) {
+            val originalSize = segments.size
+            val startsBySecond = HashMap<Long, MutableList<Int>>()
+            for (index in 0 until originalSize) {
+                if (degree[segments[index].startNode] != 1) continue
+                startsBySecond.getOrPut(firstTimes[index] / 1_000L) { ArrayList(2) } += index
+            }
+            val bestFrom = arrayOfNulls<JunctionCandidate>(originalSize)
+            val bestTo = arrayOfNulls<JunctionCandidate>(originalSize)
+            val secondFrom = DoubleArray(originalSize) { Double.POSITIVE_INFINITY }
+            val secondTo = DoubleArray(originalSize) { Double.POSITIVE_INFINITY }
+
+            fun offer(index: Int, candidate: JunctionCandidate, best: Array<JunctionCandidate?>, second: DoubleArray) {
+                val previous = best[index]
+                if (previous == null || candidate.distance < previous.distance) {
+                    second[index] = previous?.distance ?: second[index]
+                    best[index] = candidate
+                } else if (candidate.distance < second[index]) {
+                    second[index] = candidate.distance
+                }
+            }
+
+            for (from in 0 until originalSize) {
+                val left = segments[from]
+                if (degree[left.endNode] != 1) continue
+                val time = firstTimes[from]
+                // Bounded timestamp index: avoids quadratic work with years of unlocked roads.
+                for (second in time / 1_000L..time / 1_000L + 15L) {
+                    for (to in startsBySecond[second].orEmpty()) {
+                        if (to == from) continue
+                        val gapMs = firstTimes[to] - time
+                        if (gapMs !in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS) continue
+                        val right = segments[to]
+                        val distance = metersBetween(
+                            nodes[left.endNode].latitude, nodes[left.endNode].longitude,
+                            nodes[right.startNode].latitude, nodes[right.startNode].longitude
+                        )
+                        if (distance !in ENDPOINT_JOIN_TOLERANCE_M..MAX_SUPPORTED_JUNCTION_DISTANCE_M) continue
+                        val bend = supportedJunctionBend(left.coordinates, right.coordinates, distance) ?: continue
+                        val candidate = JunctionCandidate(from, to, distance, bend)
+                        offer(from, candidate, bestFrom, secondFrom)
+                        offer(to, candidate, bestTo, secondTo)
+                    }
+                }
+            }
+
+            for (from in 0 until originalSize) {
+                val candidate = bestFrom[from] ?: continue
+                if (bestTo[candidate.to] !== candidate ||
+                    secondFrom[from] - candidate.distance < MIN_UNIQUE_JUNCTION_MARGIN_M ||
+                    secondTo[candidate.to] - candidate.distance < MIN_UNIQUE_JUNCTION_MARGIN_M
+                ) continue
+                val left = segments[candidate.from]
+                val right = segments[candidate.to]
+                val end = nodes[left.endNode]
+                val start = nodes[right.startNode]
+                segments += Segment(
+                    doubleArrayOf(
+                        end.latitude, end.longitude, candidate.bendLatitude, candidate.bendLongitude,
+                        start.latitude, start.longitude
+                    ),
+                    left.endNode,
+                    right.startNode
+                )
+            }
+        }
+
+        private data class JunctionCandidate(
+            val from: Int,
+            val to: Int,
+            val distance: Double,
+            val bend: Pair<Double, Double>
+        ) {
+            val bendLatitude get() = bend.first
+            val bendLongitude get() = bend.second
+        }
+
+        private fun supportedJunctionBend(
+            left: DoubleArray, right: DoubleArray, directMeters: Double
+        ): Pair<Double, Double>? {
+            if (left.size < 4 || right.size < 4) return null
+            val aLat = left[left.size - 2]
+            val aLon = left.last()
+            val bLat = left[left.size - 4]
+            val bLon = left[left.size - 3]
+            val cLat = right[0]
+            val cLon = right[1]
+            val dLat = right[2]
+            val dLon = right[3]
+            val metersPerDegree = EARTH_RADIUS_M * PI / 180.0
+            val metersPerLongitude = metersPerDegree * cos(Math.toRadians((aLat + cLat) / 2.0))
+            if (metersPerLongitude <= 0.0) return null
+            val ux = (aLon - bLon) * metersPerLongitude
+            val uy = (aLat - bLat) * metersPerDegree
+            val vx = (dLon - cLon) * metersPerLongitude
+            val vy = (dLat - cLat) * metersPerDegree
+            if (hypot(ux, uy) < MIN_JUNCTION_DIRECTION_M ||
+                hypot(vx, vy) < MIN_JUNCTION_DIRECTION_M) return null
+            val wx = (cLon - aLon) * metersPerLongitude
+            val wy = (cLat - aLat) * metersPerDegree
+            val divisor = ux * vy - uy * vx
+            if (abs(divisor) < 0.01) return null
+            val approach = (wx * vy - wy * vx) / divisor
+            val exit = (wx * uy - wy * ux) / divisor
+            // The two centerline rays must actually meet ahead of the approach and behind
+            // the exit. Reject parallel roads, opposing traffic and fabricated shortcuts.
+            if (approach < 0.0 || exit > 0.0) return null
+            val toBend = hypot(approach * ux, approach * uy)
+            val fromBend = hypot(exit * vx, exit * vy)
+            if (toBend > MAX_SUPPORTED_JUNCTION_DISTANCE_M ||
+                fromBend > MAX_SUPPORTED_JUNCTION_DISTANCE_M ||
+                toBend + fromBend > directMeters * 1.5 + 8.0) return null
+            return (aLat + approach * uy / metersPerDegree) to
+                (aLon + approach * ux / metersPerLongitude)
         }
 
         private fun appendSegment(
@@ -266,6 +407,10 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
 
         private const val EARTH_RADIUS_M = 6_371_008.8
         private const val ENDPOINT_JOIN_TOLERANCE_M = 1.0
+        private const val MAX_SUPPORTED_JUNCTION_TIME_MS = 15_000L
+        private const val MAX_SUPPORTED_JUNCTION_DISTANCE_M = 30.0
+        private const val MIN_JUNCTION_DIRECTION_M = 4.0
+        private const val MIN_UNIQUE_JUNCTION_MARGIN_M = 3.0
         private const val DUPLICATE_ENDPOINT_M = 0.01
     }
 }
