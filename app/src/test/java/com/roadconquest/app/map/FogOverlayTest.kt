@@ -153,6 +153,53 @@ class FogOverlayTest {
         assertEquals(2, OverlayRoads.prepare(listOf(incoming, distantVisit)).starts.size)
     }
 
+    @Test fun interveningRoadVisitsRecoverTurnNotPresentInAggregateTimestamps() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val outgoing = junctionRoad("exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val roads = listOf(incoming, outgoing)
+        assertEquals(3, OverlayRoads.prepare(roads).starts.size)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            outgoing.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        val repaired = OverlayRoads.prepare(roads, visits)
+        assertEquals("The same-trip visit windows should join this genuine corner",
+            2, repaired.starts.size)
+        assertTrue(repaired.coordinates.size > 12)
+    }
+
+    @Test fun extraVisitCandidatesCannotRemoveAPreviouslyShownCorner() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val outgoing = junctionRoad("exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val roads = listOf(incoming, outgoing)
+        val original = OverlayRoads.prepare(roads)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            outgoing.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        val withVisits = OverlayRoads.prepare(roads, visits)
+        assertArrayEquals("Adding visit evidence may never displace an existing repair",
+            original.coordinates, withVisits.coordinates, 0.0)
+        assertArrayEquals(original.starts, withVisits.starts)
+    }
+
+    @Test fun unrelatedVisitWindowsDoNotCreateNewTurns() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val outgoing = junctionRoad("exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val roads = listOf(incoming, outgoing)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            outgoing.segmentId to listOf(2_060_000L to 2_065_000L)
+        )
+        assertEquals(3, OverlayRoads.prepare(roads, visits).starts.size)
+    }
+
     @Test fun distantTangentEvidenceCannotCreateAShortcut() {
         val approach = junctionRoad("long unsupported approach", 1_000_000L,
             -74.099800 to 40.861300, -74.099301 to 40.861521,

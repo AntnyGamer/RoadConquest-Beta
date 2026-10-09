@@ -32,6 +32,21 @@ class TrackingRepositoryTest {
             this.time = time
         })
 
+    @Test fun individualRoadVisitsRemainAvailableForVisualTurnRepair() {
+        val geometry = "[[-74.001,40.0],[-74.0,40.0002]]"
+        val first = MatchedRoad("Visit test", geometry, 1_000_000L, 1_005_000L, 0.99)
+        val second = first.copy(firstTimestamp = 2_000_000L, lastTimestamp = 2_005_000L)
+        repository.upsertRoads(listOf(first))
+        repository.upsertRoads(listOf(second))
+        val roads = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)
+        assertEquals(1, roads.size)
+        val visits = repository.getVisitWindowsForRoads(roads)[roads.single().segmentId]
+        assertNotNull(visits)
+        assertEquals(setOf(1_000_000L to 1_005_000L, 2_000_000L to 2_005_000L),
+            requireNotNull(visits).toSet())
+        assertTrue(repository.getVisitWindowsForRoads(emptyList()).isEmpty())
+    }
+
     @Test fun deletingHistoryClearsEverythingAndPreventsOldWorkersFromRestoringIt() {
         val context = RuntimeEnvironment.getApplication()
         val fix = Location("gps").apply {
