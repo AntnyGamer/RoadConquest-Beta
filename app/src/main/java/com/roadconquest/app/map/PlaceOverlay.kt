@@ -28,6 +28,7 @@ enum class PlaceOverlayMode(val kind: PlaceKind?, val label: String) {
 }
 
 data class PlaceOverlayInfo(
+    val key: String,
     val name: String,
     val kind: PlaceKind,
     val population: Long?,
