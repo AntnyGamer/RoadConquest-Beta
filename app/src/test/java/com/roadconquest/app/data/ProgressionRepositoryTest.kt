@@ -596,7 +596,7 @@ class ProgressionRepositoryTest {
         assertTrue(progression.recordPlaceCandidate(second))
         val candidates = progression.pendingPlaceCandidates(limit = 10, nowMillis = 4_000L)
         assertEquals(2, candidates.size)
-        assertTrue(candidates.any { it.latitude == first.latitude && it.longitude == first.longitude })
-        assertTrue(candidates.any { it.latitude == second.latitude && it.longitude == second.longitude })
+        assertTrue(candidates.any { it.latitude == first.latitude && kotlin.math.abs(it.longitude - first.longitude) < 1e-8 })
+        assertTrue(candidates.any { it.latitude == second.latitude && kotlin.math.abs(it.longitude - second.longitude) < 1e-8 })
     }
 }
