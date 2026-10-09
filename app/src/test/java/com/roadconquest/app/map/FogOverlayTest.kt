@@ -303,6 +303,29 @@ class FogOverlayTest {
         assertEquals(204, Color.alpha(rendered.getPixel(90, 90)))
     }
 
+    @Test fun neighboringCellsFadeAsOneRegionWithoutInternalGraySquareBands() {
+        val cells = request(metersPerPixel = 5.0).copy(
+            gridMode = true,
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.02, 0.01, 0.0, -0.01, 0.0, -0.01, -0.02,
+                0.01, 0.0, 0.01, 0.02, -0.01, 0.02, -0.01, 0.0
+            ),
+            gridScreen = doubleArrayOf(
+                160.0, 220.0, 360.0, 220.0, 360.0, 420.0, 160.0, 420.0,
+                360.0, 220.0, 560.0, 220.0, 560.0, 420.0, 360.0, 420.0
+            )
+        )
+        val fog = FogBitmapRenderer.render(cells)
+        for (x in listOf(250, 350, 360, 370, 470)) {
+            assertEquals("No fog seam inside the explored union", 0, Color.alpha(fog.getPixel(x, 320)))
+        }
+        val outer = listOf(250, 350, 360, 370, 470).map { Color.alpha(fog.getPixel(it, 180)) }
+        assertTrue("The outer fade must not show blocky bands above individual cells",
+            outer.max() - outer.min() <= 3)
+        assertTrue(outer.first() in 1..203)
+        assertEquals(204, Color.alpha(fog.getPixel(360, 100)))
+    }
+
     @Test fun mileGridIgnoresRoadOnlyClearingsAndAdjacentTilesHaveNoSeam() {
         val road = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
         val roadScreen = doubleArrayOf(0.0, 320.0, 640.0, 320.0)
