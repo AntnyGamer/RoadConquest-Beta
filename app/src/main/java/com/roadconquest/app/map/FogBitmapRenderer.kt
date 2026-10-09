@@ -137,18 +137,27 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             // Snap to the intersection of the two already-matched centerline directions;
             // never draw a long straight chord that cuts through the inside of a turn.
             val originalSegmentCount = segments.size
+            // Protect the original first-unlock connections before considering other visits.
+            // Mixing later visits into this pass could make a previously valid turn ambiguous.
             appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes, degree)
-            // Individual saved visits can reveal a corner driven between the earliest and
-            // latest visits. Run after the original repair: additional evidence must never
-            // invalidate a previously accepted visual connector.
-            if (segmentVisits != null) {
-                val occupied = HashSet<Int>()
-                for (index in originalSegmentCount until segments.size) {
+            val occupied = HashSet<Int>()
+            fun reserveConnectors(since: Int) {
+                for (index in since until segments.size) {
                     occupied += segments[index].startNode
                     occupied += segments[index].endNode
                 }
+            }
+            reserveConnectors(originalSegmentCount)
+            if (segmentVisits != null) {
+                // Saved visit intervals are stronger evidence than aggregate last-driven times.
+                // Add only unoccupied endpoints; never displace the original visible turns.
                 appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes,
                     degree, segmentVisits, occupied)
+            } else {
+                // On larger viewports or if visit retrieval fails, keep the later-drive
+                // fallback without allowing it to erase first-unlock connections.
+                appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes,
+                    degree, occupiedNodes = occupied, includeLastTimes = true)
             }
             // Give each synthetic segment the same graph-adjacency treatment as actual roads.
             for (index in originalSegmentCount until segments.size) {
@@ -216,7 +225,8 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             nodes: List<Node>,
             degree: IntArray,
             visits: List<List<Pair<Long, Long>>>? = null,
-            occupiedNodes: Set<Int> = emptySet()
+            occupiedNodes: Set<Int> = emptySet(),
+            includeLastTimes: Boolean = false
         ) {
             // Both passes inspect the original roads, never the already added connectors.
             val originalSize = firstTimes.size
@@ -230,7 +240,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                     }
                 } else {
                     startsBySecond.getOrPut(firstTimes[index] / 1_000L) { ArrayList(2) } += index
-                    if (lastTimes[index] != firstTimes[index]) {
+                    if (includeLastTimes && lastTimes[index] != firstTimes[index]) {
                         startsBySecond.getOrPut(lastTimes[index] / 1_000L) { ArrayList(2) } += index
                     }
                 }
@@ -258,7 +268,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 if (degree[left.endNode] != 1 || left.endNode in occupiedNodes) continue
                 // Normal pass remains identical; the additional pass pairs the end of one
                 // recorded visit with the beginning of another visit.
-                for (timeIndex in 0 until (visits?.get(from)?.size ?: 2)) {
+                for (timeIndex in 0 until (visits?.get(from)?.size ?: if (includeLastTimes) 2 else 1)) {
                     val time = if (visits == null) {
                         if (timeIndex == 0) firstTimes[from] else lastTimes[from]
                     } else visits[from][timeIndex].second
@@ -271,7 +281,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                                 val firstGap = firstTimes[to] - time
                                 val lastGap = lastTimes[to] - time
                                 firstGap in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS ||
-                                    lastGap in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS
+                                    (includeLastTimes && lastGap in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS)
                             } else {
                                 visits[to].any { (startedAt, _) ->
                                     startedAt - time in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS
