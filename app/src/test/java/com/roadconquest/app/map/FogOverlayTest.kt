@@ -445,11 +445,11 @@ class FogOverlayTest {
     }
 
     @Test fun wideZoomFogUsesSmallerUploadBitmaps() {
-        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(8.9))
-        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(9.0))
+        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(4.9))
+        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(5.0))
         assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(11.9))
         assertEquals(768, FogBitmapRenderer.bitmapDimensionForZoom(12.0))
-        assertTrue(FogBitmapRenderer.MIN_ROAD_ZOOM < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM)
+        assertTrue(FogBitmapRenderer.MIN_ROAD_ZOOM > FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM)
     }
 
     @Test fun fogAlphaIsExactlyEightyPercentAwayFromClearings() {
