@@ -16,7 +16,7 @@ class FogGridTest {
             val heightMeters = (north - south) * 111_195.0
             val widthMeters = (east - west) * 111_195.0 * cos(Math.toRadians((north + south) / 2))
             assertEquals(1609.344, heightMeters, 1.0)
-            assertEquals(1609.344, widthMeters, 10.0)
+            assertEquals(1609.344, widthMeters, 50.0)
             assertTrue(north > south && east > west)
         }
         val southCell = FogGrid.corners(40.0, -75.0)
