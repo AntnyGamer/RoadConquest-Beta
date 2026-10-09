@@ -1,6 +1,8 @@
 package com.roadconquest.app.matching
 
 import com.roadconquest.app.data.TrackPoint
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -10,6 +12,83 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37], manifest = Config.NONE)
 class OsrmMatcherTest {
+    @Test fun sharpTurnDoesNotRelaxGpsUncertainty() {
+        val turn = listOf(
+            TrackPoint(1L, 40.0, -74.00030, 3.8f, 8f, 0f, 100_000L, false),
+            TrackPoint(2L, 40.0, -74.00000, 3.8f, 8f, 0f, 103_000L, false),
+            TrackPoint(3L, 40.00030, -74.00000, 3.8f, 8f, 0f, 106_000L, false)
+        )
+        val straight = listOf(turn[0], turn[1],
+            turn[2].copy(latitude = 40.0, longitude = -73.99970))
+        MockWebServer().use { server ->
+            repeat(2) { server.enqueue(MockResponse().setBody("""{"code":"NoMatch"}""")) }
+            server.start()
+            val matcher = OsrmMatcher(server.url("/").toString().trimEnd('/'))
+            assertNull(matcher.match(turn))
+            assertEquals("10;10;10", server.takeRequest().requestUrl?.queryParameter("radiuses"))
+            assertNull(matcher.match(straight))
+            assertEquals("10;10;10", server.takeRequest().requestUrl?.queryParameter("radiuses"))
+        }
+    }
+
+    @Test fun normalGpsUncertaintyNeverOverridesPermanentSnapPlausibility() {
+        // A candidate 30+ m from the recorded route remains rejected despite high OSRM confidence.
+        val recorded = listOf(
+            TrackPoint(1L, 40.0, -74.00030, 3.8f, 8f, 0f, 100_000L, false),
+            TrackPoint(2L, 40.0, -74.00000, 3.8f, 8f, 0f, 103_000L, false),
+            TrackPoint(3L, 40.00030, -74.00000, 3.8f, 8f, 0f, 106_000L, false)
+        )
+        val response = """{"code":"Ok","tracepoints":[
+          {"matchings_index":0,"waypoint_index":0,"alternatives_count":0,"location":[-74.00030,40.00030]},
+          {"matchings_index":0,"waypoint_index":1,"alternatives_count":0,"location":[-74.00000,40.00030]},
+          {"matchings_index":0,"waypoint_index":2,"alternatives_count":0,"location":[-74.00000,40.00060]}],
+          "matchings":[{"confidence":0.99,"legs":[
+          {"steps":[{"name":"Wrong road","distance":25,"geometry":{"type":"LineString","coordinates":[[-74.00030,40.00030],[-74.00000,40.00030]]}}]},
+          {"steps":[{"name":"Wrong road","distance":33,"geometry":{"type":"LineString","coordinates":[[-74.00000,40.00030],[-74.00000,40.00060]]}}]}
+          ]}]}"""
+        assertNull(OsrmMatcher().parse(response, recorded))
+    }
+
+    @Test fun boundedUnmatchedCornerRetriesWithoutBearingConstraints() {
+        val coords = listOf(
+            "-74.0006,40.0", "-74.0003,40.0", "-74.0,40.0",
+            "-74.0,40.0003", "-74.0,40.0006"
+        )
+        val fixes = coords.mapIndexed { index, value ->
+            val (lon, lat) = value.split(',').map(String::toDouble)
+            TrackPoint(index + 101L, lat, lon, 3.8f, 9f, 0f,
+                100_000L + index * 3_000L, index != 2)
+        }
+        fun trace(group: Int, waypoint: Int, value: String) =
+            """{"matchings_index":$group,"waypoint_index":$waypoint,"alternatives_count":0,"location":[$value]}"""
+        fun leg(from: String, to: String) =
+            """{"steps":[{"name":"Known road","distance":30,"geometry":{"type":"LineString","coordinates":[[$from],[$to]]}}]}"""
+        val first = """{"code":"Ok","tracepoints":[
+            ${trace(0, 0, coords[0])},${trace(0, 1, coords[1])},null,
+            ${trace(1, 0, coords[3])},${trace(1, 1, coords[4])}],
+            "matchings":[{"confidence":0.95,"legs":[${leg(coords[0], coords[1])}]},
+            {"confidence":0.95,"legs":[${leg(coords[3], coords[4])}]}]}"""
+        val second = """{"code":"Ok","tracepoints":[
+            ${coords.mapIndexed { i, c -> trace(0, i, c) }.joinToString(",")}],
+            "matchings":[{"confidence":0.95,"legs":[
+            ${coords.zipWithNext().joinToString(",") { (a, b) -> leg(a, b) }}
+            ]}]}"""
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(first))
+            server.enqueue(MockResponse().setBody(second))
+            server.start()
+            val matched = requireNotNull(
+                OsrmMatcher(server.url("/").toString().trimEnd('/')).match(fixes)
+            )
+            assertEquals(2, server.requestCount)
+            assertEquals("10;10;10;10;10", server.takeRequest().requestUrl?.queryParameter("radiuses"))
+            assertNull("Only the retry should omit bearings",
+                server.takeRequest().requestUrl?.queryParameter("bearings"))
+            assertTrue(matched.matchedPointConfidences.containsKey(fixes[2].id))
+            assertTrue(matched.roads.isNotEmpty())
+        }
+    }
+
     @Test fun recordedTurnNeedsExitContextToMeetExistingConfidenceGate() {
         val fixture = org.json.JSONObject(requireNotNull(javaClass.classLoader)
             .getResourceAsStream("matching/turn17-replay.json")!!.bufferedReader().use { it.readText() })

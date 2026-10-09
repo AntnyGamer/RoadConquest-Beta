@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 26
+# Road Conquest 1.0 Beta 27
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -7,9 +7,9 @@ cloud-textured fog map.
 [Source and issues](https://github.com/AntnyGamer/RoadConquest-Beta) ·
 [GNU AGPL v3 license](LICENSE)
 
-Beta 26 reduces unnecessary native-map updates when no provisional road segments are visible
-and caches identical pending-road SQL text for faster refreshes. All previously verified turn
-fixes, GPS sampling, saved road data and unlocked-road scoring remain unchanged.
+Beta 27 improves short, GPS-supported cross-road joins and selectively retries confidently
+bracketed missing sharp-turn fixes without restrictive heading hints. It preserves the existing
+safe map-refresh optimizations, strict geometry checks and all stored road progress.
 
 ## Install
 
@@ -26,13 +26,16 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 52.
+This release uses Android application ID `com.roadconquest.app` and internal version code 53.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
 ## Explore
 
 - Recorded driving appears while matching is pending; confirmed road geometry then refines it.
+- A tightly bounded, GPS-supported connector can close a short split between differently named
+  roads; it does not grant extra unlocked roads. Certain short pending turns can be retried once
+  without bearing hints, while retaining confidence, snapped-distance and detour validation.
 - Confirmed road segments recorded seconds apart can display a short, uniquely supported
   intersection join instead of leaving a visual hole. This display-only join never adds
   driving miles, road unlocks, or verified leaderboard credit.
@@ -218,7 +221,7 @@ ad failures never block the rest of the screen.
 Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
 complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
 collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
-advertising disclosure, and allow version code 52 for verified scoring. GitHub release publication
+advertising disclosure, and allow version code 53 for verified scoring. GitHub release publication
 builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
 Ad requests have their own network, memory, storage, and battery costs; this release retains the
 Beta 17 map/tracking optimizations but does not claim ads have zero overhead.

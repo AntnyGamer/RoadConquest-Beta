@@ -146,6 +146,67 @@ class OsrmTurnTest {
         assertEquals(p2.toString(), coordinates.getJSONArray(1).toString())
     }
 
+    @Test fun shortNamedRoadTurnSeamUsesConfirmedEndpointsWithoutRoadCredit() {
+        // Translated, synthetic geometry with the same short turn/seam shape as the
+        // exported Flanders/Colonial drive. Never embed the user's private track in tests.
+        val entry = coord(-74.00044, 40.00020)
+        val before = coord(-74.00025, 40.00006)
+        val after = coord(-74.00010, 40.00002)
+        val exit = coord(-74.00002, 40.00017)
+        val snappedBefore = coord(-74.000255, 40.000055)
+        val snappedAfter = coord(-74.000000, 39.99998)
+        val result = requireNotNull(OsrmMatcher().parse(response(listOf(
+            trace(0, 0, entry), trace(0, 1, snappedBefore),
+            trace(1, 0, snappedAfter), trace(1, 1, exit)
+        ), matching(leg("Approach Road", entry, snappedBefore)),
+            matching(leg("Exit Road", snappedAfter, exit))), points(entry, before, after, exit)))
+
+        assertEquals(setOf(1L, 2L, 3L, 4L), result.matchedPointConfidences.keys)
+        assertEquals(3, result.roads.size)
+        val bridge = result.roads.last()
+        assertEquals(
+            JSONArray().put(snappedBefore).put(snappedAfter).toString(),
+            bridge.coordinatesJson
+        )
+        assertFalse("An inferred junction may not award an extra unlocked road",
+            bridge.countTowardsRoads)
+        val repo = TrackingRepository(RuntimeEnvironment.getApplication())
+        repo.readableDatabase().execSQL("DELETE FROM roads")
+        repo.upsertRoads(result.roads)
+        assertEquals(2L, repo.getSummary().roadsUnlockedCount)
+        val rendered = OverlayRoads.prepare(repo.getRoadsInBounds(
+            40.001, -73.999, 39.999, -74.001
+        ))
+        assertEquals("The two different roads and connector must form one blue line",
+            2, rendered.starts.size)
+    }
+
+    @Test fun differentRoadTurnSeamStillRejectsWeakConfidenceAndLongJumps() {
+        val entry = coord(-74.00044, 40.00020)
+        val before = coord(-74.00025, 40.00006)
+        val after = coord(-74.00010, 40.00002)
+        val exit = coord(-74.00002, 40.00017)
+        val snappedBefore = coord(-74.000255, 40.000055)
+        val snappedAfter = coord(-74.000000, 39.99998)
+        fun parse(firstConfidence: Double, rawAfter: JSONArray = after) =
+            requireNotNull(OsrmMatcher().parse(response(listOf(
+                trace(0, 0, entry), trace(0, 1, snappedBefore),
+                trace(1, 0, snappedAfter), trace(1, 1, exit)
+            ), matchingWithConfidence(firstConfidence, leg("Approach Road", entry, snappedBefore)),
+                matching(leg("Exit Road", snappedAfter, exit))),
+                points(entry, before, rawAfter, exit)))
+
+        val weak = parse(0.69)
+        assertEquals(2, weak.roads.size)
+        assertFalse(3L in weak.matchedPointConfidences)
+
+        // A larger apparent jump must not be bridged simply because two named road
+        // fragments and accurate-looking OSRM tracepoints exist around it.
+        val far = parse(0.95, coord(-73.99997, 40.00002))
+        assertEquals(2, far.roads.size)
+        assertFalse(3L in far.matchedPointConfidences)
+    }
+
     @Test fun highConfidenceStraightUnnamedSplitGetsOnlyItsMissingShortSeam() {
         val p0 = coord(-74.0, 40.00030)
         val p1 = coord(-74.0, 40.00020)
