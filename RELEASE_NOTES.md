@@ -1,13 +1,14 @@
 # Road Conquest 1.0 Beta 30
 
-- Fix the visibly shifting gray fog and sudden changes in brightness while zooming and panning. Explored square geography stays tied to the MapLibre map coordinates rather than the camera's previous cloud-texture phase.
-- Render **one consistent dark slate fog color** (ARGB `#CC263142`, 80% opacity) over all unexplored territory. The map underneath still shows through; fog itself no longer changes tint whenever the camera moves.
-- Remove the two-native-frame transition that stacked the full-world and detailed fog layers. Only one 80%-opaque raster is active per completed native update; overlapping layers no longer create dark 96%-opaque bars during camera gestures.
-- Prefer a sharper viewport-specific fog raster at regional zoom levels instead of magnifying 512 world-map pixels across the screen. Keep appropriate viewport padding and stronger edge resolution (up to 1,024 pixels) so map-position transitions and fog borders do not jump between image resolutions.
-- Preserve anti-aliased, area-proportional coverage for explored mile cells that occupy less than one world-image pixel. Such cells no longer punch out a huge white 78-km world pixel; at extremely distant zoom individual mile cells may naturally become imperceptible.
-- Keep permanent global mile-square unlocks, existing historical backfill, seamless visited-area union, the 1,500-foot transition and all saved data, road matches, distances, achievements, points, accounts, and verified scoring intact.
-- Add tests checking identical hex colors across different simulated camera texture matrices, subpixel coverage, and stable explored geographic positions through native map zoom/pan sequences.
+- Completely redesign map fog as **soft, dark-gray layered clouds** anchored to a stable geographic Web Mercator coordinate system. Three deterministic cloud-detail scales provide broad mist masses at global zoom, cloud banks at regional zoom and soft wisps at street zoom, without temporal animation or jitter.
+- The permanent explored **1-mile-square cells are holes in exactly that same world-referenced cloud image**. They cannot move separately from the cloud layer or the underlying map during camera pan, zoom or rotation.
+- Remove the old per-camera texture phases and dynamically rotated viewport-projection cutouts, which could visibly relocate uncovered areas during zoom/pan. MapLibre now moves each raster together with the geographic map.
+- Avoid the two-frame handoff in which both 80% opacity fog sources were displayed simultaneously, creating harsh 96%-opaque stripes and abrupt color changes.
+- Use higher-resolution 896/1024-pixel geographically snapped raster regions when near land, rather than magnifying a 512-pixel world map across a city.
+- At worldwide zoom, preserve fractional area coverage of visited cells much smaller than a world pixel; they must not become huge clear square blocks. Exact 1,500-foot outer fades are preserved at usable zoom levels.
+- Keep the previously unlocked squares, road progress, 50-meter historical samples, driving statistics, turns, account/scoring data and purchase/ad behavior unchanged.
+- Add regression tests for cloud color and alpha, whole-square cutouts, subpixel distant zoom, stable geographic cutout coordinates, stable geographic cloud shader phase and real Android map camera changes.
 
-Android version code **56**; requires Android 12+. Install the signed APK over Beta 29 without uninstalling or clearing data. The original upload certificate and native debug symbols are preserved in the signed Play AAB.
+Version code **56**, minimum Android 12. Install the signed Beta 30 APK over the existing app without uninstalling or clearing data.
 
-Only the published GitHub Release AAB is intended for Google Play Console, not intermediate build artifacts.
+For Play Store upload, use only the signed `RoadConquest-1.0-beta.30.aab` attached to the GitHub Release. The existing upload certificate and embedded native debug symbols remain unchanged.
