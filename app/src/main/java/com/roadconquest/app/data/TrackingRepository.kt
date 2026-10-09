@@ -824,26 +824,7 @@ class TrackingRepository(context: Context) {
         val queryEast = if (querySpan >= 360.0) 180.0 else wrap(east + longitudePad)
         val querySouth = (south - latitudePad).coerceAtLeast(-90.0)
         val queryNorth = (north + latitudePad).coerceAtMost(90.0)
-        val longitudeSelection = if (queryEast >= queryWest) {
-            "longitude BETWEEN ? AND ?"
-        } else {
-            "(longitude >= ? OR longitude <= ?)"
-        }
-        val sql = """
-            WITH pending(id) AS (
-                SELECT id FROM track_points
-                WHERE matched = 0 AND timestamp_ms >= ? AND latitude BETWEEN ? AND ? AND $longitudeSelection
-            ),
-            context(id) AS (
-                SELECT id FROM pending
-                UNION SELECT id - 1 FROM pending
-                UNION SELECT id + 1 FROM pending
-            )
-            SELECT ${TRACK_COLUMNS.joinToString(",")}
-            FROM track_points
-            WHERE id IN (SELECT id FROM context)
-            ORDER BY id ASC
-        """.trimIndent()
+        val sql = if (queryEast >= queryWest) PENDING_ROUTE_SQL_NORMAL else PENDING_ROUTE_SQL_WRAPPED
         val output = ArrayList<RoadRecord>()
         var oldestVisiblePendingTimestampMillis: Long? = null
         var previous: TrackPoint? = null
@@ -1387,6 +1368,27 @@ class TrackingRepository(context: Context) {
             "timestamp_ms",
             "matched"
         )
+
+        // Two immutable statement shapes replace rebuilding this CTE and column list on
+        // every tracking/map refresh. Binding values and query results remain identical.
+        private val PENDING_ROUTE_SQL_NORMAL = pendingRouteSql("longitude BETWEEN ? AND ?")
+        private val PENDING_ROUTE_SQL_WRAPPED = pendingRouteSql("(longitude >= ? OR longitude <= ?)")
+
+        private fun pendingRouteSql(longitudeSelection: String) = """
+            WITH pending(id) AS (
+                SELECT id FROM track_points
+                WHERE matched = 0 AND timestamp_ms >= ? AND latitude BETWEEN ? AND ? AND $longitudeSelection
+            ),
+            context(id) AS (
+                SELECT id FROM pending
+                UNION SELECT id - 1 FROM pending
+                UNION SELECT id + 1 FROM pending
+            )
+            SELECT ${TRACK_COLUMNS.joinToString(",")}
+            FROM track_points
+            WHERE id IN (SELECT id FROM context)
+            ORDER BY id ASC
+        """.trimIndent()
 
         private val ROAD_COLUMNS = arrayOf(
             "segment_id",

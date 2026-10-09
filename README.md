@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 25
+# Road Conquest 1.0 Beta 26
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -6,6 +6,10 @@ cloud-textured fog map.
 [Download the Android app](https://github.com/AntnyGamer/RoadConquest-Beta/releases) ·
 [Source and issues](https://github.com/AntnyGamer/RoadConquest-Beta) ·
 [GNU AGPL v3 license](LICENSE)
+
+Beta 26 reduces unnecessary native-map updates when no provisional road segments are visible
+and caches identical pending-road SQL text for faster refreshes. All previously verified turn
+fixes, GPS sampling, saved road data and unlocked-road scoring remain unchanged.
 
 ## Install
 
@@ -22,7 +26,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 51.
+This release uses Android application ID `com.roadconquest.app` and internal version code 52.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -214,7 +218,7 @@ ad failures never block the rest of the screen.
 Before distributing live ads, publish the appropriate messages in AdMob **Privacy & messaging**,
 complete AdMob app/store verification and readiness review, and declare ads and the SDK's data
 collection in Play Console. Deploy the updated account-service bundle so `/privacy` includes the
-advertising disclosure, and allow version code 51 for verified scoring. GitHub release publication
+advertising disclosure, and allow version code 52 for verified scoring. GitHub release publication
 builds and attaches that bundle; it does not deploy the account service or change AdMob/Play settings.
 Ad requests have their own network, memory, storage, and battery costs; this release retains the
 Beta 17 map/tracking optimizations but does not claim ads have zero overhead.
