@@ -1041,7 +1041,10 @@ class MapRenderer(
             maxOf(mapView.width, mapView.height) * mercatorMetersPerPixel >=
                 FogGeoRaster.WORLD_METERS
         val raster = if (world) FogGeoRaster.fullWorld(size)
-            else FogGeoRaster.around(center.latitude, center.longitude, position.zoom, size)
+            else FogGeoRaster.around(
+                center.latitude, center.longitude, position.zoom, size,
+                mapView.width, mapView.height, mercatorMetersPerPixel
+            )
         val savedCorners = savedGridCoordinates
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
