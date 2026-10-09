@@ -806,7 +806,7 @@ object FogBitmapRenderer {
     const val MAX_FOG_ALPHA = 0.80f
     // The entire visited-grid fog has ONE immutable tint, regardless of zoom or
     // panning. Underlying map styles may vary, but the fog's RGBA is stable.
-    const val STABLE_GRID_FOG_ARGB: Int = 0xCC292B2E.toInt()
+    const val STABLE_GRID_FOG_ARGB: Int = -869717202 // #CC292B2E
     private val STABLE_GRID_FOG_COLOR = STABLE_GRID_FOG_ARGB
     // Fixed physical scales, not fixed screen pixels. Large weather masses are
     // visible at world zoom; fine diffuse cloud structure appears when closer.
