@@ -21,11 +21,12 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
     companion object {
         val EMPTY = OverlayRoads(doubleArrayOf(), intArrayOf(0))
 
-        fun prepare(roads: List<RoadRecord>): OverlayRoads {
+        fun prepare(roads: List<RoadRecord>, visitWindows: Map<String, List<Pair<Long, Long>>> = emptyMap()): OverlayRoads {
             if (roads.isEmpty()) return EMPTY
             val segments = ArrayList<Segment>(roads.size)
             val segmentFirstTimes = ArrayList<Long>(roads.size)
             val segmentLastTimes = ArrayList<Long>(roads.size)
+            val segmentVisits = ArrayList<List<Pair<Long, Long>>>(roads.size)
             val nodes = ArrayList<Node>(roads.size * 2)
             val buckets = HashMap<Cell, MutableList<Int>>(roads.size * 2)
             val lookupCell = Cell(0, 0, 0)
@@ -58,7 +59,8 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 return index
             }
 
-            fun addSegment(coordinates: DoubleArray, firstUnlockedAt: Long, lastDrivenAt: Long) {
+            fun addSegment(coordinates: DoubleArray, firstUnlockedAt: Long, lastDrivenAt: Long,
+                           visits: List<Pair<Long, Long>>) {
                 if (coordinates.size < 4) return
                 val startLatitude = coordinates[0]
                 val startLongitude = coordinates[1]
@@ -76,10 +78,12 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 segments += Segment(coordinates, startNode, endNode)
                 segmentFirstTimes += firstUnlockedAt
                 segmentLastTimes += lastDrivenAt
+                segmentVisits.add(visits)
             }
 
             for (road in roads) {
                 val points = GeoJsonUtil.validRoadCoordinates(road.geometryJson) ?: continue
+                val visits = visitWindows[road.segmentId].orEmpty()
                 val part = DoubleBuffer(points.length() * 2 + 4)
                 var previous = points.getJSONArray(0)
                 part.add(previous.getDouble(1))
@@ -102,7 +106,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                             (currentLatitude - previous.getDouble(1)) * fraction
                         part.add(crossingLatitude)
                         part.add(boundary)
-                        addSegment(part.toArray(), road.firstUnlockedAt, road.lastDrivenAt)
+                        addSegment(part.toArray(), road.firstUnlockedAt, road.lastDrivenAt, visits)
                         part.clear()
                         part.add(crossingLatitude)
                         part.add(-boundary)
@@ -111,7 +115,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                     part.add(currentLongitude)
                     previous = current
                 }
-                addSegment(part.toArray(), road.firstUnlockedAt, road.lastDrivenAt)
+                addSegment(part.toArray(), road.firstUnlockedAt, road.lastDrivenAt, visits)
             }
             if (segments.isEmpty()) return EMPTY
 
@@ -134,6 +138,18 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             // never draw a long straight chord that cuts through the inside of a turn.
             val originalSegmentCount = segments.size
             appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes, degree)
+            // Individual saved visits can reveal a corner driven between the earliest and
+            // latest visits. Run after the original repair: additional evidence must never
+            // invalidate a previously accepted visual connector.
+            if (segmentVisits.any { it.isNotEmpty() }) {
+                val occupied = HashSet<Int>()
+                for (index in originalSegmentCount until segments.size) {
+                    occupied += segments[index].startNode
+                    occupied += segments[index].endNode
+                }
+                appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes,
+                    degree, segmentVisits, occupied)
+            }
             // Give each synthetic segment the same graph-adjacency treatment as actual roads.
             for (index in originalSegmentCount until segments.size) {
                 addAdjacent(segments[index].startNode, index)
@@ -198,16 +214,25 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             firstTimes: List<Long>,
             lastTimes: List<Long>,
             nodes: List<Node>,
-            degree: IntArray
+            degree: IntArray,
+            visits: List<List<Pair<Long, Long>>>? = null,
+            occupiedNodes: Set<Int> = emptySet()
         ) {
-            val originalSize = segments.size
+            // Both passes inspect the original roads, never the already added connectors.
+            val originalSize = firstTimes.size
             val startsBySecond = HashMap<Long, MutableList<Int>>()
             for (index in 0 until originalSize) {
-                if (degree[segments[index].startNode] != 1) continue
-                startsBySecond.getOrPut(firstTimes[index] / 1_000L) { ArrayList(2) } += index
-                // The same segment may have been unlocked long before its newest drive.
-                if (lastTimes[index] != firstTimes[index]) {
-                    startsBySecond.getOrPut(lastTimes[index] / 1_000L) { ArrayList(2) } += index
+                if (degree[segments[index].startNode] != 1 ||
+                    segments[index].startNode in occupiedNodes) continue
+                if (visits != null) {
+                    for ((startedAt, _) in visits[index]) {
+                        startsBySecond.getOrPut(startedAt / 1_000L) { ArrayList(2) } += index
+                    }
+                } else {
+                    startsBySecond.getOrPut(firstTimes[index] / 1_000L) { ArrayList(2) } += index
+                    if (lastTimes[index] != firstTimes[index]) {
+                        startsBySecond.getOrPut(lastTimes[index] / 1_000L) { ArrayList(2) } += index
+                    }
                 }
             }
             val bestFrom = arrayOfNulls<JunctionCandidate>(originalSize)
@@ -230,12 +255,14 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
 
             for (from in 0 until originalSize) {
                 val left = segments[from]
-                if (degree[left.endNode] != 1) continue
-                // Search both the original unlock and most recent driving event; don't assume
-                // that a road unlocked yesterday wasn't traversed just before today's turn.
-                for (timeIndex in 0..1) {
-                    val time = if (timeIndex == 0) firstTimes[from] else lastTimes[from]
-                    if (timeIndex == 1 && time == firstTimes[from]) continue
+                if (degree[left.endNode] != 1 || left.endNode in occupiedNodes) continue
+                // Normal pass remains identical; the additional pass pairs the end of one
+                // recorded visit with the beginning of another visit.
+                for (timeIndex in 0 until (visits?.get(from)?.size ?: 2)) {
+                    val time = if (visits == null) {
+                        if (timeIndex == 0) firstTimes[from] else lastTimes[from]
+                    } else visits[from][timeIndex].second
+                    if (visits == null && timeIndex == 1 && time == firstTimes[from]) continue
                     // Bounded timestamp index: avoids quadratic work with years of unlocked roads.
                     for (second in time / 1_000L..time / 1_000L + 15L) {
                         for (to in startsBySecond[second].orEmpty()) {

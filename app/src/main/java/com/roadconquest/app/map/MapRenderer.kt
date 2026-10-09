@@ -527,7 +527,9 @@ class MapRenderer(
                 } else {
                     null
                 }
-                val roads = roadQuery?.roads?.let(OverlayRoads::prepare)
+                val roads = roadQuery?.roads?.let { saved ->
+                    OverlayRoads.prepare(saved, repository.getVisitWindowsForRoads(saved))
+                }
                 val places = if (queryPlaces) {
                     repository.getExploredPlacesInBounds(queryNorth, queryEast, querySouth, queryWest)
                 } else {
