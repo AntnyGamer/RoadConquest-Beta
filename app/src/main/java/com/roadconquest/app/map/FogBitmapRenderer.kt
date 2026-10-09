@@ -807,18 +807,18 @@ object FogBitmapRenderer {
     private val STABLE_GRID_FOG_COLOR = STABLE_GRID_FOG_ARGB
     // Confirmed/pending blue roads stay visible farther out than the cleared fog corridor.
     const val MIN_ROAD_ZOOM = 6.0
-    const val MIN_FOG_REVEAL_ZOOM = 5.0
+    const val MIN_FOG_REVEAL_ZOOM = 3.5
     const val MAX_ZOOM = 20.0
     const val CENTER_ZOOM = 18.0
-    const val MAX_BITMAP_DIMENSION = 768
+    const val MAX_BITMAP_DIMENSION = 1024
     const val VIEWPORT_PADDING_MULTIPLIER = 1.5f
     // Keep narrow road/place reveals perceptible at the farthest supported overview zoom
     // without changing their real-world fade distance at ordinary driving zoom levels.
     private const val MIN_VISIBLE_REVEAL_RADIUS_PX = 1.25f
 
     fun bitmapDimensionForZoom(zoom: Double): Int = when {
-        zoom < MIN_FOG_REVEAL_ZOOM -> 512
-        zoom < 12.0 -> 640
+        zoom < MIN_FOG_REVEAL_ZOOM -> 512 // Full Mercator world, without oversized mask pixels.
+        zoom < 12.0 -> 896 // Local raster, not a 512-pixel world blown up at regional zoom.
         else -> MAX_BITMAP_DIMENSION
     }
 
