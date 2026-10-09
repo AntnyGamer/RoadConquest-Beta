@@ -524,7 +524,11 @@ class MapRenderer(
                 )
                 val queryRoads = loadRoads && cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
                     loadedRoadBoundsAtStart?.contains(footprint) != true
-                val queryPlaces = loadedPlaceBoundsAtStart?.contains(footprint) != true
+                // Switching back from a global overview must restore the small
+                // viewport-specific projection cache instead of keeping every
+                // explored square worldwide in every subsequent detailed frame.
+                val queryPlaces = loadedPlaceBoundsAtStart?.contains(footprint) != true ||
+                    (!worldOverview && loadedPlaceBoundsAtStart?.longitudeSpan == 360.0)
                 val roadQuery = if (queryRoads) {
                     repository.getRoadsInBoundsResult(
                         queryNorth, queryEast, querySouth, queryWest, limit = Int.MAX_VALUE
@@ -1079,18 +1083,9 @@ class MapRenderer(
         // Fog no longer depends on the road linework or point-radius clearings.
         // Deduplicate visited cells once per data update, project only the grid corners.
         val savedCorners = savedGridCoordinates
-        val savedScreen = projectPlaces(savedCorners)
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
-        val currentScreen = DoubleArray(currentCorners.size)
-        if (currentCorners.isNotEmpty()) {
-            val centerLongitude = position.target?.longitude ?: 0.0
-            map.projection.toScreenLocations(FogGrid.nearLongitude(currentCorners, centerLongitude), currentScreen)
-        }
         val gridCorners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
-        // The cached projection is mutable on the UI thread; give the fog worker an
-        // immutable snapshot even when no live tile has to be appended.
-        val gridScreen = if (currentScreen.isEmpty()) savedScreen.copyOf() else savedScreen + currentScreen
         val center = position.target ?: return null
         val metersPerPixel = map.projection.getMetersPerPixelAtLatitude(center.latitude) / mapView.pixelRatio
         if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return null
@@ -1130,6 +1125,17 @@ class MapRenderer(
                 gridMode = true, gridCoordinates = gridCorners, gridScreen = worldGridScreen
             ), world = true)
         }
+        // Only detailed bitmaps require native corner projection. The world
+        // bitmap above uses its own geographic projection and skips this work.
+        val savedScreen = projectPlaces(savedCorners)
+        val currentScreen = DoubleArray(currentCorners.size)
+        if (currentCorners.isNotEmpty()) {
+            map.projection.toScreenLocations(
+                FogGrid.nearLongitude(currentCorners, center.longitude), currentScreen
+            )
+        }
+        // The UI cache may change on the next pan; snapshot before background draw.
+        val gridScreen = if (currentScreen.isEmpty()) savedScreen.copyOf() else savedScreen + currentScreen
         val quad = fogQuad(left, top, right, bottom, center.longitude)
         fogMatrix.postTranslate(-left, -top)
         fogMatrix.postScale(scale, scale)
