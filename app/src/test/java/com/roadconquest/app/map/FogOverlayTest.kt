@@ -67,6 +67,31 @@ class FogOverlayTest {
         assertTrue(stitched.coordinates.size > 12)
     }
 
+    @Test fun recordedBenignoTurnUsesTheApproachBeforeATinyTerminalSegment() {
+        // Shifted coordinates retain the recorded road's shape and its 0.64 m final edge.
+        // Beta 24 rejected this valid ~26 m junction despite confirmed roads on both sides.
+        val approach = junctionRoad("exit connector", 1_000_000L,
+            -74.099435 to 40.861467, -74.099409 to 40.861480,
+            -74.099356 to 40.861503, -74.099301 to 40.861521,
+            -74.099294 to 40.861523)
+        val exit = junctionRoad("boulevard", 1_006_000L,
+            -74.099167 to 40.861733, -74.099198 to 40.861876,
+            -74.099234 to 40.862039)
+        val overlay = OverlayRoads.prepare(listOf(approach, exit))
+        assertEquals("Confirmed turn must be a single continuous line", 2, overlay.starts.size)
+        assertTrue("Connector includes centerline bend", overlay.coordinates.size > 16)
+    }
+
+    @Test fun microEdgeCannotAuthorizeTurnWithoutARealApproachDirection() {
+        val tooShort = junctionRoad("no direction", 1_000_000L,
+            -74.099301 to 40.861521, -74.099294 to 40.861523)
+        val exit = junctionRoad("boulevard", 1_006_000L,
+            -74.099167 to 40.861733, -74.099198 to 40.861876,
+            -74.099234 to 40.862039)
+        assertEquals("No invented junction without a 4m approach tangent",
+            3, OverlayRoads.prepare(listOf(tooShort, exit)).starts.size)
+    }
+
     @Test fun distantTimesAndUnrelatedDirectionsNeverCreateAJunctionShortcut() {
         val incoming = junctionRoad("approach", 1_000_000L,
             -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
