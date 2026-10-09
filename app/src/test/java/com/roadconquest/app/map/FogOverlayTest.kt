@@ -153,6 +153,27 @@ class FogOverlayTest {
         assertEquals(2, OverlayRoads.prepare(listOf(incoming, distantVisit)).starts.size)
     }
 
+    @Test fun competingLaterVisitCannotErasePreviouslyVisibleFirstUnlockTurn() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val originalExit = junctionRoad("original exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        // A later competing exit begins 1-3 m from the earlier one. Its *recent* visit
+        // must not make the genuinely recorded original first-unlock turn disappear.
+        val competingExit = junctionRoad("later exit", 1_300_000L,
+            -74.096505 to 39.968062, -74.096426 to 39.968034, -74.096292 to 39.967987)
+        val roads = listOf(incoming, originalExit, competingExit)
+        val original = OverlayRoads.prepare(roads)
+        assertEquals(3, original.starts.size)
+        val later = OverlayRoads.prepare(listOf(
+            incoming.copy(lastDrivenAt = 2_000_000L),
+            originalExit,
+            competingExit.copy(lastDrivenAt = 2_008_000L)
+        ))
+        assertArrayEquals(original.coordinates, later.coordinates, 0.0)
+        assertArrayEquals(original.starts, later.starts)
+    }
+
     @Test fun interveningRoadVisitsRecoverTurnNotPresentInAggregateTimestamps() {
         val incoming = junctionRoad("approach", 1_000_000L,
             -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
