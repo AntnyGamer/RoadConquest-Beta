@@ -82,6 +82,27 @@ class FogOverlayTest {
         assertTrue("Connector includes centerline bend", overlay.coordinates.size > 16)
     }
 
+    @Test fun shortFirstExitEdgeAlsoUsesNearbyConfirmedDirection() {
+        val approach = junctionRoad("exit connector", 1_000_000L,
+            -74.099435 to 40.861467, -74.099356 to 40.861503,
+            -74.099294 to 40.861523)
+        val exit = junctionRoad("boulevard", 1_006_000L,
+            -74.099167 to 40.861733, -74.099168 to 40.861738,
+            -74.099198 to 40.861876, -74.099234 to 40.862039)
+        assertEquals(2, OverlayRoads.prepare(listOf(approach, exit)).starts.size)
+    }
+
+    @Test fun distantTangentEvidenceCannotCreateAShortcut() {
+        val approach = junctionRoad("long unsupported approach", 1_000_000L,
+            -74.099800 to 40.861300, -74.099301 to 40.861521,
+            -74.099294 to 40.861523)
+        val exit = junctionRoad("boulevard", 1_006_000L,
+            -74.099167 to 40.861733, -74.099198 to 40.861876,
+            -74.099234 to 40.862039)
+        assertEquals("Direction evidence more than 25m behind endpoint is insufficient",
+            3, OverlayRoads.prepare(listOf(approach, exit)).starts.size)
+    }
+
     @Test fun microEdgeCannotAuthorizeTurnWithoutARealApproachDirection() {
         val tooShort = junctionRoad("no direction", 1_000_000L,
             -74.099301 to 40.861521, -74.099294 to 40.861523)
