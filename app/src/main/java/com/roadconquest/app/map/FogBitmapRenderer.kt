@@ -778,7 +778,7 @@ object FogBitmapRenderer {
     const val MAX_FOG_ALPHA = 0.80f
     // Confirmed/pending blue roads stay visible farther out than the cleared fog corridor.
     const val MIN_ROAD_ZOOM = 6.0
-    const val MIN_FOG_REVEAL_ZOOM = 9.0
+    const val MIN_FOG_REVEAL_ZOOM = 5.0
     const val MAX_ZOOM = 20.0
     const val CENTER_ZOOM = 18.0
     const val MAX_BITMAP_DIMENSION = 768
