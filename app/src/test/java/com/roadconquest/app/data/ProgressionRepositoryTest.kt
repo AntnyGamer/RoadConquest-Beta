@@ -590,7 +590,7 @@ class ProgressionRepositoryTest {
             latitude = 39.967921; longitude = -75.240047; accuracy = 4f; time = 2_000L
         }
         val second = android.location.Location("gps").apply {
-            latitude = 39.968435; longitude = -75.235471; accuracy = 4f; time = 3_000L
+            latitude = 39.968435; longitude = -75.229471; accuracy = 4f; time = 3_000L
         }
         assertTrue(progression.recordPlaceCandidate(first))
         assertTrue(progression.recordPlaceCandidate(second))
