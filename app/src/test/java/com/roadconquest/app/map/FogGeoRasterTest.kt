@@ -13,6 +13,10 @@ class FogGeoRasterTest {
     private fun longitudeDelta(a: Double, b: Double): Double =
         ((a - b + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
 
+    private fun phaseDelta(a: Double, b: Double): Double =
+        ((a - b + FogTexture.SIZE / 2) % FogTexture.SIZE + FogTexture.SIZE) %
+            FogTexture.SIZE - FogTexture.SIZE / 2
+
     @Test fun exploringAtSameLocationNeverTeleportsWhenRasterRepositions() {
         val corner = doubleArrayOf(40.0, -74.0, 40.0, -73.99,
             39.99, -73.99, 39.99, -74.0)
@@ -56,9 +60,9 @@ class FogGeoRasterTest {
             val yA = a.project(location)[1]
             val yB = b.project(location)[1]
             assertEquals("Cloud X must not drift when the camera pans",
-                0.0, longitudeDelta(phase(xA, mA[2], mA[0]), phase(xB, mB[2], mB[0])), 0.03)
+                0.0, phaseDelta(phase(xA, mA[2], mA[0]), phase(xB, mB[2], mB[0])), 0.03)
             assertEquals("Cloud Y must not drift when the camera pans",
-                phase(yA, mA[5], mA[4]), phase(yB, mB[5], mB[4]), 0.03)
+                0.0, phaseDelta(phase(yA, mA[5], mA[4]), phase(yB, mB[5], mB[4])), 0.03)
         }
     }
 
