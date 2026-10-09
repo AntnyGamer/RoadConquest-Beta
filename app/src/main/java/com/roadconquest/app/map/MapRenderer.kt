@@ -508,15 +508,19 @@ class MapRenderer(
                     fadePad / cos(Math.toRadians((north + south) / 2)).coerceAtLeast(0.01)
                 fun wrap(longitude: Double) = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
                 val querySpan = (longitudeSpan + 2 * lonPad).coerceAtMost(360.0)
-                val queryWest = if (querySpan >= 360.0) -180.0 else wrap(west - lonPad)
-                val queryEast = if (querySpan >= 360.0) 180.0 else wrap(east + lonPad)
-                val queryNorth = (north + latPad).coerceAtMost(90.0)
-                val querySouth = (south - latPad).coerceAtLeast(-90.0)
+                // At world overview scale, individual screen corners may be
+                // several wrapped copies apart. Load ALL persisted grid cells so
+                // the world bitmap never loses remote explored territory.
+                val worldOverview = cameraPosition.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM
+                val queryWest = if (worldOverview || querySpan >= 360.0) -180.0 else wrap(west - lonPad)
+                val queryEast = if (worldOverview || querySpan >= 360.0) 180.0 else wrap(east + lonPad)
+                val queryNorth = if (worldOverview) 90.0 else (north + latPad).coerceAtMost(90.0)
+                val querySouth = if (worldOverview) -90.0 else (south - latPad).coerceAtLeast(-90.0)
                 val footprint = RoadQueryBounds(
                     queryNorth,
                     querySouth,
-                    wrap((minLongitude + maxLongitude) / 2.0),
-                    querySpan
+                    if (worldOverview) 0.0 else wrap((minLongitude + maxLongitude) / 2.0),
+                    if (worldOverview) 360.0 else querySpan
                 )
                 val queryRoads = loadRoads && cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
                     loadedRoadBoundsAtStart?.contains(footprint) != true
@@ -540,10 +544,12 @@ class MapRenderer(
                 } else {
                     null
                 }
-                val pending = repository.getPendingRouteInBoundsResult(
-                    queryNorth, queryEast, querySouth, queryWest,
-                    visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
-                )
+                val pending = if (cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM) {
+                    repository.getPendingRouteInBoundsResult(
+                        queryNorth, queryEast, querySouth, queryWest,
+                        visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
+                    )
+                } else TrackingRepository.PendingRouteResult(emptyList(), null)
                 RoadDisplay(
                     roads,
                     roads?.let(::roadFeatures),
