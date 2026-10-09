@@ -92,6 +92,44 @@ class FogOverlayTest {
         assertEquals(2, OverlayRoads.prepare(listOf(approach, exit)).starts.size)
     }
 
+    @Test fun previouslyUnlockedRoadCanJoinANewlyUnlockedTurnOnALaterDrive() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 2_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        // Their first-unlocked dates are far apart, but the approach was recently driven.
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
+    @Test fun twoPreviouslyUnlockedRoadsJoinWhenDrivenTogetherAgain() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987
+        ).copy(lastDrivenAt = 2_008_000L)
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
+    @Test fun originalTurnConnectionPersistsWhenOnlyOneRoadIsDrivenLater() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
+    @Test fun unrelatedDrivingTimesNeverStitchAnOldAndANewRoad() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 2_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        assertEquals(3, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
     @Test fun distantTangentEvidenceCannotCreateAShortcut() {
         val approach = junctionRoad("long unsupported approach", 1_000_000L,
             -74.099800 to 40.861300, -74.099301 to 40.861521,
