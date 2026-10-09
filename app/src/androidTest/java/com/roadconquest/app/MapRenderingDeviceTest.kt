@@ -247,6 +247,9 @@ class MapRenderingDeviceTest {
                     val pixel = bitmap.getPixel(x, y)
                     Color.red(pixel) > 230 && Color.green(pixel) > 230 && Color.blue(pixel) > 230
                 }
+                val storedCenters = repository.getExploredGridInBounds(40.1, -73.9, 39.9, -74.1)
+                assertEquals(2, storedCenters.size)
+                val savedCenter = LatLng(storedCenters[0], storedCenters[1])
                 // The same saved square must remain pinned to the identical
                 // geographic latitude/longitude through repeated regional zooms
                 // and pans. Beta 29 snapped between world pixels and detailed
@@ -260,7 +263,7 @@ class MapRenderingDeviceTest {
                 )) {
                     move(target, zoom)
                     awaitPixels("Saved clearing stays at its map coordinate zoom=$zoom") { bitmap ->
-                        val point = map.projection.toScreenLocation(exploredPoint)
+                        val point = map.projection.toScreenLocation(savedCenter)
                         val x = point.x.toInt()
                         val y = point.y.toInt()
                         if (x !in 1 until bitmap.width - 1 || y !in 1 until bitmap.height - 1) false
