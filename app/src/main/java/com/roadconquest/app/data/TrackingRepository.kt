@@ -445,7 +445,7 @@ class TrackingRepository(context: Context) {
             db.beginTransaction()
             try {
                 val values = ContentValues().apply { put("next_match_attempt_ms", untilMillis) }
-                ids.toList().chunked(400).forEach { chunk ->
+                ids.chunked(400).forEach { chunk ->
                     val placeholders = chunk.joinToString(",") { "?" }
                     db.update(
                         "track_points",
@@ -790,6 +790,34 @@ class TrackingRepository(context: Context) {
             "segment_id = ?",
             arrayOf(segmentId)
         ) == 1)
+    }
+
+    /**
+     * Extra observed visit intervals for display-only corner repair. On busy map views,
+     * stay with the existing first/last repair instead of querying unbounded history.
+     */
+    @Synchronized
+    fun getVisitWindowsForRoads(roads: List<RoadRecord>): Map<String, List<Pair<Long, Long>>> {
+        if (roads.size !in 2..MAX_VISIT_REPAIR_ROADS) return emptyMap()
+        val segmentIds = roads.map { it.segmentId }
+        val placeholders = segmentIds.joinToString(",") { "?" }
+        val visits = LinkedHashMap<String, MutableList<Pair<Long, Long>>>()
+        dbHelper.readableDatabase.query(
+            "road_visits",
+            arrayOf("segment_id", "started_at", "ended_at"),
+            "segment_id IN ($placeholders)",
+            segmentIds.toTypedArray(),
+            null, null, null,
+            (MAX_VISIT_REPAIR_ROWS + 1).toString()
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                if (cursor.position >= MAX_VISIT_REPAIR_ROWS) return emptyMap()
+                val segmentId = cursor.getString(0)
+                visits.getOrPut(segmentId) { ArrayList(2) } +=
+                    cursor.getLong(1) to cursor.getLong(2)
+            }
+        }
+        return visits
     }
 
     data class RoadQueryResult(val roads: List<RoadRecord>, val complete: Boolean)
@@ -1347,6 +1375,8 @@ class TrackingRepository(context: Context) {
 
         private const val HUMAN_ROAD_GROUP_PREFIX = "h2|"
         private const val EXCLUDED_ROAD_GROUP_PREFIX = "x2|"
+        private const val MAX_VISIT_REPAIR_ROADS = 200
+        private const val MAX_VISIT_REPAIR_ROWS = 2_000
         private const val MATCH_CLUSTER_GAP_MS = 30_000L
         private const val MATCH_ANCHOR_MAX_GAP_MS = 30_000L
         private const val MAX_STOP_CONTINUATION_MS = 15 * 60_000L

@@ -6,10 +6,14 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.io.IOException
 import java.io.StringReader
+import java.security.MessageDigest
+import java.util.Locale
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -53,6 +57,32 @@ class PlaceOverlayTest {
             PlaceOverlayClient.readConfigEndpoint(
                 StringReader("x".repeat(2_049))
             )
+        }
+    }
+
+    @Test fun previouslySavedOverlayCacheRetainsItsExactFilename() {
+        val context = RuntimeEnvironment.getApplication()
+        val place = PlaceDiscovery(
+            PlaceKind.TOWN, "us|new jersey|cache-compatibility", "Cached Town",
+            "New Jersey", "United States", 1L, 40.0, -74.0
+        )
+        PlaceOverlayCache.clear(context)
+        try {
+            // Use the original formatter to create the name written by earlier releases.
+            val oldHash = MessageDigest.getInstance("SHA-256")
+                .digest("${place.kind.name}|${place.key}".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(Locale.US, it.toInt() and 0xff) }
+            val directory = File(context.filesDir, "place-overlays-v3")
+            assertTrue(directory.mkdirs() || directory.isDirectory)
+            File(directory, "$oldHash.json").writeText(
+                JSONObject().put("found", false)
+                    .put("fetched_at", System.currentTimeMillis()).toString()
+            )
+            val cached = PlaceOverlayCache.read(context, place)
+            assertTrue(cached.cached)
+            assertNull(cached.data)
+        } finally {
+            PlaceOverlayCache.clear(context)
         }
     }
 

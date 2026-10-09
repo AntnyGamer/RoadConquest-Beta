@@ -24,8 +24,7 @@ object FogTexture {
         // The final row/column intentionally sample the same mathematical point as the first,
         // so REPEAT filtering cannot expose a tile seam.
         val denominator = (size - 1).coerceAtLeast(1).toDouble()
-        val uSamples = DoubleArray(size) { it / denominator }
-        val vSamples = DoubleArray(size) { it / denominator }
+        val samples = DoubleArray(size) { it / denominator }
 
         // Lattice values depend only on period + seed. Precompute them once instead of hashing
         // the same corner values millions of times while building the 512 px texture. Sampling
@@ -41,9 +40,9 @@ object FogTexture {
         val cloud32 = NoiseLayer(32, 601)
 
         for (y in 0 until size) {
-            val v = vSamples[y]
+            val v = samples[y]
             for (x in 0 until size) {
-                val u = uSamples[x]
+                val u = samples[x]
 
                 // Low-frequency domain warping bends the cloud masses before the finer octaves
                 // are added. This avoids axis-aligned/value-noise cells looking like a grid.

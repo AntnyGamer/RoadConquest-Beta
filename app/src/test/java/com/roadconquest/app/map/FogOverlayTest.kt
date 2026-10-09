@@ -92,6 +92,166 @@ class FogOverlayTest {
         assertEquals(2, OverlayRoads.prepare(listOf(approach, exit)).starts.size)
     }
 
+    @Test fun previouslyUnlockedRoadCanJoinANewlyUnlockedTurnOnALaterDrive() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 2_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        // Their first-unlocked dates are far apart, but the approach was recently driven.
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
+    @Test fun twoPreviouslyUnlockedRoadsJoinWhenDrivenTogetherAgain() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987
+        ).copy(lastDrivenAt = 2_008_000L)
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
+    @Test fun originalTurnConnectionPersistsWhenOnlyOneRoadIsDrivenLater() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
+    @Test fun unrelatedDrivingTimesNeverStitchAnOldAndANewRoad() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val outgoing = junctionRoad("exit", 2_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        assertEquals(3, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
+    }
+
+    @Test fun revisitedWrongDirectionDoesNotGetConnectedAsATurn() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val wrongDirection = junctionRoad("wrong exit direction", 1_008_000L,
+            -74.096525 to 39.968062, -74.096604 to 39.968090, -74.096680 to 39.968117
+        ).copy(lastDrivenAt = 2_008_000L)
+        assertEquals("Recent timestamps must not override incompatible road geometry",
+            3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
+    }
+
+    @Test fun revisitedRoadsDoNotBridgeUnrelatedRecentTrips() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val distantVisit = junctionRoad("exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987
+        ).copy(lastDrivenAt = 2_120_000L)
+        // Their original unlocks formed an eligible turn, so this must STILL show it.
+        // A distant revisit must never erase that already-confirmed visual connection.
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, distantVisit)).starts.size)
+    }
+
+    @Test fun competingLaterVisitCannotErasePreviouslyVisibleFirstUnlockTurn() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val originalExit = junctionRoad("original exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        // A later competing exit begins 1-3 m from the earlier one. Its *recent* visit
+        // must not make the genuinely recorded original first-unlock turn disappear.
+        val competingExit = junctionRoad("later exit", 1_300_000L,
+            -74.096505 to 39.968062, -74.096426 to 39.968034, -74.096292 to 39.967987)
+        val roads = listOf(incoming, originalExit, competingExit)
+        val original = OverlayRoads.prepare(roads)
+        assertEquals(3, original.starts.size)
+        val later = OverlayRoads.prepare(listOf(
+            incoming.copy(lastDrivenAt = 2_000_000L),
+            originalExit,
+            competingExit.copy(lastDrivenAt = 2_008_000L)
+        ))
+        assertArrayEquals(original.coordinates, later.coordinates, 0.0)
+        assertArrayEquals(original.starts, later.starts)
+    }
+
+    @Test fun interveningRoadVisitsRecoverTurnNotPresentInAggregateTimestamps() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val outgoing = junctionRoad("exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val roads = listOf(incoming, outgoing)
+        assertEquals(3, OverlayRoads.prepare(roads).starts.size)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            outgoing.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        val repaired = OverlayRoads.prepare(roads, visits)
+        assertEquals("The same-trip visit windows should join this genuine corner",
+            2, repaired.starts.size)
+        assertTrue(repaired.coordinates.size > 12)
+    }
+
+    @Test fun extraVisitCandidatesCannotRemoveAPreviouslyShownCorner() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val outgoing = junctionRoad("exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val roads = listOf(incoming, outgoing)
+        val original = OverlayRoads.prepare(roads)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            outgoing.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        val withVisits = OverlayRoads.prepare(roads, visits)
+        assertArrayEquals("Adding visit evidence may never displace an existing repair",
+            original.coordinates, withVisits.coordinates, 0.0)
+        assertArrayEquals(original.starts, withVisits.starts)
+    }
+
+    @Test fun competingVisitCandidateCannotDisplaceOriginalConfirmedCorner() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val originalExit = junctionRoad("original exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val otherExit = junctionRoad("later exit", 1_300_000L,
+            -74.096445 to 39.968062, -74.096366 to 39.968034, -74.096232 to 39.967987)
+        val roads = listOf(incoming, originalExit, otherExit)
+        val original = OverlayRoads.prepare(roads)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            otherExit.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        val withNewCandidate = OverlayRoads.prepare(roads, visits)
+        assertArrayEquals(original.coordinates, withNewCandidate.coordinates, 0.0)
+        assertArrayEquals(original.starts, withNewCandidate.starts)
+    }
+
+    @Test fun visitEvidenceStillRejectsOpposingExitDirection() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val opposite = junctionRoad("wrong exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096604 to 39.968090, -74.096680 to 39.968117)
+        val roads = listOf(incoming, opposite)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            opposite.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        assertEquals(3, OverlayRoads.prepare(roads, visits).starts.size)
+    }
+
+    @Test fun unrelatedVisitWindowsDoNotCreateNewTurns() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val outgoing = junctionRoad("exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val roads = listOf(incoming, outgoing)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            outgoing.segmentId to listOf(2_060_000L to 2_065_000L)
+        )
+        assertEquals(3, OverlayRoads.prepare(roads, visits).starts.size)
+    }
+
     @Test fun distantTangentEvidenceCannotCreateAShortcut() {
         val approach = junctionRoad("long unsupported approach", 1_000_000L,
             -74.099800 to 40.861300, -74.099301 to 40.861521,
@@ -122,6 +282,45 @@ class FogOverlayTest {
         val wrongDirection = junctionRoad("wrong direction", 1_008_000L,
             -74.096525 to 39.968062, -74.096604 to 39.968090, -74.096680 to 39.968117)
         assertEquals(3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
+    }
+
+    @Test fun visitedMileTileClearsEntireInteriorWithOriginal1500FootFade() {
+        val tile = request(metersPerPixel = 5.0).copy(
+            gridMode = true,
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.01, 0.01, 0.01, -0.01, 0.01, -0.01, -0.01
+            ),
+            gridScreen = doubleArrayOf(
+                200.0, 200.0, 400.0, 200.0, 400.0, 400.0, 200.0, 400.0
+            )
+        )
+        val rendered = FogBitmapRenderer.render(tile)
+        assertEquals(0, Color.alpha(rendered.getPixel(300, 300)))
+        assertEquals(0, Color.alpha(rendered.getPixel(300, 205)))
+        assertTrue(Color.alpha(rendered.getPixel(300, 160)) in 1..203)
+        assertEquals(204, Color.alpha(rendered.getPixel(300, 90)))
+        assertTrue(Color.alpha(rendered.getPixel(165, 165)) in 1..203)
+        assertEquals(204, Color.alpha(rendered.getPixel(90, 90)))
+    }
+
+    @Test fun mileGridIgnoresRoadOnlyClearingsAndAdjacentTilesHaveNoSeam() {
+        val road = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
+        val roadScreen = doubleArrayOf(0.0, 320.0, 640.0, 320.0)
+        val withoutTiles = request(road, roadScreen, metersPerPixel = 5.0).copy(gridMode = true)
+        assertEquals(204, alpha(320, 320, withoutTiles))
+        val withTiles = withoutTiles.copy(
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.02, 0.01, 0.0, -0.01, 0.0, -0.01, -0.02,
+                0.01, 0.0, 0.01, 0.02, -0.01, 0.02, -0.01, 0.0
+            ),
+            gridScreen = doubleArrayOf(
+                200.0, 200.0, 400.0, 200.0, 400.0, 400.0, 200.0, 400.0,
+                400.0, 200.0, 600.0, 200.0, 600.0, 400.0, 400.0, 400.0
+            )
+        )
+        assertEquals(0, alpha(400, 300, withTiles))
+        assertEquals(0, alpha(500, 300, withTiles))
+        assertEquals(204, alpha(60, 100, withTiles))
     }
 
     @Test fun roadFadeKeepsClearCoreButAvoidsARegionalGlow() {

@@ -8,6 +8,7 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
@@ -21,10 +22,12 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
     companion object {
         val EMPTY = OverlayRoads(doubleArrayOf(), intArrayOf(0))
 
-        fun prepare(roads: List<RoadRecord>): OverlayRoads {
+        fun prepare(roads: List<RoadRecord>, visitWindows: Map<String, List<Pair<Long, Long>>> = emptyMap()): OverlayRoads {
             if (roads.isEmpty()) return EMPTY
             val segments = ArrayList<Segment>(roads.size)
             val segmentFirstTimes = ArrayList<Long>(roads.size)
+            val segmentLastTimes = ArrayList<Long>(roads.size)
+            val segmentVisits = if (visitWindows.isEmpty()) null else ArrayList<List<Pair<Long, Long>>>(roads.size)
             val nodes = ArrayList<Node>(roads.size * 2)
             val buckets = HashMap<Cell, MutableList<Int>>(roads.size * 2)
             val lookupCell = Cell(0, 0, 0)
@@ -57,7 +60,8 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 return index
             }
 
-            fun addSegment(coordinates: DoubleArray, firstUnlockedAt: Long) {
+            fun addSegment(coordinates: DoubleArray, firstUnlockedAt: Long, lastDrivenAt: Long,
+                           visits: List<Pair<Long, Long>>) {
                 if (coordinates.size < 4) return
                 val startLatitude = coordinates[0]
                 val startLongitude = coordinates[1]
@@ -74,10 +78,13 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 }
                 segments += Segment(coordinates, startNode, endNode)
                 segmentFirstTimes += firstUnlockedAt
+                segmentLastTimes += lastDrivenAt
+                segmentVisits?.add(visits)
             }
 
             for (road in roads) {
                 val points = GeoJsonUtil.validRoadCoordinates(road.geometryJson) ?: continue
+                val visits = visitWindows[road.segmentId].orEmpty()
                 val part = DoubleBuffer(points.length() * 2 + 4)
                 var previous = points.getJSONArray(0)
                 part.add(previous.getDouble(1))
@@ -100,7 +107,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                             (currentLatitude - previous.getDouble(1)) * fraction
                         part.add(crossingLatitude)
                         part.add(boundary)
-                        addSegment(part.toArray(), road.firstUnlockedAt)
+                        addSegment(part.toArray(), road.firstUnlockedAt, road.lastDrivenAt, visits)
                         part.clear()
                         part.add(crossingLatitude)
                         part.add(-boundary)
@@ -109,7 +116,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                     part.add(currentLongitude)
                     previous = current
                 }
-                addSegment(part.toArray(), road.firstUnlockedAt)
+                addSegment(part.toArray(), road.firstUnlockedAt, road.lastDrivenAt, visits)
             }
             if (segments.isEmpty()) return EMPTY
 
@@ -131,7 +138,28 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             // Snap to the intersection of the two already-matched centerline directions;
             // never draw a long straight chord that cuts through the inside of a turn.
             val originalSegmentCount = segments.size
-            appendSupportedJunctions(segments, segmentFirstTimes, nodes, degree)
+            // Protect the original first-unlock connections before considering other visits.
+            // Mixing later visits into this pass could make a previously valid turn ambiguous.
+            appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes, degree)
+            val occupied = HashSet<Int>()
+            fun reserveConnectors(since: Int) {
+                for (index in since until segments.size) {
+                    occupied += segments[index].startNode
+                    occupied += segments[index].endNode
+                }
+            }
+            reserveConnectors(originalSegmentCount)
+            if (segmentVisits != null) {
+                // Saved visit intervals are stronger evidence than aggregate last-driven times.
+                // Add only unoccupied endpoints; never displace the original visible turns.
+                appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes,
+                    degree, segmentVisits, occupied)
+            } else {
+                // On larger viewports or if visit retrieval fails, keep the later-drive
+                // fallback without allowing it to erase first-unlock connections.
+                appendSupportedJunctions(segments, segmentFirstTimes, segmentLastTimes, nodes,
+                    degree, occupiedNodes = occupied, includeLastTimes = true)
+            }
             // Give each synthetic segment the same graph-adjacency treatment as actual roads.
             for (index in originalSegmentCount until segments.size) {
                 addAdjacent(segments[index].startNode, index)
@@ -185,27 +213,46 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
         }
 
         /**
-         * The matcher can leave a short hole exactly where one named road becomes another,
-         * despite confirming both sides. Only join orphaned endpoints from the original
-         * time-ordered drive, with a unique nearby successor and intersecting centerlines.
+         * The matcher can leave a short hole exactly where one named road becomes another.
+         * Use both original unlock and last-driven timestamps: a road unlocked on an earlier
+         * trip can still be the confirmed approach to a newly unlocked road today. Require
+         * nearby times AND unique intersecting centerlines, never geometry alone.
          * This is strictly a visual repair; no local or verified road credit is created.
          */
         private fun appendSupportedJunctions(
             segments: MutableList<Segment>,
             firstTimes: List<Long>,
+            lastTimes: List<Long>,
             nodes: List<Node>,
-            degree: IntArray
+            degree: IntArray,
+            visits: List<List<Pair<Long, Long>>>? = null,
+            occupiedNodes: Set<Int> = emptySet(),
+            includeLastTimes: Boolean = false
         ) {
-            val originalSize = segments.size
+            // Both passes inspect the original roads, never the already added connectors.
+            val originalSize = firstTimes.size
             val startsBySecond = HashMap<Long, MutableList<Int>>()
             for (index in 0 until originalSize) {
-                if (degree[segments[index].startNode] != 1) continue
-                startsBySecond.getOrPut(firstTimes[index] / 1_000L) { ArrayList(2) } += index
+                if (degree[segments[index].startNode] != 1 ||
+                    segments[index].startNode in occupiedNodes) continue
+                if (visits != null) {
+                    for ((startedAt, _) in visits[index]) {
+                        startsBySecond.getOrPut(startedAt / 1_000L) { ArrayList(2) } += index
+                    }
+                } else {
+                    startsBySecond.getOrPut(firstTimes[index] / 1_000L) { ArrayList(2) } += index
+                    if (includeLastTimes && lastTimes[index] != firstTimes[index]) {
+                        startsBySecond.getOrPut(lastTimes[index] / 1_000L) { ArrayList(2) } += index
+                    }
+                }
             }
             val bestFrom = arrayOfNulls<JunctionCandidate>(originalSize)
             val bestTo = arrayOfNulls<JunctionCandidate>(originalSize)
             val secondFrom = DoubleArray(originalSize) { Double.POSITIVE_INFINITY }
             val secondTo = DoubleArray(originalSize) { Double.POSITIVE_INFINITY }
+            // One segment pair can qualify at both original and recent timestamps.
+            // It must count as ONE candidate, not an ambiguous second connection.
+            val seenFrom = IntArray(originalSize) { -1 }
 
             fun offer(index: Int, candidate: JunctionCandidate, best: Array<JunctionCandidate?>, second: DoubleArray) {
                 val previous = best[index]
@@ -219,24 +266,41 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
 
             for (from in 0 until originalSize) {
                 val left = segments[from]
-                if (degree[left.endNode] != 1) continue
-                val time = firstTimes[from]
-                // Bounded timestamp index: avoids quadratic work with years of unlocked roads.
-                for (second in time / 1_000L..time / 1_000L + 15L) {
-                    for (to in startsBySecond[second].orEmpty()) {
-                        if (to == from) continue
-                        val gapMs = firstTimes[to] - time
-                        if (gapMs !in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS) continue
-                        val right = segments[to]
-                        val distance = metersBetween(
-                            nodes[left.endNode].latitude, nodes[left.endNode].longitude,
-                            nodes[right.startNode].latitude, nodes[right.startNode].longitude
-                        )
-                        if (distance !in ENDPOINT_JOIN_TOLERANCE_M..MAX_SUPPORTED_JUNCTION_DISTANCE_M) continue
-                        val bend = supportedJunctionBend(left.coordinates, right.coordinates, distance) ?: continue
-                        val candidate = JunctionCandidate(from, to, distance, bend)
-                        offer(from, candidate, bestFrom, secondFrom)
-                        offer(to, candidate, bestTo, secondTo)
+                if (degree[left.endNode] != 1 || left.endNode in occupiedNodes) continue
+                // Normal pass remains identical; the additional pass pairs the end of one
+                // recorded visit with the beginning of another visit.
+                for (timeIndex in 0 until (visits?.get(from)?.size ?: if (includeLastTimes) 2 else 1)) {
+                    val time = if (visits == null) {
+                        if (timeIndex == 0) firstTimes[from] else lastTimes[from]
+                    } else visits[from][timeIndex].second
+                    if (visits == null && timeIndex == 1 && time == firstTimes[from]) continue
+                    // Bounded timestamp index: avoids quadratic work with years of unlocked roads.
+                    for (second in time / 1_000L..time / 1_000L + 15L) {
+                        for (to in startsBySecond[second].orEmpty()) {
+                            if (to == from || seenFrom[to] == from) continue
+                            val timeMatches = if (visits == null) {
+                                val firstGap = firstTimes[to] - time
+                                val lastGap = lastTimes[to] - time
+                                firstGap in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS ||
+                                    (includeLastTimes && lastGap in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS)
+                            } else {
+                                visits[to].any { (startedAt, _) ->
+                                    startedAt - time in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS
+                                }
+                            }
+                            if (!timeMatches) continue
+                            val right = segments[to]
+                            val distance = metersBetween(
+                                nodes[left.endNode].latitude, nodes[left.endNode].longitude,
+                                nodes[right.startNode].latitude, nodes[right.startNode].longitude
+                            )
+                            if (distance !in ENDPOINT_JOIN_TOLERANCE_M..MAX_SUPPORTED_JUNCTION_DISTANCE_M) continue
+                            val bend = supportedJunctionBend(left.coordinates, right.coordinates, distance) ?: continue
+                            seenFrom[to] = from
+                            val candidate = JunctionCandidate(from, to, distance, bend)
+                            offer(from, candidate, bestFrom, secondFrom)
+                            offer(to, candidate, bestTo, secondTo)
+                        }
                     }
                 }
             }
@@ -467,7 +531,10 @@ object FogBitmapRenderer {
         val liveScreen: DoubleArray?,
         val textureMatrix: FloatArray = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f),
         val exploredCoordinates: DoubleArray = doubleArrayOf(),
-        val exploredScreen: DoubleArray = doubleArrayOf()
+        val exploredScreen: DoubleArray = doubleArrayOf(),
+        val gridMode: Boolean = false,
+        val gridCoordinates: DoubleArray = doubleArrayOf(),
+        val gridScreen: DoubleArray = doubleArrayOf()
     )
 
     fun render(request: Request, reusable: Bitmap? = null): Bitmap {
@@ -485,6 +552,18 @@ object FogBitmapRenderer {
         scratch.textureMatrix.setValues(request.textureMatrix)
         scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
         canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
+        // In grid mode, road geometry and point-radius fog reveals do not contribute.
+        // Blue roads still render separately; entering a mile tile is the sole unlock trigger.
+        if (request.gridMode) {
+            if (request.gridScreen.isEmpty()) return bitmap
+            val reveal = scratch.acquireRevealBitmap(request.bitmapWidth, request.bitmapHeight)
+            val revealCanvas = Canvas(reveal)
+            for (i in 0 until minOf(request.gridCoordinates.size, request.gridScreen.size) - 7 step 8) {
+                drawGridReveal(revealCanvas, request, i, scratch)
+            }
+            canvas.drawBitmap(reveal, 0f, 0f, scratch.applyRevealPaint)
+            return bitmap
+        }
         if (request.roads.coordinates.isEmpty() && request.exploredCoordinates.isEmpty() && request.liveScreen == null) return bitmap
 
         // Combine the strongest reveal once. Repeated DST_OUT operations multiply the
@@ -534,6 +613,86 @@ object FogBitmapRenderer {
         }
         canvas.drawBitmap(reveal, 0f, 0f, scratch.applyRevealPaint)
         return bitmap
+    }
+
+    /**
+     * Clear the entire visited tile, then fade out from each edge and corner over the
+     * original 1,500-foot distance. LIGHTEN combines adjacent cells by their maximum
+     * reveal; it never compounds the gradient or pushes the fade farther out.
+     */
+    private fun drawGridReveal(canvas: Canvas, request: Request, offset: Int, scratch: RenderScratch) {
+        val xy = scratch.gridPoints
+        for (corner in 0..3) {
+            val i = offset + corner * 2
+            val x = request.gridScreen[i]
+            val y = request.gridScreen[i + 1]
+            if (!x.isFinite() || !y.isFinite()) return
+            xy[corner * 2] = ((x - request.screenLeft) * request.screenScale).toFloat()
+            xy[corner * 2 + 1] = ((y - request.screenTop) * request.screenScale).toFloat()
+        }
+        val latitude = (request.gridCoordinates[offset] + request.gridCoordinates[offset + 4]) / 2.0
+        val centerCos = cos(Math.toRadians(request.centerLatitude.coerceIn(-85.05112878, 85.05112878)))
+            .coerceAtLeast(1e-6)
+        val localCos = cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878)))
+        val metersPerPixel = request.metersPerScreenPixelAtCenter / centerCos * localCos
+        if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return
+        val radius = maxOf(
+            (ROAD_FULL_M / metersPerPixel * request.screenScale).toFloat(),
+            MIN_VISIBLE_REVEAL_RADIUS_PX * request.screenScale
+        )
+        if (!radius.isFinite() || radius <= 0f) return
+        var minX = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY
+        var minY = Float.POSITIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
+        for (corner in 0..3) {
+            val x = xy[corner * 2]
+            val y = xy[corner * 2 + 1]
+            minX = minOf(minX, x)
+            maxX = maxOf(maxX, x)
+            minY = minOf(minY, y)
+            maxY = maxOf(maxY, y)
+        }
+        if (minX - radius > canvas.width || maxX + radius < 0f ||
+            minY - radius > canvas.height || maxY + radius < 0f
+        ) return
+
+        val paint = scratch.revealPaint
+        val path = scratch.gridPath
+        path.reset()
+        path.moveTo(xy[0], xy[1])
+        for (i in 1..3) path.lineTo(xy[i * 2], xy[i * 2 + 1])
+        path.close()
+        paint.shader = null
+        paint.color = Color.WHITE
+        canvas.drawPath(path, paint)
+
+        // Corners are circular, preventing the square 'halo' a blurred bounding box makes.
+        paint.shader = scratch.gridEdgeGradient
+        for (corner in 0..3) {
+            val next = (corner + 1) % 4
+            val x = xy[corner * 2]
+            val y = xy[corner * 2 + 1]
+            val dx = xy[next * 2] - x
+            val dy = xy[next * 2 + 1] - y
+            val length = hypot(dx, dy)
+            if (length <= 0f) continue
+            val save = canvas.save()
+            canvas.translate(x, y)
+            canvas.rotate(Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat())
+            canvas.scale(radius, radius)
+            // Clockwise NW, NE, SE, SW: the outside of each edge is local -Y.
+            canvas.drawRect(0f, -1f, length / radius, 0f, paint)
+            canvas.restoreToCount(save)
+        }
+        paint.shader = scratch.gridCornerGradient
+        for (corner in 0..3) {
+            val save = canvas.save()
+            canvas.translate(xy[corner * 2], xy[corner * 2 + 1])
+            canvas.scale(radius, radius)
+            canvas.drawCircle(0f, 0f, 1f, paint)
+            canvas.restoreToCount(save)
+        }
     }
 
     private fun drawPlaceReveal(canvas: Canvas, request: Request, latitude: Double, x: Double, y: Double,
@@ -647,6 +806,15 @@ object FogBitmapRenderer {
             ))
         }
         val capBounds = RectF(-1f, -1f, 1f, 1f)
+        val gridPoints = FloatArray(8)
+        val gridPath = Path()
+        val gridEdgeGradient = LinearGradient(
+            0f, 0f, 0f, -1f,
+            intArrayOf(Color.WHITE, Color.rgb(140, 140, 140), Color.rgb(51, 51, 51),
+                Color.rgb(15, 15, 15), Color.BLACK),
+            floatArrayOf(0f, 0.20f, 0.50f, 0.80f, 1f), Shader.TileMode.CLAMP
+        )
+        val gridCornerGradient = radial(0f)
         private val roadClearFraction = ROAD_CLEAR_M / ROAD_FULL_M
         val roadLinear = LinearGradient(
             0f, -1f, 0f, 1f,

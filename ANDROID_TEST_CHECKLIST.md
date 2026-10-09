@@ -53,14 +53,15 @@ This checklist is for final device-level validation on supported Android 12+ pho
 4. At 5% battery while Road Conquest is open or tracking, verify **Running on Fumes** unlocks once.
    At 1%, verify **Last Percent** unlocks once. Ordinary battery levels must not affect progression.
 5. Confirm achievement category buttons show **Roads**, **Distance**, **Places**, **Ads**, and **Extra**. Battery achievements belong to Extra; ad milestones belong only to Ads.
-6. Confirm ad achievements display 5/10/25/50/100 goals but cannot advance in this release because no ad
-   provider is bundled yet.
+6. In Garage & Shop, complete an AdMob rewarded ad and confirm the earned points are saved once.
+   Verify the Ads achievement count advances toward the 5/10/25/50/100 milestones. Cancel or
+   fail to load an ad and confirm neither points nor achievement progress increases.
 
 ## Export
 
 1. Use **Export driving data** in Settings.
 2. Open the ZIP and verify `metadata.json`, `track_points.csv`, `roads.csv`,
-   `explored_places.csv`, `visited_places.csv`, `place_candidates.csv`,
+   `road_visits.csv`, `explored_places.csv`, `visited_places.csv`, `place_candidates.csv`,
    `progression_rewards.csv`, `progression_purchases.csv`, and
    `progression_counters.csv` are present. Metadata schema version is 8.
 3. Verify metadata point/discovery counts agree with their CSVs and equipped car/road/gold settings

@@ -367,6 +367,26 @@ class OsrmTurnTest {
         )
     }
 
+    @Test fun missingLegStepsPreservesValidSiblingWithoutUnlockingTheMissingInterval() {
+        val result = requireNotNull(OsrmMatcher().parse(
+            response(
+                listOf(trace(0, 0, a), trace(0, 1, b), trace(0, 2, c)),
+                matching(leg("Approach", a, b), JSONObject())
+            ),
+            points(a, b, c)
+        ))
+        assertEquals(listOf("Approach"), result.roads.map { it.name })
+        assertEquals(setOf(1L, 2L), result.matchedPointConfidences.keys)
+        assertFalse(3L in result.matchedPointConfidences)
+    }
+
+    @Test fun missingStepsOnTheOnlyLegLeavesTheWholeTracePending() {
+        assertNull(OsrmMatcher().parse(
+            response(listOf(trace(0, 0, a), trace(0, 1, b)), matching(JSONObject())),
+            points(a, b)
+        ))
+    }
+
     @Test fun oneBadLegKeepsOnlyThatIntervalPendingAndPreservesValidSiblingGeometry() {
         val far = coord(-73.99, 40.01)
         val result = requireNotNull(

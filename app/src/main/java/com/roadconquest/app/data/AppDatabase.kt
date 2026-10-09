@@ -142,10 +142,7 @@ class AppDatabase private constructor(context: Context) :
                 "PRIMARY KEY (segment_id, started_at, ended_at), " +
                 "FOREIGN KEY (segment_id) REFERENCES roads(segment_id) ON DELETE CASCADE)"
         )
-        db.execSQL(
-            "CREATE INDEX idx_road_visits_segment_time " +
-                "ON road_visits(segment_id, started_at, ended_at)"
-        )
+        // The composite PRIMARY KEY already creates the covering index used for visit lookups.
 
         db.execSQL(
             "CREATE TABLE explored_places (" +

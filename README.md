@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 27
+# Road Conquest 1.0 Beta 28
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -7,9 +7,10 @@ cloud-textured fog map.
 [Source and issues](https://github.com/AntnyGamer/RoadConquest-Beta) ·
 [GNU AGPL v3 license](LICENSE)
 
-Beta 27 improves short, GPS-supported cross-road joins and selectively retries confidently
-bracketed missing sharp-turn fixes without restrictive heading hints. It preserves the existing
-safe map-refresh optimizations, strict geometry checks and all stored road progress.
+Beta 28 replaces road-centered fog clearing with worldwide, approximately 1-mile-square
+exploration cells and a 1,500-foot soft transition beyond each cell. It also improves
+recorded-visit-backed visual turn repair and ad loading recovery while retaining all
+stored road progress and GPS acceptance checks.
 
 ## Install
 
@@ -26,7 +27,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 53.
+This release uses Android application ID `com.roadconquest.app` and internal version code 54.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -42,8 +43,10 @@ the Google Play listing is created; changing it later would create a different a
 - Where a confirmed road ends in a tiny map-matching micro-segment, junction drawing
   uses the nearest 4 m of that same centerline (within 25 m), avoiding an artificial
   visual gap without relaxing the intersection-safety checks.
-- Drive to save matched road lines and reveal the map. Accurate locations also reveal nearby
-  places while walking or stopped, without adding driving miles.
+- Drive to save matched road lines. Entering a roughly 1-mile × 1-mile world-grid tile
+  permanently clears fog across that entire tile, with a gradual 1,500-foot fade beyond
+  its edges. Good location fixes can unlock tiles while walking or stopped too, without
+  adding driving miles. Existing exploration history remains visible in the new grid.
 - Earn points from newly unlocked roads, achievements and first visits to towns, states/regions
   and countries. Your current point balance is visible directly on the map.
 - Open Garage & Shop to buy and equip car shapes, car colors, road colors, or the Golden

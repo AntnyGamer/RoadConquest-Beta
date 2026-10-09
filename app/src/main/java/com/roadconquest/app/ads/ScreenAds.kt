@@ -30,7 +30,7 @@ import com.roadconquest.app.util.ForegroundSession
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Activity-owned ads: no requests from the map or tracking service, and no retry timers. */
+/** Activity-owned ads: no requests from the map or tracking service; bounded UI-only retries. */
 class ScreenAds(
     private val activity: Activity,
     private val root: View,
@@ -51,11 +51,14 @@ class ScreenAds(
     private var formShowing = false
     private var sdkReady = false
     private var banner: AdView? = null
+    private var bannerLayoutListener: View.OnLayoutChangeListener? = null
     private var rewarded: RewardedAd? = null
     private var rewardLoadedAt = 0L
     private var loadingReward = false
     private var showingReward = false
     private var privacyRevision = AdPrivacy.revision
+    private var recoveryUsed = false
+    private val retryAds = Runnable { if (permitted()) enableAds() }
 
     init {
         rewardButton?.setOnClickListener { loadOrShowReward() }
@@ -64,6 +67,8 @@ class ScreenAds(
 
     fun onResume() {
         active = true
+        recoveryUsed = false
+        root.removeCallbacks(retryAds)
         if (privacyRevision != AdPrivacy.revision) {
             privacyRevision = AdPrivacy.revision
             destroyBanner()
@@ -89,6 +94,8 @@ class ScreenAds(
 
     fun onPause() {
         active = false
+        root.removeCallbacks(retryAds)
+        clearBannerLayoutListener()
         epoch++
         // A hidden screen must never show an ad that finishes loading later.
         rewarded = null
@@ -106,6 +113,13 @@ class ScreenAds(
     private fun alive() = !destroyed && !activity.isDestroyed && !activity.isFinishing
 
     private fun permitted() = alive() && active && consentComplete && !formShowing && consent.canRequestAds()
+
+    /** At most one foreground recovery attempt per screen visit; never retry while hidden. */
+    private fun retryOnce() {
+        if (!active || !alive() || recoveryUsed) return
+        recoveryUsed = true
+        root.postDelayed(retryAds, AD_RETRY_DELAY_MS)
+    }
 
     private fun presentConsentForm() {
         if (!alive() || !active || formShowing || !formPending) return
@@ -168,17 +182,41 @@ class ScreenAds(
                 sdkReady = error == null
                 if (sdkReady) root.post {
                     if (permitted() && current == epoch) createBanner()
+                } else {
+                    retryOnce()
                 }
                 updateRewardButton()
             }
         }
     }
 
+    private fun clearBannerLayoutListener() {
+        bannerLayoutListener?.let(root::removeOnLayoutChangeListener)
+        bannerLayoutListener = null
+    }
+
     private fun createBanner() {
         if (banner != null || !sdkReady || !permitted()) return
         val pixels = root.width - root.paddingLeft - root.paddingRight - footer.paddingLeft - footer.paddingRight
         val widthDp = (pixels / activity.resources.displayMetrics.density).toInt()
-        if (widthDp <= 0) return
+        if (widthDp <= 0) {
+            // Cached SDK initialization may complete before a new Activity's first layout.
+            // Wait for actual dimensions rather than silently skipping the banner.
+            if (bannerLayoutListener == null) {
+                val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                    val measuredPixels = root.width - root.paddingLeft - root.paddingRight -
+                        footer.paddingLeft - footer.paddingRight
+                    if ((measuredPixels / activity.resources.displayMetrics.density).toInt() > 0) {
+                        clearBannerLayoutListener()
+                        createBanner()
+                    }
+                }
+                bannerLayoutListener = listener
+                root.addOnLayoutChangeListener(listener)
+            }
+            return
+        }
+        clearBannerLayoutListener()
         val view = AdView(activity)
         banner = view
         view.adUnitId = BuildConfig.ADMOB_BANNER_ID
@@ -193,8 +231,12 @@ class ScreenAds(
 
             override fun onAdFailedToLoad(error: LoadAdError) {
                 if (banner !== view || !alive()) return
-                // Keep an existing successful banner during a failed SDK refresh.
-                if (bannerRow.visibility != View.VISIBLE) updateFooter()
+                // A failed first load must not leave a nonfunctional AdView blocking recovery.
+                // Keep a successfully loaded banner if an SDK refresh fails later.
+                if (bannerRow.visibility != View.VISIBLE) {
+                    destroyBanner()
+                    retryOnce()
+                }
             }
         }
         container.addView(view, FrameLayout.LayoutParams(
@@ -303,31 +345,43 @@ class ScreenAds(
     }
 
     private fun toast(message: Int) = Toast.makeText(activity, message, Toast.LENGTH_SHORT).show()
+
+    companion object {
+        private const val AD_RETRY_DELAY_MS = 60_000L
+    }
 }
 
 private object AdPrivacy { var revision = 0 }
 
 private object AdSdk {
     private var initialization: CompletableFuture<Unit>? = null
+    private var lifecycleRegistered = false
 
     @Synchronized fun initialize(application: Application): CompletableFuture<Unit> {
         initialization?.let { return it }
+        // Register once across failed initialization attempts, or AdActivity transitions
+        // would be counted multiple times and change automatic-tracking lifecycle behavior.
+        if (!lifecycleRegistered) {
+            application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityStarted(activity: Activity) { if (activity is AdActivity) ForegroundSession.app.onStart() }
+                override fun onActivityStopped(activity: Activity) { if (activity is AdActivity) ForegroundSession.app.onStop(activity.isChangingConfigurations) }
+                override fun onActivityCreated(activity: Activity, state: Bundle?) {}
+                override fun onActivityResumed(activity: Activity) {}
+                override fun onActivityPaused(activity: Activity) {}
+                override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) {}
+                override fun onActivityDestroyed(activity: Activity) {}
+            })
+            lifecycleRegistered = true
+        }
         val future = CompletableFuture<Unit>()
         initialization = future
-        // SDK full-screen activities are internal navigation, just like our own app screens.
-        application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-            override fun onActivityStarted(activity: Activity) { if (activity is AdActivity) ForegroundSession.app.onStart() }
-            override fun onActivityStopped(activity: Activity) { if (activity is AdActivity) ForegroundSession.app.onStop(activity.isChangingConfigurations) }
-            override fun onActivityCreated(activity: Activity, state: Bundle?) {}
-            override fun onActivityResumed(activity: Activity) {}
-            override fun onActivityPaused(activity: Activity) {}
-            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) {}
-            override fun onActivityDestroyed(activity: Activity) {}
-        })
         Thread({
             try {
                 MobileAds.initialize(application) { future.complete(Unit) }
             } catch (error: Exception) {
+                synchronized(this) {
+                    if (initialization === future) initialization = null
+                }
                 future.completeExceptionally(error)
             }
         }, "AdSdkInit").start()
