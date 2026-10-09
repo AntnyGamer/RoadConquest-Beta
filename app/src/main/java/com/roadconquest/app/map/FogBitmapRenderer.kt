@@ -26,7 +26,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             val segments = ArrayList<Segment>(roads.size)
             val segmentFirstTimes = ArrayList<Long>(roads.size)
             val segmentLastTimes = ArrayList<Long>(roads.size)
-            val segmentVisits = ArrayList<List<Pair<Long, Long>>>(roads.size)
+            val segmentVisits = if (visitWindows.isEmpty()) null else ArrayList<List<Pair<Long, Long>>>(roads.size)
             val nodes = ArrayList<Node>(roads.size * 2)
             val buckets = HashMap<Cell, MutableList<Int>>(roads.size * 2)
             val lookupCell = Cell(0, 0, 0)
@@ -78,7 +78,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                 segments += Segment(coordinates, startNode, endNode)
                 segmentFirstTimes += firstUnlockedAt
                 segmentLastTimes += lastDrivenAt
-                segmentVisits.add(visits)
+                segmentVisits?.add(visits)
             }
 
             for (road in roads) {
@@ -141,7 +141,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             // Individual saved visits can reveal a corner driven between the earliest and
             // latest visits. Run after the original repair: additional evidence must never
             // invalidate a previously accepted visual connector.
-            if (segmentVisits.any { it.isNotEmpty() }) {
+            if (segmentVisits != null) {
                 val occupied = HashSet<Int>()
                 for (index in originalSegmentCount until segments.size) {
                     occupied += segments[index].startNode
