@@ -117,6 +117,7 @@ class MapRenderer(
     private var detailedFogCoordinates: DoubleArray? = null
     private val fogCoverageScreen = DoubleArray(8)
     private var showingDetailedFog = false
+    private var activeDetailedFogAlternate = false
     private var lastFogRenderAt = 0L
     private var minimumZoom = Double.NaN
     private val renderFog = Runnable { scheduleFogRender() }
@@ -747,6 +748,7 @@ class MapRenderer(
     }
 
     private fun installFogLayer(style: Style) {
+        activeDetailedFogAlternate = false
         detailedFogCoordinates = null
         showingDetailedFog = false
         // Keep a ready native world layer behind the detailed viewport. A fast pinch can
@@ -759,6 +761,16 @@ class MapRenderer(
         style.addSource(ImageSource(FOG_SOURCE_ID, currentFogQuad(), transparent))
         style.addLayer(
             RasterLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
+                rasterOpacity(0f),
+                rasterFadeDuration(0f)
+            ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) }
+        )
+        // Prepare the NEXT georeferenced raster while it is invisible.
+        // Updating pixels and corners in place on the visible ImageSource
+        // displayed the old clearing at the new coordinates for a frame.
+        style.addSource(ImageSource(FOG_ALT_SOURCE_ID, currentFogQuad(), transparent))
+        style.addLayer(
+            RasterLayer(FOG_ALT_LAYER_ID, FOG_ALT_SOURCE_ID).withProperties(
                 rasterOpacity(0f),
                 rasterFadeDuration(0f)
             ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) }
@@ -821,7 +833,12 @@ class MapRenderer(
             }
         val changed = detailed != showingDetailedFog
         if (!force && !changed) return
-        val detailedLayer = map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer
+        val detail = map.style?.getLayer(
+            if (activeDetailedFogAlternate) FOG_ALT_LAYER_ID else FOG_LAYER_ID
+        ) as? RasterLayer
+        val inactive = map.style?.getLayer(
+            if (activeDetailedFogAlternate) FOG_LAYER_ID else FOG_ALT_LAYER_ID
+        ) as? RasterLayer
         val worldLayer = map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer
         showingDetailedFog = detailed
         // Switch both layer opacities together in one UI callback. The previous
@@ -830,13 +847,16 @@ class MapRenderer(
         // No overlapping transition may outlive this callback.
         if (!fogEnabled) {
             worldLayer?.setProperties(rasterOpacity(0f))
-            detailedLayer?.setProperties(rasterOpacity(0f))
+            detail?.setProperties(rasterOpacity(0f))
+            inactive?.setProperties(rasterOpacity(0f))
         } else if (detailed) {
-            detailedLayer?.setProperties(rasterOpacity(1f))
+            inactive?.setProperties(rasterOpacity(0f))
+            detail?.setProperties(rasterOpacity(1f))
             worldLayer?.setProperties(rasterOpacity(0f))
         } else {
+            detail?.setProperties(rasterOpacity(0f))
+            inactive?.setProperties(rasterOpacity(0f))
             worldLayer?.setProperties(rasterOpacity(1f))
-            detailedLayer?.setProperties(rasterOpacity(0f))
         }
     }
 
@@ -973,12 +993,18 @@ class MapRenderer(
                 fogRunning = false
                 if (rendered != null) {
                     if (viewportActive && capture.styleGeneration == styleGeneration) {
-                        val id = if (capture.world) WORLD_FOG_SOURCE_ID else FOG_SOURCE_ID
+                        val nextAlternate = !activeDetailedFogAlternate
+                        val id = if (capture.world) WORLD_FOG_SOURCE_ID
+                            else if (nextAlternate) FOG_ALT_SOURCE_ID else FOG_SOURCE_ID
                         val source = map.style?.getSource(id) as? ImageSource
+                        // The incoming detailed source is HIDDEN while its quad
+                        // and bitmap are both replaced; visible pixels cannot be
+                        // mistakenly attached to a new geographic location.
                         source?.setCoordinates(capture.quad)
-                        // MapLibre 13.6.1 copies Android bitmap pixels synchronously in nativeSetImage.
+                        // MapLibre 13.6.1 synchronously copies source bitmap pixels.
                         source?.setImage(rendered)
                         if (!capture.world && source != null) {
+                            activeDetailedFogAlternate = nextAlternate
                             detailedFogCoordinates = doubleArrayOf(
                                 capture.quad.topLeft.latitude, capture.quad.topLeft.longitude,
                                 capture.quad.topRight.latitude, capture.quad.topRight.longitude,
@@ -1173,6 +1199,8 @@ class MapRenderer(
         private const val ROAD_LAYER_ID = "roadconquest-traveled-roads-line"
         private const val FOG_SOURCE_ID = "roadconquest-fog"
         private const val FOG_LAYER_ID = "roadconquest-fog-raster"
+        private const val FOG_ALT_SOURCE_ID = "roadconquest-fog-buffer"
+        private const val FOG_ALT_LAYER_ID = "roadconquest-fog-buffer-raster"
         private const val WORLD_FOG_SOURCE_ID = "roadconquest-world-fog"
         private const val WORLD_FOG_LAYER_ID = "roadconquest-world-fog-raster"
         private val overviewFog by lazy {
