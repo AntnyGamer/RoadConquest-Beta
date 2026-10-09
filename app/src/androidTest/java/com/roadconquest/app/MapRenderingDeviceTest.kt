@@ -247,6 +247,30 @@ class MapRenderingDeviceTest {
                     val pixel = bitmap.getPixel(x, y)
                     Color.red(pixel) > 230 && Color.green(pixel) > 230 && Color.blue(pixel) > 230
                 }
+                // The same saved square must remain pinned to the identical
+                // geographic latitude/longitude through repeated regional zooms
+                // and pans. Beta 29 snapped between world pixels and detailed
+                // pixels, making this clearing appear to teleport.
+                for ((target, zoom) in listOf(
+                    exploredPoint to 8.0,
+                    LatLng(40.0, -73.98) to 9.0,
+                    exploredPoint to 10.0,
+                    LatLng(40.0, -74.02) to 11.0,
+                    exploredPoint to 13.0
+                )) {
+                    move(target, zoom)
+                    awaitPixels("Saved clearing stays at its map coordinate zoom=$zoom") { bitmap ->
+                        val point = map.projection.toScreenLocation(exploredPoint)
+                        val x = point.x.toInt()
+                        val y = point.y.toInt()
+                        if (x !in 1 until bitmap.width - 1 || y !in 1 until bitmap.height - 1) false
+                        else {
+                            val color = bitmap.getPixel(x, y)
+                            Color.red(color) > 225 && Color.green(color) > 225 &&
+                                Color.blue(color) > 225
+                        }
+                    }
+                }
                 scenario.onActivity {
                     val ids = map.style!!.layers.map { it.id }
                     assertTrue(ids.indexOf("roadconquest-fog-raster") < ids.indexOf("roadconquest-traveled-roads-line"))
