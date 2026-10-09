@@ -99,6 +99,7 @@ class MapRenderer(
     // same empty data over the native bridge on every viewport/GPS refresh.
     private var pendingRouteSourceIsEmpty = true
     private var displayedPlaces = doubleArrayOf()
+    private var savedGridCoordinates = doubleArrayOf()
     private var loadedRoadBounds: RoadQueryBounds? = null
     private var loadedPlaceBounds: RoadQueryBounds? = null
     private var roadDataRevision = 0
@@ -501,7 +502,9 @@ class MapRenderer(
             val result = runCatching {
                 // Match the larger native fog footprint so a normal pan continues to show
                 // already-unlocked roads while the gesture is in progress.
-                val fadePad = FogBitmapRenderer.ROAD_FULL_M / 110_000.0
+                // Include a full grid cell beyond the existing fade padding, so a visited
+                // sample outside the viewport can still clear a cell intersecting it.
+                val fadePad = (FogBitmapRenderer.ROAD_FULL_M + 1_609.344) / 110_000.0
                 val latPad = (north - south) * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER + fadePad
                 val longitudeSpan = if (east >= west) east - west else east - west + 360.0
                 val lonPad = longitudeSpan * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER +
@@ -927,6 +930,9 @@ class MapRenderer(
     private fun setDisplayedPlaces(places: DoubleArray) {
         if (displayedPlaces.contentEquals(places)) return
         displayedPlaces = places
+        // Saved 50 m exploration samples map to unique mile-square tiles; existing
+        // history remains compatible and neither road matching nor scoring changes.
+        savedGridCoordinates = FogGrid.visitedCorners(places)
         placeDataRevision++
     }
 
@@ -1071,19 +1077,18 @@ class MapRenderer(
         ).coerceAtMost(1f)
         val bitmapWidth = (expandedWidth * scale).roundToInt().coerceAtLeast(2)
         val bitmapHeight = (expandedHeight * scale).roundToInt().coerceAtLeast(2)
-        val roads = if (position.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedRoads
-            else OverlayRoads.EMPTY
-        val roadScreen = projectRoads(roads)
-        val places = if (position.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) displayedPlaces else doubleArrayOf()
-        val placeScreen = projectPlaces(places)
-
+        // Fog no longer depends on the road linework or point-radius clearings.
+        // Deduplicate visited cells once per data update, project only the grid corners.
+        val savedCorners = savedGridCoordinates
+        val savedScreen = projectPlaces(savedCorners)
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
-        val liveScreen = fix?.let {
-            liveCoordinates[0] = it.latitude
-            liveCoordinates[1] = it.longitude
-            map.projection.toScreenLocations(liveCoordinates, liveScreenCache)
-            liveScreenCache
+        val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
+        val currentScreen = DoubleArray(currentCorners.size)
+        if (currentCorners.isNotEmpty()) {
+            map.projection.toScreenLocations(currentCorners, currentScreen)
         }
+        val gridCorners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
+        val gridScreen = if (currentScreen.isEmpty()) savedScreen else savedScreen + currentScreen
         val center = position.target ?: return null
         val metersPerPixel = map.projection.getMetersPerPixelAtLatitude(center.latitude) / mapView.pixelRatio
         if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return null
@@ -1126,15 +1131,16 @@ class MapRenderer(
                 left,
                 top,
                 scale,
-                roads,
-                roadScreen.copyOf(),
+                OverlayRoads.EMPTY,
+                doubleArrayOf(),
                 center.latitude,
                 metersPerPixel,
-                fix?.latitude,
-                liveScreen?.copyOf(),
+                null,
+                null,
                 fogMatrixValues.copyOf(),
-                places,
-                placeScreen.copyOf()
+                gridMode = true,
+                gridCoordinates = gridCorners,
+                gridScreen = gridScreen
             )
         )
     }
