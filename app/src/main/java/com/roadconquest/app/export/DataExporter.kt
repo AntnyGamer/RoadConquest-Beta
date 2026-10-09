@@ -109,7 +109,7 @@ object DataExporter {
         var firstTime: Long? = null
         var lastTime: Long? = null
         zip.putNextEntry(ZipEntry("track_points.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("id,latitude,longitude,accuracy_m,speed_mps,bearing_deg,timestamp_utc,matched,next_match_attempt_utc,distance_m\n")
             database.query(
                 "track_points",
@@ -154,7 +154,7 @@ object DataExporter {
     private fun writeExploredPlaces(database: SQLiteDatabase, zip: ZipOutputStream): Long {
         var count = 0L
         zip.putNextEntry(ZipEntry("explored_places.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("latitude,longitude\n")
             database.query("explored_places", arrayOf("latitude", "longitude"),
                 null, null, null, null, "cell_x,cell_y").use { cursor ->
@@ -172,7 +172,7 @@ object DataExporter {
     private fun writeRoadVisits(database: SQLiteDatabase, zip: ZipOutputStream): Long {
         var count = 0L
         zip.putNextEntry(ZipEntry("road_visits.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("segment_id,started_at_utc,ended_at_utc\n")
             database.query(
                 "road_visits",
@@ -211,7 +211,7 @@ object DataExporter {
 
     private fun writeProgression(database: SQLiteDatabase, zip: ZipOutputStream): ProgressionExportSummary {
         zip.putNextEntry(ZipEntry("visited_places.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("kind,place_key,display_name,parent_name,country_name,first_visited_utc,latitude,longitude\n")
             database.query(
                 "visited_places",
@@ -253,7 +253,7 @@ object DataExporter {
 
         var pending = 0L
         zip.putNextEntry(ZipEntry("place_candidates.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("cell_x,cell_y,latitude,longitude,first_seen_utc,attempts,next_attempt_utc\n")
             database.query(
                 "place_candidates",
@@ -280,7 +280,7 @@ object DataExporter {
 
         var earned = 0L
         zip.putNextEntry(ZipEntry("progression_rewards.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("reward_key,points,awarded_at_utc\n")
             database.query(
                 "progression_rewards",
@@ -304,7 +304,7 @@ object DataExporter {
 
         var spent = 0L
         zip.putNextEntry(ZipEntry("progression_purchases.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("item_id,points_spent,purchased_at_utc\n")
             database.query(
                 "progression_purchases",
@@ -329,7 +329,7 @@ object DataExporter {
         var ads = 0L
         var lowestBattery: Int? = null
         zip.putNextEntry(ZipEntry("progression_counters.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("counter_key,value\n")
             database.query(
                 "progression_counters",
@@ -364,7 +364,7 @@ object DataExporter {
     private fun writeRoads(database: SQLiteDatabase, zip: ZipOutputStream): Long {
         var count = 0L
         zip.putNextEntry(ZipEntry("roads.csv"))
-        zip.writer(Charsets.UTF_8).let { writer ->
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
             writer.write("segment_id,road_group_id,name,first_unlocked_utc,last_driven_utc,times_driven,times_driven_exact,coordinates_json\n")
             database.query(
                 "roads",
