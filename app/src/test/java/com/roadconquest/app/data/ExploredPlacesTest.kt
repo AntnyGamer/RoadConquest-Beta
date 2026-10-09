@@ -16,13 +16,44 @@ class ExploredPlacesTest {
 
     @Before fun setup() {
         repository = TrackingRepository(RuntimeEnvironment.getApplication())
-        for (table in listOf("explored_places", "track_points", "roads")) {
+        for (table in listOf("explored_places", "explored_grid", "track_points", "roads")) {
             repository.readableDatabase().execSQL("DELETE FROM $table")
         }
     }
 
     private fun fix(latitude: Double = 40.0, longitude: Double = -74.0) = Location("gps").apply {
         this.latitude = latitude; this.longitude = longitude; accuracy = 5f; speed = 1f
+    }
+
+    @Test fun oneMileCellsPersistAndNeverChangeDrivingStatistics() {
+        val first = fix(40.0, -74.0)
+        assertTrue(repository.recordExploredGridCell(first))
+        assertFalse(repository.recordExploredGridCell(first))
+        assertEquals(2, repository.getExploredGridInBounds(41.0, -73.0, 39.0, -75.0).size)
+        val tile = com.roadconquest.app.map.FogGrid.corners(40.0, -74.0)
+        // A fix just over the boundary unlocks the neighboring entire tile.
+        assertTrue(repository.recordExploredGridCell(fix(40.0, tile[3] + 0.0000001)))
+        assertEquals(4, TrackingRepository(RuntimeEnvironment.getApplication())
+            .getExploredGridInBounds(41.0, -73.0, 39.0, -75.0).size)
+        assertEquals(0L, repository.getSummary().trackPointCount)
+        assertEquals(0L, repository.getSummary().roadsUnlockedCount)
+        assertFalse(repository.recordExploredGridCell(fix().apply { accuracy = 26f }))
+        assertFalse(repository.recordExploredGridCell(fix().apply { isMock = true }))
+        assertFalse(repository.recordExploredGridCell(fix(40.0, 181.0)))
+    }
+
+    @Test fun mileGridBackfillPreservesLegacyExplorationAndExistingDrivePoints() {
+        assertTrue(repository.recordExploredPlace(fix(40.01, -74.0)))
+        repository.insertLocation(fix(40.03, -74.03).apply { time = 1000 })
+        assertTrue(repository.getExploredGridInBounds(41.0, -73.0, 39.0, -75.0).isEmpty())
+        val db = repository.readableDatabase()
+        AppDatabase.get(RuntimeEnvironment.getApplication()).onUpgrade(db, 10, 11)
+        assertEquals(4, repository.getExploredGridInBounds(41.0, -73.0, 39.0, -75.0).size)
+        // Backfill is idempotent, legacy points remain untouched.
+        AppDatabase.get(RuntimeEnvironment.getApplication()).onUpgrade(db, 10, 11)
+        assertEquals(4, repository.getExploredGridInBounds(41.0, -73.0, 39.0, -75.0).size)
+        assertEquals(2, repository.getExploredPlacesInBounds(41.0, -73.0, 39.0, -75.0).size)
+        assertEquals(1L, repository.getSummary().trackPointCount)
     }
 
     @Test fun walkingPlacesPersistAndDeduplicateWithoutDrivingCredit() {
