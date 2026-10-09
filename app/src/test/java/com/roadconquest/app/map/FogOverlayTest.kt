@@ -130,6 +130,29 @@ class FogOverlayTest {
         assertEquals(3, OverlayRoads.prepare(listOf(incoming, outgoing)).starts.size)
     }
 
+    @Test fun revisitedWrongDirectionDoesNotGetConnectedAsATurn() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val wrongDirection = junctionRoad("wrong exit direction", 1_008_000L,
+            -74.096525 to 39.968062, -74.096604 to 39.968090, -74.096680 to 39.968117
+        ).copy(lastDrivenAt = 2_008_000L)
+        assertEquals("Recent timestamps must not override incompatible road geometry",
+            3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
+    }
+
+    @Test fun revisitedRoadsDoNotBridgeUnrelatedRecentTrips() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990
+        ).copy(lastDrivenAt = 2_000_000L)
+        val distantVisit = junctionRoad("exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987
+        ).copy(lastDrivenAt = 2_120_000L)
+        // Their original unlocks formed an eligible turn, so this must STILL show it.
+        // A distant revisit must never erase that already-confirmed visual connection.
+        assertEquals(2, OverlayRoads.prepare(listOf(incoming, distantVisit)).starts.size)
+    }
+
     @Test fun distantTangentEvidenceCannotCreateAShortcut() {
         val approach = junctionRoad("long unsupported approach", 1_000_000L,
             -74.099800 to 40.861300, -74.099301 to 40.861521,
