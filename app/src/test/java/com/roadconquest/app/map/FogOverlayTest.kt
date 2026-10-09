@@ -284,6 +284,45 @@ class FogOverlayTest {
         assertEquals(3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
     }
 
+    @Test fun visitedMileTileClearsEntireInteriorWithOriginal1500FootFade() {
+        val tile = request(metersPerPixel = 5.0).copy(
+            gridMode = true,
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.01, 0.01, 0.01, -0.01, 0.01, -0.01, -0.01
+            ),
+            gridScreen = doubleArrayOf(
+                200.0, 200.0, 400.0, 200.0, 400.0, 400.0, 200.0, 400.0
+            )
+        )
+        val rendered = FogBitmapRenderer.render(tile)
+        assertEquals(0, Color.alpha(rendered.getPixel(300, 300)))
+        assertEquals(0, Color.alpha(rendered.getPixel(300, 205)))
+        assertTrue(Color.alpha(rendered.getPixel(300, 160)) in 1..203)
+        assertEquals(204, Color.alpha(rendered.getPixel(300, 90)))
+        assertTrue(Color.alpha(rendered.getPixel(165, 165)) in 1..203)
+        assertEquals(204, Color.alpha(rendered.getPixel(90, 90)))
+    }
+
+    @Test fun mileGridIgnoresRoadOnlyClearingsAndAdjacentTilesHaveNoSeam() {
+        val road = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
+        val roadScreen = doubleArrayOf(0.0, 320.0, 640.0, 320.0)
+        val withoutTiles = request(road, roadScreen, metersPerPixel = 5.0).copy(gridMode = true)
+        assertEquals(204, alpha(320, 320, withoutTiles))
+        val withTiles = withoutTiles.copy(
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.02, 0.01, 0.0, -0.01, 0.0, -0.01, -0.02,
+                0.01, 0.0, 0.01, 0.02, -0.01, 0.02, -0.01, 0.0
+            ),
+            gridScreen = doubleArrayOf(
+                200.0, 200.0, 400.0, 200.0, 400.0, 400.0, 200.0, 400.0,
+                400.0, 200.0, 600.0, 200.0, 600.0, 400.0, 400.0, 400.0
+            )
+        )
+        assertEquals(0, alpha(400, 300, withTiles))
+        assertEquals(0, alpha(500, 300, withTiles))
+        assertEquals(204, alpha(60, 100, withTiles))
+    }
+
     @Test fun roadFadeKeepsClearCoreButAvoidsARegionalGlow() {
         val roads = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
         val screen = doubleArrayOf(-200.0, 300.0, 900.0, 300.0)
