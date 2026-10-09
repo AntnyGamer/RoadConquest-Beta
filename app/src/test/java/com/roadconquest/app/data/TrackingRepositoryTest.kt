@@ -38,9 +38,13 @@ class TrackingRepositoryTest {
         val second = first.copy(firstTimestamp = 2_000_000L, lastTimestamp = 2_005_000L)
         repository.upsertRoads(listOf(first))
         repository.upsertRoads(listOf(second))
+        // The bounded turn-repair query intentionally skips single-road viewports.
+        repository.upsertRoads(listOf(MatchedRoad("Other road",
+            "[[-74.005,40.0],[-74.004,40.0002]]", 3_000_000L, 3_005_000L, 0.99)))
         val roads = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0)
-        assertEquals(1, roads.size)
-        val visits = repository.getVisitWindowsForRoads(roads)[roads.single().segmentId]
+        assertEquals(2, roads.size)
+        val road = roads.single { it.name == "Visit test" }
+        val visits = repository.getVisitWindowsForRoads(roads)[road.segmentId]
         assertNotNull(visits)
         assertEquals(setOf(1_000_000L to 1_005_000L, 2_000_000L to 2_005_000L),
             requireNotNull(visits).toSet())
