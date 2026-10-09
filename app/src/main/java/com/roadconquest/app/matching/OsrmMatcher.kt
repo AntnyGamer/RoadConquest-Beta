@@ -6,6 +6,7 @@ import com.roadconquest.app.data.TrackPoint
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.URL
 import java.net.URI
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -39,16 +40,13 @@ class OsrmMatcher(
             previousSecond = normalizedSecond
             normalizedSecond.toString()
         }
-        val radiuses = points.joinToString(";") {
-            // Very small reported GNSS accuracy is common on modern phones, but the fix can
-            // still cut across a corner by several meters while the map road centerline is
-            // offset the other way. A 5 m OSRM search radius was leaving otherwise excellent
-            // turn samples unmatched. Give every fix a modest 10 m search envelope; parseLeg()
-            // still applies the stricter recorded-accuracy distance check before any geometry
-            // can become permanent road credit, so this improves candidate discovery without
-            // blindly accepting a nearby parallel road.
+        val supportedGap = supportedTurnGap(points)
+        // OSRM radiuses are GPS uncertainty, NOT a hard radius around the fix. Keep
+        // the original uncertainty for every point, including turns, so extra nearby
+        // roads cannot become more likely merely to fill an ambiguous corner.
+        val radiuses = points.joinToString(";") { point ->
             kotlin.math.ceil(
-                it.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toDouble()
+                point.accuracyMeters.coerceIn(MIN_MATCH_RADIUS_M, MAX_MATCH_RADIUS_M).toDouble()
             ).toInt().toString()
         }
         // Keep a leg per surviving fix so an ambiguous batch tail can be withheld without
@@ -60,13 +58,36 @@ class OsrmMatcher(
         val bearings = buildBearingGuidance(points)
         // The driving filter already removes bad fixes. Preserve dense accepted samples;
         // server-side tidy can turn otherwise usable samples into unmatched tracepoints.
-        val url = URI(
-            "$baseUrl/match/v1/driving/$coordinates" +
-                "?steps=true&geometries=geojson&overview=full&annotations=false&tidy=false&gaps=ignore" +
-                "&waypoints=$waypoints&timestamps=$timestamps&radiuses=$radiuses" +
-                (bearings?.let { "&bearings=$it" } ?: "")
-        ).toURL()
+        val path = "$baseUrl/match/v1/driving/$coordinates" +
+            "?steps=true&geometries=geojson&overview=full&annotations=false&tidy=false&gaps=ignore" +
+            "&waypoints=$waypoints&timestamps=$timestamps&radiuses=$radiuses"
+        val first = requestMatch(URI(path + (bearings?.let { "&bearings=$it" } ?: "")).toURL(), points)
+        // A short, resolved-on-both-sides junction gap can remain unmatched because course
+        // guidance conflicts with a GPS fix at the turn. Retry once without bearings, never
+        // on a live/unanchored trace or a fully resolved result. All acceptance guards remain.
+        val gap = supportedGap ?: return first
+        if (bearings == null || gap.all { index ->
+                (first?.matchedPointConfidences?.get(points[index].id) ?: 0.0) >= MIN_ACCEPTABLE_CONFIDENCE
+            }
+        ) return first
+        val second = requestMatch(URI(path).toURL(), points) ?: return first
+        fun accepted(result: MatchResult, id: Long) =
+            (result.matchedPointConfidences[id] ?: 0.0) >= MIN_ACCEPTABLE_CONFIDENCE
+        // The repaired interval needs independently supported, accepted road geometry on
+        // both ends. Never replace an already accepted fix with a different partial trace.
+        if (!accepted(second, points[gap.first - 1].id) ||
+            !accepted(second, points[gap.last + 1].id)
+        ) return first
+        if (first == null) return second
+        val oldGap = gap.count { accepted(first, points[it].id) }
+        val newGap = gap.count { accepted(second, points[it].id) }
+        val preservesEvidence = first.matchedPointConfidences.keys.all { id ->
+            !accepted(first, id) || accepted(second, id)
+        }
+        return if (newGap > oldGap && preservesEvidence) second else first
+    }
 
+    private fun requestMatch(url: URL, points: List<TrackPoint>): MatchResult? {
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8_000
@@ -185,11 +206,10 @@ class OsrmMatcher(
                 first = last + 1
             }
         }
-        // OSRM can occasionally split two consecutive, high-quality fixes on the same road into
-        // separate matchings. That leaves a short raw/pending seam even though both sides are
-        // confidently mapped. Close only small, directionally consistent same-road seams using
-        // the already-snapped endpoints; turns and different-road boundaries remain pending.
-        bridgeConfidentSameRoadSplits(roads, resolved, points, blockedBridgeEndIds)
+        // A split OSRM trace can leave a tiny missing segment even with confident, consecutive
+        // GPS fixes on both sides. Support a tightly bounded cross-road junction seam as well
+        // as the existing same-road repair; never fabricate long or rejected connections.
+        bridgeConfidentTraceSplits(roads, resolved, points, blockedBridgeEndIds)
 
         // Salvage valid sibling legs, but preserve the longer failure backoff when every
         // candidate leg failed local plausibility checks. That avoids hammering the matcher every
@@ -348,7 +368,7 @@ class OsrmMatcher(
             RoadGrouping.normalizeReferences(b.reference)
     }
 
-    private fun bridgeConfidentSameRoadSplits(
+    private fun bridgeConfidentTraceSplits(
         roads: MutableList<MatchedRoad>,
         resolved: MutableMap<Long, Double>,
         points: List<TrackPoint>,
@@ -368,9 +388,16 @@ class OsrmMatcher(
                 RoadGrouping.normalizeName(right.name).isEmpty() &&
                 left.confidence >= MIN_UNNAMED_BRIDGE_CONFIDENCE &&
                 right.confidence >= MIN_UNNAMED_BRIDGE_CONFIDENCE
+            // Different named roads also meet at actual intersections. OSRM can split the
+            // short crossing between two confident matchings; allow only a very short bridge
+            // with GPS position + course evidence and never award a new road for it.
+            val crossRoadBridge = !sameMergeIdentity(left, right) && !unnamedBridge &&
+                left.countTowardsRoads && right.countTowardsRoads &&
+                left.confidence >= MIN_CROSS_ROAD_BRIDGE_CONFIDENCE &&
+                right.confidence >= MIN_CROSS_ROAD_BRIDGE_CONFIDENCE
             if (left.confidence < MIN_ACCEPTABLE_CONFIDENCE ||
                 right.confidence < MIN_ACCEPTABLE_CONFIDENCE ||
-                (!sameMergeIdentity(left, right) && !unnamedBridge)
+                (!sameMergeIdentity(left, right) && !unnamedBridge && !crossRoadBridge)
             ) continue
 
             val leftPoint = points.indexOfLast { it.timestampMillis == left.lastTimestamp }
@@ -380,7 +407,7 @@ class OsrmMatcher(
             val to = points[rightPoint]
             if (to.id in blockedBridgeEndIds) continue
             val elapsed = to.timestampMillis - from.timestampMillis
-            if (elapsed !in 1..MAX_SPLIT_BRIDGE_GAP_MS || !bridged.add(to.id)) continue
+            if (elapsed !in 1..MAX_SPLIT_BRIDGE_GAP_MS || to.id in bridged) continue
 
             val leftCoordinates = runCatching { JSONArray(left.coordinatesJson) }.getOrNull() ?: continue
             val rightCoordinates = runCatching { JSONArray(right.coordinatesJson) }.getOrNull() ?: continue
@@ -396,6 +423,9 @@ class OsrmMatcher(
                 0.0
             }
             if (!connectorMeters.isFinite() || !rawMeters.isFinite() ||
+                (crossRoadBridge && (elapsed > MAX_CROSS_ROAD_BRIDGE_GAP_MS ||
+                    rawMeters > MAX_CROSS_ROAD_BRIDGE_RAW_M ||
+                    connectorMeters > MAX_CROSS_ROAD_BRIDGE_M)) ||
                 connectorMeters > MAX_SPLIT_BRIDGE_M ||
                 connectorMeters > rawMeters * SPLIT_BRIDGE_DISTANCE_FACTOR + uncertainty + SPLIT_BRIDGE_DISTANCE_PAD_M ||
                 coordinateDistanceMeters(
@@ -411,6 +441,7 @@ class OsrmMatcher(
                 // far apart may snap to the same junction even though the car actually moved.
                 if (rawMeters <= minOf(MAX_ZERO_SEAM_RAW_DISTANCE_M, maxOf(MIN_ZERO_SEAM_RAW_DISTANCE_M, uncertainty.toDouble()))) {
                     resolved[to.id] = minOf(left.confidence, right.confidence)
+                    bridged.add(to.id)
                 }
                 continue
             }
@@ -441,9 +472,10 @@ class OsrmMatcher(
                 reference = left.reference,
                 // An inferred anonymous connector is display geometry, not evidence that
                 // another independently countable road was unlocked.
-                countTowardsRoads = left.countTowardsRoads && !unnamedBridge
+                countTowardsRoads = left.countTowardsRoads && !unnamedBridge && !crossRoadBridge
             )
             resolved[to.id] = minOf(left.confidence, right.confidence)
+            bridged.add(to.id)
         }
     }
 
@@ -459,22 +491,49 @@ class OsrmMatcher(
     private fun bearingDifferenceDegrees(a: Double, b: Double): Double =
         kotlin.math.abs(((a - b + 540.0) % 360.0) - 180.0)
 
+    private fun supportedTurnGap(points: List<TrackPoint>): IntRange? {
+        // Retry only a short pending island bracketed by two already matched GPS fixes
+        // on both sides. The approach and exit must provide a clear, changing course.
+        val first = points.indexOfFirst { !it.matched }
+        if (first < 2) return null
+        val last = points.indexOfLast { !it.matched }
+        if (last >= points.size - 2 || last - first >= 3 ||
+            (first..last).any { points[it].matched }
+        ) return null
+        val approachFrom = points[first - 2]
+        val approachTo = points[first - 1]
+        val exitFrom = points[last + 1]
+        val exitTo = points[last + 2]
+        if (pointDistanceMeters(approachFrom, approachTo) < MIN_BEARING_EVIDENCE_DISTANCE_M ||
+            pointDistanceMeters(exitFrom, exitTo) < MIN_BEARING_EVIDENCE_DISTANCE_M
+        ) return null
+        return (first..last).takeIf {
+            bearingDifferenceDegrees(
+                initialBearingDegrees(approachFrom, approachTo),
+                initialBearingDegrees(exitFrom, exitTo)
+            ) >= SHARP_TURN_DEGREES
+        }
+    }
+
+    private fun isSharpTurn(points: List<TrackPoint>, index: Int): Boolean {
+        if (index == 0 || index == points.lastIndex) return false
+        val incoming = points[index - 1]
+        val point = points[index]
+        val outgoing = points[index + 1]
+        return pointDistanceMeters(incoming, point) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
+            pointDistanceMeters(point, outgoing) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
+            bearingDifferenceDegrees(
+                initialBearingDegrees(incoming, point),
+                initialBearingDegrees(point, outgoing)
+            ) >= SHARP_TURN_DEGREES
+    }
+
     internal fun buildBearingGuidance(points: List<TrackPoint>): String? {
         val values = points.indices.map { index ->
             val point = points[index]
             // A forward-only course at a junction describes the exit road, not necessarily
             // the incoming road. Do not forbid OSRM from considering the true turn here.
-            if (index > 0 && index < points.lastIndex) {
-                val incoming = points[index - 1]
-                val outgoing = points[index + 1]
-                if (pointDistanceMeters(incoming, point) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
-                    pointDistanceMeters(point, outgoing) >= MIN_BEARING_EVIDENCE_DISTANCE_M &&
-                    bearingDifferenceDegrees(
-                        initialBearingDegrees(incoming, point),
-                        initialBearingDegrees(point, outgoing)
-                    ) >= SHARP_TURN_DEGREES
-                ) return@map ""
-            }
+            if (isSharpTurn(points, index)) return@map ""
             val (from, to) = if (index < points.lastIndex) {
                 point to points[index + 1]
             } else {
@@ -618,6 +677,12 @@ class OsrmMatcher(
         private const val MIN_SNAP_TOLERANCE_M = 11.0
         private const val SNAP_TOLERANCE_EXTRA_M = 3.0
         private const val MAX_SNAP_TOLERANCE_M = 30.0
+        // Junction seams are supported only by consecutive precise fixes, with a bounded
+        // physical displacement and confirmed geometry on both named roads.
+        private const val MIN_CROSS_ROAD_BRIDGE_CONFIDENCE = 0.70
+        private const val MAX_CROSS_ROAD_BRIDGE_GAP_MS = 3_500L
+        private const val MAX_CROSS_ROAD_BRIDGE_RAW_M = 18.0
+        private const val MAX_CROSS_ROAD_BRIDGE_M = 30.0
         private const val MAX_SPLIT_BRIDGE_GAP_MS = 5_000L
         private const val MAX_SPLIT_BRIDGE_M = 80.0
         private const val SPLIT_BRIDGE_DISTANCE_FACTOR = 1.35

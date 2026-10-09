@@ -1,12 +1,12 @@
-# Road Conquest 1.0 Beta 26
+# Road Conquest 1.0 Beta 27
 
-- Reduce unnecessary work on map refreshes: do not repeatedly upload the same empty provisional GPS-route GeoJSON to MapLibre's native map source. Preserve every real provisional-route update and clear the route when it becomes empty or expires.
-- Skip conversion of an empty provisional-road list into temporary road geometry objects.
-- Prepare the two equivalent pending-road SQL statement templates once instead of reassembling SQL text and column lists every viewport refresh. Their parameter bindings and query results remain unchanged.
-- These are performance-only changes carried over from reviewed PR #58 onto the Beta 25 baseline. Actual battery-life improvement is device- and usage-dependent and has not been measured.
-- Keep Beta 25's improved historical turn connections, Beta 24's supported junction stitches, Beta 23's GPS-callback recovery, Beta 22's matching retries, all stored road progress, GPS accuracy, fog and road drawing quality, achievements, verified scoring, and ads/purchases unchanged.
-- Preserve the existing app ID, permanent upload signing certificate, signed APK/AAB release workflow, and complete embedded native MapLibre debug symbols plus R8 mapping.
+- Fill a very short seam when OSRM splits two confidently matched, differently named roads, but only when consecutive GPS samples and snapped geometry independently satisfy strict timing, distance, bearing and snap checks. The inferred connector remains non-counting: it does not award an extra road, mileage or verified-score credit.
+- Fix an edge case where an invalid split connector was marked as consumed before validation, preventing a later legitimate candidate from being considered.
+- For a short (1–3-fix) unresolved sharp corner with confirmed approach and exit context, retry OSRM just once without potentially conflicting bearing hints. Accept the retry only if additional missing fixes are recovered while preserving every previously accepted fix and both boundary anchors; retain the existing acceptance and detour checks.
+- Keep the original narrow OSRM GPS-uncertainty values. The older experimental increase was deliberately excluded to avoid encouraging matches onto nearby incorrect roads.
+- Preserve Beta 26's map-refresh CPU optimizations and Beta 24/25's separate display-only junction improvements. This release does not change GPS sampling, user data, stored road history, known-road counts, fog styling, ads/purchases, or leaderboard score rules.
+- Keep the permanent upload-signing identity, the same app ID, all four complete MapLibre native-symbol libraries embedded in the signed Play AAB and the embedded R8 mapping. Existing turn regressions and new supported/rejected cross-road and turn-retry cases run in CI.
 
-Android version code is 52. Android 12 or newer is required. Install the signed APK over your existing installation to preserve local data; do not uninstall or clear app storage.
+Android version code is 53. Android 12 or newer is required. Install the signed APK over the existing app without uninstalling or clearing storage.
 
-For Google Play, use only the signed `RoadConquest-1.0-beta.26.aab` from GitHub Releases. Do not upload the unsigned GitHub Actions intermediate.
+For Google Play, upload only the signed `RoadConquest-1.0-beta.27.aab` from GitHub Releases, never the unsigned GitHub Actions intermediate. The release workflow publishes from `main` after all required Android checks pass.
