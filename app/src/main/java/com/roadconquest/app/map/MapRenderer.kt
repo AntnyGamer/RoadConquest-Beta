@@ -266,7 +266,7 @@ class MapRenderer(
         }.getOrDefault(kind)
         val population = feature.getNumberProperty("population")?.toLong()
         val area = feature.getNumberProperty("area_sq_km")?.toDouble() ?: return null
-        return PlaceOverlayInfo(name, featureKind, population, area)
+        return PlaceOverlayInfo(key, name, featureKind, population, area)
     }
 
     fun refreshCosmetics() {
