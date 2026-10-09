@@ -544,6 +544,9 @@ class ProgressionRepositoryTest {
                 arrayOf(latitude, longitude, accuracy, whenMs)
             )
         }
+        // Earlier driving history survives a progression-only reset. It must not
+        // earn old towns after a newer zero-point baseline.
+        storedFix(39.97, -75.045, 5, 500L)
         storedFix(39.96, -75.015, 5, 3_000L)
         storedFix(39.96, -75.006, 75, 4_000L) // Not a trustworthy visit.
         storedFix(39.96, -75.002, 5, 5_000L)
@@ -563,6 +566,8 @@ class ProgressionRepositoryTest {
             assertTrue(candidates.any {
                 it.latitude == 39.96 && kotlin.math.abs(it.longitude + 75.015) < 1e-8
             })
+            assertFalse("Never recover places driven before the new baseline",
+                candidates.any { it.latitude == 39.97 })
             assertEquals(1, progression.resolveCandidate(
                 candidates.first(),
                 listOf(PlaceDiscovery(PlaceKind.TOWN, "us|nj|newtown", "Newtown",
