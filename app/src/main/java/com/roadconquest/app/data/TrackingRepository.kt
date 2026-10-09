@@ -12,6 +12,8 @@ import java.security.MessageDigest
 import java.util.Locale
 import kotlin.math.*
 
+import com.roadconquest.app.map.FogGrid
+
 class TrackingRepository(context: Context) {
     private val dbHelper = AppDatabase.get(context)
     private val historyGeneration = synchronized(dbHelper.historyLock) { dbHelper.historyGeneration }
@@ -58,6 +60,49 @@ class TrackingRepository(context: Context) {
                 coordinates[index++] = cursor.getDouble(1)
             }
             return coordinates
+        }
+    }
+
+    /**
+     * Authoritative persisted mile-cell unlock. This is independent of 50 m legacy
+     * exploration samples, road matching, achievements, distance and verified scoring.
+     */
+    @Synchronized
+    fun recordExploredGridCell(location: Location): Boolean {
+        if (location.isMock || !location.hasAccuracy() || location.accuracy !in 0.01f..25f) return false
+        val tile = FogGrid.cell(location.latitude, location.longitude) ?: return false
+        synchronized(dbHelper.historyLock) {
+            if (historyGeneration != dbHelper.historyGeneration) return false
+            val center = FogGrid.center(tile)
+            return dbHelper.writableDatabase.insertWithOnConflict(
+                "explored_grid", null, ContentValues().apply {
+                    put("grid_row", tile.row)
+                    put("grid_col", tile.column)
+                    put("latitude", center.first)
+                    put("longitude", center.second)
+                }, SQLiteDatabase.CONFLICT_IGNORE
+            ) != -1L
+        }
+    }
+
+    /** Read the authoritative mile cells (as centers) with a padded viewport query. */
+    @Synchronized
+    fun getExploredGridInBounds(north: Double, east: Double, south: Double, west: Double): DoubleArray {
+        val longitudeSelection = if (east >= west) "longitude BETWEEN ? AND ?" else
+            "(longitude >= ? OR longitude <= ?)"
+        dbHelper.readableDatabase.query(
+            "explored_grid", arrayOf("latitude", "longitude"),
+            "latitude BETWEEN ? AND ? AND $longitudeSelection",
+            arrayOf(south.toString(), north.toString(), west.toString(), east.toString()),
+            null, null, null
+        ).use { cursor ->
+            val result = DoubleArray(cursor.count * 2)
+            var offset = 0
+            while (cursor.moveToNext()) {
+                result[offset++] = cursor.getDouble(0)
+                result[offset++] = cursor.getDouble(1)
+            }
+            return result
         }
     }
 
@@ -988,7 +1033,7 @@ class TrackingRepository(context: Context) {
             destination.beginTransaction()
             try {
                 for (table in listOf(
-                    "track_points", "roads", "road_visits", "explored_places",
+                    "track_points", "roads", "road_visits", "explored_places", "explored_grid",
                     "visited_places", "place_candidates", "progression_rewards",
                     "progression_purchases", "progression_counters"
                 )) {
@@ -1029,6 +1074,7 @@ class TrackingRepository(context: Context) {
                 db.delete("road_visits", null, null)
                 db.delete("roads", null, null)
                 db.delete("explored_places", null, null)
+                db.delete("explored_grid", null, null)
                 db.delete("place_candidates", null, null)
                 db.delete("visited_places", null, null)
                 db.delete("progression_rewards", null, null)

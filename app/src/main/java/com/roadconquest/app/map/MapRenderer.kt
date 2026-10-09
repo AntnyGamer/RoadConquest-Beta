@@ -465,17 +465,14 @@ class MapRenderer(
         }
         val cameraPosition = map.cameraPosition
         if (cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
+            // Keep querying explored cells at every zoom. Only blue roads and
+            // provisional tracks are hidden at these very broad overview scales.
             mainHandler.removeCallbacks(expirePendingRoutes)
             applyPendingRoute(EMPTY_FEATURES, hasPending = false)
-            loadedPlaceBounds = null
-            setDisplayedPlaces(doubleArrayOf())
-            if (loadRoads) {
-                loadedRoadBounds = null
+            if (displayedRoads !== OverlayRoads.EMPTY) {
                 setDisplayedRoads(OverlayRoads.EMPTY, EMPTY_FEATURES)
-            } else {
-                scheduleFogRender()
             }
-            return
+            loadedRoadBounds = null
         }
         val bounds = map.projection.visibleRegion.latLngBounds
         val north = bounds.latitudeNorth
@@ -511,18 +508,27 @@ class MapRenderer(
                     fadePad / cos(Math.toRadians((north + south) / 2)).coerceAtLeast(0.01)
                 fun wrap(longitude: Double) = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
                 val querySpan = (longitudeSpan + 2 * lonPad).coerceAtMost(360.0)
-                val queryWest = if (querySpan >= 360.0) -180.0 else wrap(west - lonPad)
-                val queryEast = if (querySpan >= 360.0) 180.0 else wrap(east + lonPad)
-                val queryNorth = (north + latPad).coerceAtMost(90.0)
-                val querySouth = (south - latPad).coerceAtLeast(-90.0)
+                // At world overview scale, individual screen corners may be
+                // several wrapped copies apart. Load ALL persisted grid cells so
+                // the world bitmap never loses remote explored territory.
+                val worldOverview = cameraPosition.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM
+                val queryWest = if (worldOverview || querySpan >= 360.0) -180.0 else wrap(west - lonPad)
+                val queryEast = if (worldOverview || querySpan >= 360.0) 180.0 else wrap(east + lonPad)
+                val queryNorth = if (worldOverview) 90.0 else (north + latPad).coerceAtMost(90.0)
+                val querySouth = if (worldOverview) -90.0 else (south - latPad).coerceAtLeast(-90.0)
                 val footprint = RoadQueryBounds(
                     queryNorth,
                     querySouth,
-                    wrap((minLongitude + maxLongitude) / 2.0),
-                    querySpan
+                    if (worldOverview) 0.0 else wrap((minLongitude + maxLongitude) / 2.0),
+                    if (worldOverview) 360.0 else querySpan
                 )
-                val queryRoads = loadRoads && loadedRoadBoundsAtStart?.contains(footprint) != true
-                val queryPlaces = loadedPlaceBoundsAtStart?.contains(footprint) != true
+                val queryRoads = loadRoads && cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM &&
+                    loadedRoadBoundsAtStart?.contains(footprint) != true
+                // Switching back from a global overview must restore the small
+                // viewport-specific projection cache instead of keeping every
+                // explored square worldwide in every subsequent detailed frame.
+                val queryPlaces = loadedPlaceBoundsAtStart?.contains(footprint) != true ||
+                    (!worldOverview && loadedPlaceBoundsAtStart?.longitudeSpan == 360.0)
                 val roadQuery = if (queryRoads) {
                     repository.getRoadsInBoundsResult(
                         queryNorth, queryEast, querySouth, queryWest, limit = Int.MAX_VALUE
@@ -538,14 +544,16 @@ class MapRenderer(
                     OverlayRoads.prepare(saved, visits)
                 }
                 val places = if (queryPlaces) {
-                    repository.getExploredPlacesInBounds(queryNorth, queryEast, querySouth, queryWest)
+                    repository.getExploredGridInBounds(queryNorth, queryEast, querySouth, queryWest)
                 } else {
                     null
                 }
-                val pending = repository.getPendingRouteInBoundsResult(
-                    queryNorth, queryEast, querySouth, queryWest,
-                    visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
-                )
+                val pending = if (cameraPosition.zoom >= FogBitmapRenderer.MIN_ROAD_ZOOM) {
+                    repository.getPendingRouteInBoundsResult(
+                        queryNorth, queryEast, querySouth, queryWest,
+                        visibleSinceMillis = System.currentTimeMillis() - PENDING_ROUTE_MAX_AGE_MS
+                    )
+                } else TrackingRepository.PendingRouteResult(emptyList(), null)
                 RoadDisplay(
                     roads,
                     roads?.let(::roadFeatures),
@@ -930,8 +938,8 @@ class MapRenderer(
     private fun setDisplayedPlaces(places: DoubleArray) {
         if (displayedPlaces.contentEquals(places)) return
         displayedPlaces = places
-        // Saved 50 m exploration samples map to unique mile-square tiles; existing
-        // history remains compatible and neither road matching nor scoring changes.
+        // Stored one-mile grid centers are authoritative; legacy samples were backfilled
+        // once into this table. Scoring and road matching remain independent.
         savedGridCoordinates = FogGrid.visitedCorners(places)
         placeDataRevision++
     }
@@ -996,14 +1004,8 @@ class MapRenderer(
         if (destroyed || !viewportActive || !fogEnabled) return
         // Snapshot native camera state once when the caller did not already provide it.
         val position = cameraPosition ?: map.cameraPosition
-        // At overview zooms the static world fog already provides complete coverage. Do not
-        // burn CPU/GPU time rebuilding detailed reveal bitmaps that are intentionally hidden.
-        if (position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM) {
-            mainHandler.removeCallbacks(renderFog)
-            fogAgain = false
-            updateFogCoverage(cameraPosition = position)
-            return
-        }
+        // Overview uses a world-sized bitmap with its own explored-cell mask.
+        // Never replace recorded exploration with fully opaque static fog.
         if (fogRunning) {
             fogAgain = true
             return
@@ -1081,18 +1083,9 @@ class MapRenderer(
         // Fog no longer depends on the road linework or point-radius clearings.
         // Deduplicate visited cells once per data update, project only the grid corners.
         val savedCorners = savedGridCoordinates
-        val savedScreen = projectPlaces(savedCorners)
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
-        val currentScreen = DoubleArray(currentCorners.size)
-        if (currentCorners.isNotEmpty()) {
-            val centerLongitude = position.target?.longitude ?: 0.0
-            map.projection.toScreenLocations(FogGrid.nearLongitude(currentCorners, centerLongitude), currentScreen)
-        }
         val gridCorners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
-        // The cached projection is mutable on the UI thread; give the fog worker an
-        // immutable snapshot even when no live tile has to be appended.
-        val gridScreen = if (currentScreen.isEmpty()) savedScreen.copyOf() else savedScreen + currentScreen
         val center = position.target ?: return null
         val metersPerPixel = map.projection.getMetersPerPixelAtLatitude(center.latitude) / mapView.pixelRatio
         if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return null
@@ -1116,11 +1109,33 @@ class MapRenderer(
             fogMatrix.setScale(texelScale, texelScale)
             fogMatrix.postTranslate(((longitude + 180.0) / 360.0 * size).toFloat() - texelScale * phase[0],
                 ((0.5 - mercatorY / world) * size).toFloat() - texelScale * phase[1])
+            // A complete global projection is required for overview zooms: native
+            // screen coordinates can span repeated worlds and cannot be reused here.
+            val worldGridScreen = DoubleArray(gridCorners.size)
+            for (i in gridCorners.indices step 2) {
+                val latitude = gridCorners[i].coerceIn(-85.05112878, 85.05112878)
+                val longitudeAtCorner = gridCorners[i + 1].coerceIn(-180.0, 180.0)
+                val mercator = ln(tan(PI / 4.0 + Math.toRadians(latitude) / 2.0))
+                worldGridScreen[i] = (longitudeAtCorner + 180.0) / 360.0 * size
+                worldGridScreen[i + 1] = (1.0 - mercator / PI) * 0.5 * size
+            }
             return FogCapture(styleGeneration, worldFogQuad(), FogBitmapRenderer.Request(
                 size, size, 0f, 0f, 1f, OverlayRoads.EMPTY, doubleArrayOf(), 0.0,
-                world / size, null, null, fogMatrixValues.also { fogMatrix.getValues(it) }.copyOf()
+                world / size, null, null, fogMatrixValues.also { fogMatrix.getValues(it) }.copyOf(),
+                gridMode = true, gridCoordinates = gridCorners, gridScreen = worldGridScreen
             ), world = true)
         }
+        // Only detailed bitmaps require native corner projection. The world
+        // bitmap above uses its own geographic projection and skips this work.
+        val savedScreen = projectPlaces(savedCorners)
+        val currentScreen = DoubleArray(currentCorners.size)
+        if (currentCorners.isNotEmpty()) {
+            map.projection.toScreenLocations(
+                FogGrid.nearLongitude(currentCorners, center.longitude), currentScreen
+            )
+        }
+        // The UI cache may change on the next pan; snapshot before background draw.
+        val gridScreen = if (currentScreen.isEmpty()) savedScreen.copyOf() else savedScreen + currentScreen
         val quad = fogQuad(left, top, right, bottom, center.longitude)
         fogMatrix.postTranslate(-left, -top)
         fogMatrix.postScale(scale, scale)

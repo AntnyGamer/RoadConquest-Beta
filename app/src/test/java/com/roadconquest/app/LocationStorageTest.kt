@@ -24,7 +24,7 @@ class LocationStorageTest {
     @Test fun walkingCallbacksSaveExplorationWithoutDrivingHistory() {
         val context = RuntimeEnvironment.getApplication()
         val repo = TrackingRepository(context)
-        for (table in listOf("track_points", "roads", "explored_places")) repo.readableDatabase().execSQL("DELETE FROM $table")
+        for (table in listOf("track_points", "roads", "explored_places", "explored_grid")) repo.readableDatabase().execSQL("DELETE FROM $table")
         val controller = Robolectric.buildService(TrackingService::class.java)
         val service = controller.get()
         fun field(name: String) = TrackingService::class.java.getDeclaredField(name).apply { isAccessible = true }
@@ -45,6 +45,7 @@ class LocationStorageTest {
         }
         assertTrue((field("storageExecutor").get(service) as ExecutorService).awaitTermination(5, TimeUnit.SECONDS))
         assertTrue(repo.getExploredPlacesInBounds(41.0, -73.0, 39.0, -75.0).size >= 4)
+        assertTrue(repo.getExploredGridInBounds(41.0, -73.0, 39.0, -75.0).size >= 2)
         assertEquals(0L, repo.getSummary().trackPointCount)
         assertEquals(0.0, repo.getSummary().distanceMeters, 0.0)
         assertTrue(repo.loadMatchingWindow().points.isEmpty())

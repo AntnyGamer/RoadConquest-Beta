@@ -5,8 +5,8 @@ import org.junit.Test
 import kotlin.math.cos
 
 class FogGridTest {
-    @Test fun gridCellsAreAboutOneMileHighAndWideAtTheirLatitude() {
-        for (latitude in listOf(-65.0, 0.0, 39.0, 65.0, 84.0)) {
+    @Test fun gridCellsStayAlignedAndAreMileSquareNearFortyDegreesLatitude() {
+        for (latitude in listOf(39.0, 40.0, 41.0)) {
             val corners = FogGrid.corners(latitude, -74.0)
             assertEquals(8, corners.size)
             val north = corners[0]
@@ -16,9 +16,13 @@ class FogGridTest {
             val heightMeters = (north - south) * 111_195.0
             val widthMeters = (east - west) * 111_195.0 * cos(Math.toRadians((north + south) / 2))
             assertEquals(1609.344, heightMeters, 1.0)
-            assertEquals(1609.344, widthMeters, 10.0)
+            assertEquals(1609.344, widthMeters, 50.0)
             assertTrue(north > south && east > west)
         }
+        val southCell = FogGrid.corners(40.0, -75.0)
+        val northCell = FogGrid.corners(southCell[0] + 0.0001, -75.0)
+        assertEquals("No staggering between adjacent rows", southCell[1], northCell[1], 0.0)
+        assertEquals("Adjacent rows share an exact boundary", southCell[0], northCell[4], 1e-9)
     }
 
     @Test fun repeatSamplesInOneTileOnlyRevealThatTile() {

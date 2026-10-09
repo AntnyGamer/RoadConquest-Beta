@@ -30,7 +30,11 @@ class DataExporterTest {
         repository.readableDatabase().execSQL("DELETE FROM track_points")
         repository.readableDatabase().execSQL("DELETE FROM roads")
         repository.readableDatabase().execSQL("DELETE FROM explored_places")
+        repository.readableDatabase().execSQL("DELETE FROM explored_grid")
         repository.recordExploredPlace(Location("gps").apply {
+            latitude = 40.01; longitude = -74.0; accuracy = 5f
+        })
+        repository.recordExploredGridCell(Location("gps").apply {
             latitude = 40.01; longitude = -74.0; accuracy = 5f
         })
         repository.insertLocation(Location("gps").apply {
@@ -47,14 +51,15 @@ class DataExporterTest {
             }
         }
         assertEquals(setOf(
-            "metadata.json", "track_points.csv", "roads.csv", "road_visits.csv", "explored_places.csv",
+            "metadata.json", "track_points.csv", "roads.csv", "road_visits.csv", "explored_places.csv", "explored_grid.csv",
             "visited_places.csv", "place_candidates.csv", "progression_rewards.csv",
             "progression_purchases.csv", "progression_counters.csv"
         ), entries.keys)
         val metadata = JSONObject(entries.getValue("metadata.json"))
         assertEquals(1L, metadata.getLong("track_point_count"))
         assertEquals(1L, metadata.getLong("road_segment_count"))
-        assertEquals(8, metadata.getInt("schema_version"))
+        assertEquals(9, metadata.getInt("schema_version"))
+        assertEquals(1L, metadata.getLong("explored_mile_grid_count"))
         assertEquals(com.roadconquest.app.BuildConfig.VERSION_NAME, metadata.getString("app_version"))
         assertEquals(com.roadconquest.app.BuildConfig.VERSION_CODE, metadata.getInt("app_version_code"))
         assertEquals(1L, metadata.getLong("explored_place_count"))
@@ -63,6 +68,7 @@ class DataExporterTest {
         assertEquals(0L, metadata.getLong("towns_visited"))
         assertEquals(1, entries.getValue("visited_places.csv").lineSequence().filter { it.isNotEmpty() }.count())
         assertEquals(2, entries.getValue("explored_places.csv").lineSequence().filter { it.isNotEmpty() }.count())
+        assertEquals(2, entries.getValue("explored_grid.csv").lineSequence().filter { it.isNotEmpty() }.count())
         assertEquals(1L, metadata.getLong("roads_unlocked_count"))
         assertTrue(entries.getValue("track_points.csv").lineSequence().first().endsWith(",distance_m"))
         assertEquals(2, entries.getValue("track_points.csv").lineSequence().filter { it.isNotEmpty() }.count())

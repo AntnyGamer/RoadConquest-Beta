@@ -27,6 +27,7 @@ import com.roadconquest.app.data.TrackingRepository
 import com.roadconquest.app.data.ProgressionRepository
 import com.roadconquest.app.account.VerifiedDriving
 import com.roadconquest.app.matching.OsrmMatcher
+import com.roadconquest.app.map.FogGrid
 import com.roadconquest.app.progression.ProgressionManager
 import com.roadconquest.app.util.LocationProviders
 import com.roadconquest.app.util.Prefs
@@ -86,6 +87,7 @@ class TrackingService : Service(), LocationListener {
     // Avoid repeatedly hitting SQLite for the same 50 m fog cell during one service session.
     // The concurrent set also prevents duplicate queued writes before storageExecutor catches up.
     private val exploredCellsThisSession = ConcurrentHashMap.newKeySet<Long>()
+    private val exploredMileCellsThisSession = ConcurrentHashMap.newKeySet<Long>()
     private var lastPlaceCandidate: Location? = null
     @Volatile private var baselineCandidateCaptured = false
     private var baselineRequestElapsedNanos = 0L
@@ -274,6 +276,29 @@ class TrackingService : Service(), LocationListener {
         if (elapsedFromPrevious in 1..MAX_MOTION_SAMPLE_AGE_MS &&
             distanceFromPrevious / (elapsedFromPrevious / 1_000f) > MAX_PLAUSIBLE_SPEED_MPS
         ) return
+        // A mile cell unlocks on the first accepted accurate GPS fix within its
+        // boundaries, even when it is only a few feet across a cell edge. Never
+        // apply the older 20 m legacy sampling gate to the actual fog unlock.
+        if (!location.isMock && location.hasAccuracy() && location.accuracy in 0.01f..25f) {
+            FogGrid.cell(location.latitude, location.longitude)?.let { cell ->
+                if (exploredMileCellsThisSession.size >= MAX_EXPLORED_CELL_CACHE) {
+                    exploredMileCellsThisSession.clear()
+                }
+                if (exploredMileCellsThisSession.add(cell.key)) {
+                    val accepted = Location(location)
+                    storageExecutor.execute {
+                        try {
+                            if (repository.recordExploredGridCell(accepted)) {
+                                sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
+                            }
+                        } catch (error: Exception) {
+                            exploredMileCellsThisSession.remove(cell.key)
+                            Log.e("RoadConquest", "Could not persist explored mile cell", error)
+                        }
+                    }
+                }
+            }
+        }
         if (!location.isMock && location.hasAccuracy() && location.accuracy in 0.01f..25f &&
             (lastExplored?.distanceTo(location) ?: Float.POSITIVE_INFINITY) >= 20f
         ) {

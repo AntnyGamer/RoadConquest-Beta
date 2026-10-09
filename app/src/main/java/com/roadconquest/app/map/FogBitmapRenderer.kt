@@ -561,6 +561,10 @@ object FogBitmapRenderer {
             for (i in 0 until minOf(request.gridCoordinates.size, request.gridScreen.size) - 7 step 8) {
                 drawGridReveal(revealCanvas, request, i, scratch)
             }
+            // Merge every visited cell into ONE binary silhouette before fading. Individual
+            // square edge/corner shaders create visible gray tiles and double seams where
+            // neighboring cells meet. One distance-to-union mask has neither artifact.
+            fadeGridUnion(reveal, request, scratch)
             canvas.drawBitmap(reveal, 0f, 0f, scratch.applyRevealPaint)
             return bitmap
         }
@@ -616,9 +620,8 @@ object FogBitmapRenderer {
     }
 
     /**
-     * Clear the entire visited tile, then fade out from each edge and corner over the
-     * original 1,500-foot distance. LIGHTEN combines adjacent cells by their maximum
-     * reveal; it never compounds the gradient or pushes the fade farther out.
+     * Rasterize only the core polygon. Every tile draws into one shared, opaque RGB
+     * mask; neighboring tiles never have internal edge gradients or visible seams.
      */
     private fun drawGridReveal(canvas: Canvas, request: Request, offset: Int, scratch: RenderScratch) {
         val xy = scratch.gridPoints
@@ -630,69 +633,80 @@ object FogBitmapRenderer {
             xy[corner * 2] = ((x - request.screenLeft) * request.screenScale).toFloat()
             xy[corner * 2 + 1] = ((y - request.screenTop) * request.screenScale).toFloat()
         }
-        val latitude = (request.gridCoordinates[offset] + request.gridCoordinates[offset + 4]) / 2.0
-        val centerCos = cos(Math.toRadians(request.centerLatitude.coerceIn(-85.05112878, 85.05112878)))
-            .coerceAtLeast(1e-6)
-        val localCos = cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878)))
-        val metersPerPixel = request.metersPerScreenPixelAtCenter / centerCos * localCos
-        if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return
-        val radius = maxOf(
-            (ROAD_FULL_M / metersPerPixel * request.screenScale).toFloat(),
-            MIN_VISIBLE_REVEAL_RADIUS_PX * request.screenScale
-        )
-        if (!radius.isFinite() || radius <= 0f) return
-        var minX = Float.POSITIVE_INFINITY
-        var maxX = Float.NEGATIVE_INFINITY
-        var minY = Float.POSITIVE_INFINITY
-        var maxY = Float.NEGATIVE_INFINITY
-        for (corner in 0..3) {
-            val x = xy[corner * 2]
-            val y = xy[corner * 2 + 1]
-            minX = minOf(minX, x)
-            maxX = maxOf(maxX, x)
-            minY = minOf(minY, y)
-            maxY = maxOf(maxY, y)
-        }
-        if (minX - radius > canvas.width || maxX + radius < 0f ||
-            minY - radius > canvas.height || maxY + radius < 0f
-        ) return
-
-        val paint = scratch.revealPaint
         val path = scratch.gridPath
         path.reset()
         path.moveTo(xy[0], xy[1])
         for (i in 1..3) path.lineTo(xy[i * 2], xy[i * 2 + 1])
         path.close()
+        val paint = scratch.revealPaint
         paint.shader = null
         paint.color = Color.WHITE
         canvas.drawPath(path, paint)
+    }
 
-        // Corners are circular, preventing the square 'halo' a blurred bounding box makes.
-        paint.shader = scratch.gridEdgeGradient
-        for (corner in 0..3) {
-            val next = (corner + 1) % 4
-            val x = xy[corner * 2]
-            val y = xy[corner * 2 + 1]
-            val dx = xy[next * 2] - x
-            val dy = xy[next * 2 + 1] - y
-            val length = hypot(dx, dy)
-            if (length <= 0f) continue
-            val save = canvas.save()
-            canvas.translate(x, y)
-            canvas.rotate(Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat())
-            canvas.scale(radius, radius)
-            // Clockwise NW, NE, SE, SW: the outside of each edge is local -Y.
-            canvas.drawRect(0f, -1f, length / radius, 0f, paint)
-            canvas.restoreToCount(save)
+    /**
+     * Two-pass 8-neighbor Euclidean-distance approximation (1 and sqrt(2) pixel steps).
+     * The only fade is from the OUTER boundary of the union, across 1,500 real feet.
+     * All interior pixels stay fully transparent, with no seams even at a T junction.
+     * Work is linear in bitmap pixels rather than in (tiles * pixels).
+     */
+    private fun fadeGridUnion(bitmap: Bitmap, request: Request, scratch: RenderScratch) {
+        val width = bitmap.width
+        val height = bitmap.height
+        val count = width * height
+        val pixels = scratch.gridPixels(count)
+        val distances = scratch.gridDistances(count)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        val infinity = (width + height).toFloat()
+        for (i in 0 until count) {
+            // Anti-aliased polygon coverage counts as a visited pixel. This keeps
+            // 1-pixel-scale cells perceptible on zoomed-out maps.
+            distances[i] = if ((pixels[i] and 0xff) > 0) 0f else infinity
         }
-        paint.shader = scratch.gridCornerGradient
-        for (corner in 0..3) {
-            val save = canvas.save()
-            canvas.translate(xy[corner * 2], xy[corner * 2 + 1])
-            canvas.scale(radius, radius)
-            canvas.drawCircle(0f, 0f, 1f, paint)
-            canvas.restoreToCount(save)
+        val diagonal = 1.41421356f
+        for (y in 0 until height) {
+            val base = y * width
+            for (x in 0 until width) {
+                val i = base + x
+                var distance = distances[i]
+                if (x > 0) distance = minOf(distance, distances[i - 1] + 1f)
+                if (y > 0) {
+                    distance = minOf(distance, distances[i - width] + 1f)
+                    if (x > 0) distance = minOf(distance, distances[i - width - 1] + diagonal)
+                    if (x + 1 < width) distance = minOf(distance, distances[i - width + 1] + diagonal)
+                }
+                distances[i] = distance
+            }
         }
+        val metersPerPixel = request.metersPerScreenPixelAtCenter / request.screenScale
+        // The exact physical fade remains 457.2 m; the tiny minimum display width
+        // prevents a harsh raster edge when viewing many miles at once.
+        val radius = maxOf((ROAD_FULL_M / metersPerPixel).toFloat(),
+            MIN_VISIBLE_REVEAL_RADIUS_PX)
+        for (y in height - 1 downTo 0) {
+            val base = y * width
+            for (x in width - 1 downTo 0) {
+                val i = base + x
+                var distance = distances[i]
+                if (x + 1 < width) distance = minOf(distance, distances[i + 1] + 1f)
+                if (y + 1 < height) {
+                    distance = minOf(distance, distances[i + width] + 1f)
+                    if (x > 0) distance = minOf(distance, distances[i + width - 1] + diagonal)
+                    if (x + 1 < width) distance = minOf(distance, distances[i + width + 1] + diagonal)
+                }
+                // The reverse scan MUST store each relaxed distance. Upper/left
+                // pixels depend on already-processed lower/right neighbors; omitting
+                // this assignment leaves half of the outer fade fully opaque.
+                distances[i] = distance
+                // This smooth easing removes gray/checkerboard edge bands caused by
+                // separate side/corner shaders and low-resolution raster sampling.
+                val fraction = (distance / radius).coerceIn(0f, 1f)
+                val smooth = fraction * fraction * (3f - 2f * fraction)
+                val shade = ((1f - smooth) * 255f).roundToInt().coerceIn(0, 255)
+                pixels[i] = Color.rgb(shade, shade, shade)
+            }
+        }
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
     }
 
     private fun drawPlaceReveal(canvas: Canvas, request: Request, latitude: Double, x: Double, y: Double,
@@ -768,7 +782,7 @@ object FogBitmapRenderer {
     const val MAX_FOG_ALPHA = 0.80f
     // Confirmed/pending blue roads stay visible farther out than the cleared fog corridor.
     const val MIN_ROAD_ZOOM = 6.0
-    const val MIN_FOG_REVEAL_ZOOM = 9.0
+    const val MIN_FOG_REVEAL_ZOOM = 5.0
     const val MAX_ZOOM = 20.0
     const val CENTER_ZOOM = 18.0
     const val MAX_BITMAP_DIMENSION = 768
@@ -808,13 +822,18 @@ object FogBitmapRenderer {
         val capBounds = RectF(-1f, -1f, 1f, 1f)
         val gridPoints = FloatArray(8)
         val gridPath = Path()
-        val gridEdgeGradient = LinearGradient(
-            0f, 0f, 0f, -1f,
-            intArrayOf(Color.WHITE, Color.rgb(140, 140, 140), Color.rgb(51, 51, 51),
-                Color.rgb(15, 15, 15), Color.BLACK),
-            floatArrayOf(0f, 0.20f, 0.50f, 0.80f, 1f), Shader.TileMode.CLAMP
-        )
-        val gridCornerGradient = radial(0f)
+        private var gridPixelCache = IntArray(0)
+        private var gridDistanceCache = FloatArray(0)
+
+        fun gridPixels(count: Int): IntArray {
+            if (gridPixelCache.size < count) gridPixelCache = IntArray(count)
+            return gridPixelCache
+        }
+
+        fun gridDistances(count: Int): FloatArray {
+            if (gridDistanceCache.size < count) gridDistanceCache = FloatArray(count)
+            return gridDistanceCache
+        }
         private val roadClearFraction = ROAD_CLEAR_M / ROAD_FULL_M
         val roadLinear = LinearGradient(
             0f, -1f, 0f, 1f,
