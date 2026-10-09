@@ -528,7 +528,11 @@ class MapRenderer(
                     null
                 }
                 val roads = roadQuery?.roads?.let { saved ->
-                    OverlayRoads.prepare(saved, repository.getVisitWindowsForRoads(saved))
+                    // Optional historical evidence must never prevent normal roads from
+                    // rendering if reading the extra visit table fails.
+                    val visits = runCatching { repository.getVisitWindowsForRoads(saved) }
+                        .getOrDefault(emptyMap())
+                    OverlayRoads.prepare(saved, visits)
                 }
                 val places = if (queryPlaces) {
                     repository.getExploredPlacesInBounds(queryNorth, queryEast, querySouth, queryWest)
