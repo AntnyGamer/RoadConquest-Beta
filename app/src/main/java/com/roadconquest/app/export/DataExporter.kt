@@ -134,7 +134,7 @@ object DataExporter {
                     writer.write(','.code)
                     writer.write(cursor.getFloat(5).toString())
                     writer.write(','.code)
-                    writer.write(Instant.ofEpochMilli(cursor.getLong(6)).toString())
+                    writer.write(Instant.ofEpochMilli(timestamp).toString())
                     writer.write(','.code)
                     writer.write(if (cursor.getInt(7) != 0) "true" else "false")
                     writer.write(','.code)
@@ -374,9 +374,10 @@ object DataExporter {
             ).use { cursor ->
                 while (cursor.moveToNext()) {
                     count++
+                    val segmentId = cursor.getString(0)
                     val fields = listOf(
-                        cursor.getString(0),
-                        cursor.getString(1).ifBlank { cursor.getString(0) },
+                        segmentId,
+                        cursor.getString(1).ifBlank { segmentId },
                         cursor.getString(2),
                         Instant.ofEpochMilli(cursor.getLong(3)).toString(),
                         Instant.ofEpochMilli(cursor.getLong(4)).toString(),
