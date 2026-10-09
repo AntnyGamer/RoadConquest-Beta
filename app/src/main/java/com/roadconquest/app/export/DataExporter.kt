@@ -33,10 +33,11 @@ object DataExporter {
                         val roadCount = writeRoads(snapshot, zip)
                         val roadVisitCount = writeRoadVisits(snapshot, zip)
                         val exploredCount = writeExploredPlaces(snapshot, zip)
+                        val gridCount = writeExploredGrid(snapshot, zip)
                         val progression = writeProgression(snapshot, zip)
                         writeMetadata(context, summary.copy(trackPointCount = points.trackPointCount,
                             roadSegmentCount = roadCount, firstTrackAt = points.firstTrackAt, lastTrackAt = points.lastTrackAt),
-                            exploredCount, roadVisitCount, progression, zip)
+                            exploredCount, gridCount, roadVisitCount, progression, zip)
                     }
                 }
             } finally {
@@ -63,6 +64,7 @@ object DataExporter {
         context: Context,
         summary: DataSummary,
         exploredCount: Long,
+        gridCount: Long,
         roadVisitCount: Long,
         progression: ProgressionExportSummary,
         zip: ZipOutputStream
@@ -71,8 +73,9 @@ object DataExporter {
             .put("app", "Road Conquest")
             .put("app_version", BuildConfig.VERSION_NAME)
             .put("app_version_code", BuildConfig.VERSION_CODE)
-            .put("schema_version", 8)
+            .put("schema_version", 9)
             .put("explored_place_count", exploredCount)
+            .put("explored_mile_grid_count", gridCount)
             .put("road_visit_count", roadVisitCount)
             .put("points_balance", progression.balance)
             .put("lifetime_points_earned", progression.earned)
@@ -160,6 +163,24 @@ object DataExporter {
                 null, null, null, null, "cell_x,cell_y").use { cursor ->
                 while (cursor.moveToNext()) {
                     writer.write("${cursor.getDouble(0)},${cursor.getDouble(1)}\n")
+                    count++
+                }
+            }
+            writer.flush()
+        }
+        zip.closeEntry()
+        return count
+    }
+
+    private fun writeExploredGrid(database: SQLiteDatabase, zip: ZipOutputStream): Long {
+        var count = 0L
+        zip.putNextEntry(ZipEntry("explored_grid.csv"))
+        zip.writer(Charsets.UTF_8).buffered().let { writer ->
+            writer.write("row,column,latitude,longitude\n")
+            database.query("explored_grid", arrayOf("grid_row", "grid_col", "latitude", "longitude"),
+                null, null, null, null, "grid_row,grid_col").use { cursor ->
+                while (cursor.moveToNext()) {
+                    writer.write("${cursor.getInt(0)},${cursor.getInt(1)},${cursor.getDouble(2)},${cursor.getDouble(3)}\n")
                     count++
                 }
             }
