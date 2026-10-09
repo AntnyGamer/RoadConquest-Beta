@@ -1088,7 +1088,9 @@ class MapRenderer(
             map.projection.toScreenLocations(currentCorners, currentScreen)
         }
         val gridCorners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
-        val gridScreen = if (currentScreen.isEmpty()) savedScreen else savedScreen + currentScreen
+        // The cached projection is mutable on the UI thread; give the fog worker an
+        // immutable snapshot even when no live tile has to be appended.
+        val gridScreen = if (currentScreen.isEmpty()) savedScreen.copyOf() else savedScreen + currentScreen
         val center = position.target ?: return null
         val metersPerPixel = map.projection.getMetersPerPixelAtLatitude(center.latitude) / mapView.pixelRatio
         if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return null
