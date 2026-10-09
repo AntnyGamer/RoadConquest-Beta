@@ -43,6 +43,8 @@ data class StartingLocation(
     val recordedAt: Long
 )
 
+data class PlaceVisitTimes(val firstVisitedAt: Long, val lastVisitedAt: Long)
+
 data class ProgressionSnapshot(
     val balance: Long,
     val lifetimeEarned: Long,
@@ -115,21 +117,7 @@ class ProgressionRepository(context: Context) {
         val db = dbHelper.writableDatabase
         db.beginTransaction()
         try {
-            val inserted = db.insertWithOnConflict(
-                "visited_places",
-                null,
-                ContentValues().apply {
-                    put("kind", discovery.kind.name)
-                    put("place_key", discovery.key)
-                    put("display_name", discovery.displayName)
-                    put("parent_name", discovery.parentName)
-                    put("country_name", discovery.countryName)
-                    put("first_visited_at", discovery.visitedAt)
-                    put("latitude", discovery.latitude)
-                    put("longitude", discovery.longitude)
-                },
-                SQLiteDatabase.CONFLICT_IGNORE
-            ) != -1L
+            val inserted = insertVisitedPlace(db, discovery)
             if (inserted) {
                 awardOnce(
                     db,
@@ -629,6 +617,27 @@ class ProgressionRepository(context: Context) {
         return result
     }
 
+    /**
+     * First visit is stored with the place; latest resolved GPS visit is recorded
+     * separately in existing counters to avoid a schema change or losing old data.
+     * Legacy discoveries display the first timestamp for both values until revisited.
+     */
+    fun placeVisitTimes(kind: PlaceKind, key: String): PlaceVisitTimes? =
+        synchronized(dbHelper.historyLock) {
+            if (!isCurrentHistory()) return@synchronized null
+            val db = dbHelper.readableDatabase
+            db.query(
+                "visited_places", arrayOf("first_visited_at"),
+                "kind = ? AND place_key = ?", arrayOf(kind.name, key),
+                null, null, null, "1"
+            ).use { rows ->
+                if (!rows.moveToFirst()) return@synchronized null
+                val first = rows.getLong(0)
+                val last = counterOrNull(db, placeLastVisitKey(kind, key)) ?: first
+                PlaceVisitTimes(first, maxOf(first, last))
+            }
+        }
+
     fun clearProgression() = synchronized(dbHelper.historyLock) {
         val db = dbHelper.writableDatabase
         db.beginTransaction()
@@ -646,10 +655,9 @@ class ProgressionRepository(context: Context) {
         }
     }
 
-    private fun insertVisitedPlace(db: SQLiteDatabase, discovery: PlaceDiscovery): Boolean =
-        db.insertWithOnConflict(
-            "visited_places",
-            null,
+    private fun insertVisitedPlace(db: SQLiteDatabase, discovery: PlaceDiscovery): Boolean {
+        val inserted = db.insertWithOnConflict(
+            "visited_places", null,
             ContentValues().apply {
                 put("kind", discovery.kind.name)
                 put("place_key", discovery.key)
@@ -662,6 +670,32 @@ class ProgressionRepository(context: Context) {
             },
             SQLiteDatabase.CONFLICT_IGNORE
         ) != -1L
+        if (discovery.visitedAt > 0L) {
+            // Older backfilled GPS samples can resolve out of order. Preserve the
+            // earliest confirmed fix without altering reward or baseline counters.
+            if (!inserted) {
+                db.update(
+                    "visited_places",
+                    ContentValues().apply {
+                        put("first_visited_at", discovery.visitedAt)
+                        put("latitude", discovery.latitude)
+                        put("longitude", discovery.longitude)
+                    },
+                    "kind = ? AND place_key = ? AND first_visited_at > ?",
+                    arrayOf(discovery.kind.name, discovery.key, discovery.visitedAt.toString())
+                )
+            }
+            val key = placeLastVisitKey(discovery.kind, discovery.key)
+            val previous = counterOrNull(db, key)
+            if (previous == null || discovery.visitedAt > previous) {
+                putCounter(db, key, discovery.visitedAt)
+            }
+        }
+        return inserted
+    }
+
+    private fun placeLastVisitKey(kind: PlaceKind, key: String): String =
+        "last_visit:${kind.name.lowercase()}:$key"
 
     private fun baselineKey(discovery: PlaceDiscovery): String =
         "baseline:${discovery.kind.name.lowercase()}:${discovery.key}"
