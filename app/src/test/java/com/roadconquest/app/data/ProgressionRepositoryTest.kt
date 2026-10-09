@@ -83,6 +83,64 @@ class ProgressionRepositoryTest {
         assertEquals(80L, progression.snapshot().pointsSpent)
     }
 
+    @Test fun townsStatesAndCountriesKeepFirstAndLastVisitsWithoutRepeatPoints() {
+        val progression = ProgressionRepository(context)
+        val places = listOf(
+            PlaceDiscovery(PlaceKind.TOWN, "us|nj|paulsboro", "Paulsboro", "New Jersey", "United States",
+                2_000L, 39.83, -75.24),
+            PlaceDiscovery(PlaceKind.STATE, "us|nj", "New Jersey", "United States", "United States",
+                2_000L, 39.83, -75.24),
+            PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States", "", "United States",
+                2_000L, 39.83, -75.24)
+        )
+        for (place in places) {
+            assertNull(progression.placeVisitTimes(place.kind, place.key))
+            assertTrue(progression.recordPlace(place))
+            assertEquals(PlaceVisitTimes(2_000L, 2_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+        }
+        val balance = progression.snapshot().balance
+        for (place in places) {
+            assertFalse(progression.recordPlace(place.copy(visitedAt = 6_000L)))
+            assertEquals(PlaceVisitTimes(2_000L, 6_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+            assertFalse(progression.recordPlace(place.copy(visitedAt = 3_000L)))
+            assertEquals(PlaceVisitTimes(2_000L, 6_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+            // Historical candidate may be resolved after more recent visits.
+            assertFalse(progression.recordPlace(place.copy(visitedAt = 1_500L)))
+            assertEquals(PlaceVisitTimes(1_500L, 6_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+        }
+        assertEquals(balance, progression.snapshot().balance)
+        assertEquals(3, places.size)
+        progression.clearProgression()
+        assertTrue(places.all { progression.placeVisitTimes(it.kind, it.key) == null })
+    }
+
+    @Test fun resolvingSameTownStateAndCountryTwiceRefreshesTheirLastVisit() {
+        val progression = ProgressionRepository(context)
+        val initial = listOf(
+            PlaceDiscovery(PlaceKind.TOWN, "us|nj|town", "Town", "New Jersey", "United States", 1_000L, 39.8, -75.2),
+            PlaceDiscovery(PlaceKind.STATE, "us|nj", "New Jersey", "United States", "United States", 1_000L, 39.8, -75.2),
+            PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States", "", "United States", 1_000L, 39.8, -75.2)
+        )
+        val baseline = android.location.Location("gps").apply {
+            latitude = 39.8; longitude = -75.2; accuracy = 3f; time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(baseline))
+        val firstCandidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+        assertEquals(0, progression.resolveCandidate(firstCandidate, initial))
+        val followUp = firstCandidate.copy(cellX = 123L, cellY = 456L, visitedAt = 7_000L)
+        assertEquals(0, progression.resolveCandidate(followUp, initial.map { it.copy(visitedAt = 7_000L) }))
+        for (place in initial) {
+            assertEquals(PlaceVisitTimes(1_000L, 7_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+        }
+        assertEquals(0L, progression.snapshot().balance)
+        assertEquals(1_000L, progression.startingLocation()?.recordedAt)
+    }
+
     @Test fun firstResolvedPlacesAfterResetBecomeUnrewardedBaseline() {
         val progression = ProgressionRepository(context)
         val fix = android.location.Location("gps").apply {
