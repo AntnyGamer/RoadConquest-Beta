@@ -1,7 +1,7 @@
 package com.roadconquest.app.util
 
-import android.location.LocationManager
 import android.location.Location
+import android.location.LocationManager
 
 object LocationProviders {
     /** Enabled providers in the exact preference order used for both preview and tracking. */
@@ -10,15 +10,8 @@ object LocationProviders {
         val fused = LocationManager.FUSED_PROVIDER
         return buildList(3) {
             if (enabled.contains(fused)) add(fused)
-            if (LocationManager.GPS_PROVIDER != fused && enabled.contains(LocationManager.GPS_PROVIDER)) {
-                add(LocationManager.GPS_PROVIDER)
-            }
-            if (LocationManager.NETWORK_PROVIDER != fused &&
-                LocationManager.NETWORK_PROVIDER != LocationManager.GPS_PROVIDER &&
-                enabled.contains(LocationManager.NETWORK_PROVIDER)
-            ) {
-                add(LocationManager.NETWORK_PROVIDER)
-            }
+            if (enabled.contains(LocationManager.GPS_PROVIDER)) add(LocationManager.GPS_PROVIDER)
+            if (enabled.contains(LocationManager.NETWORK_PROVIDER)) add(LocationManager.NETWORK_PROVIDER)
         }
     }
 

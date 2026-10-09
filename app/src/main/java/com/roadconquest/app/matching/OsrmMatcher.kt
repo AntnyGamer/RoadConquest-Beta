@@ -226,7 +226,7 @@ class OsrmMatcher(
     private fun parseLeg(
         leg: JSONObject, start: Trace, end: Trace, points: List<TrackPoint>, confidence: Double
     ): List<MatchedRoad> {
-        val steps = leg.optJSONArray("steps") ?: error("Missing matched leg steps")
+        val steps = requireNotNull(leg.optJSONArray("steps")) { "Missing matched leg steps" }
         val parsed = ArrayList<StepGeometry>(steps.length())
         var previous = start.location
         for (s in 0 until steps.length()) {
