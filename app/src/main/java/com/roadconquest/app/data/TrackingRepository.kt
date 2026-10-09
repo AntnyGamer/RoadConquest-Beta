@@ -445,7 +445,7 @@ class TrackingRepository(context: Context) {
             db.beginTransaction()
             try {
                 val values = ContentValues().apply { put("next_match_attempt_ms", untilMillis) }
-                ids.toList().chunked(400).forEach { chunk ->
+                ids.chunked(400).forEach { chunk ->
                     val placeholders = chunk.joinToString(",") { "?" }
                     db.update(
                         "track_points",

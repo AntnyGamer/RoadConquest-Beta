@@ -623,12 +623,11 @@ class TrackingService : Service(), LocationListener {
                         }
 
                         val acceptedRoads = result.roads.filter { it.confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE }
-                        val matchedIds = result.matchedPointConfidences
-                            .filter { (id, confidence) ->
+                        val matchedIds = result.matchedPointConfidences.mapNotNull { (id, confidence) ->
+                            id.takeIf {
                                 confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE && id in window.markableIds
                             }
-                            .keys
-                            .toList()
+                        }
 
                         val resolvedIds = if (acceptedRoads.isNotEmpty() && matchedIds.isNotEmpty()) {
                             repository.completeMatch(acceptedRoads, matchedIds)
