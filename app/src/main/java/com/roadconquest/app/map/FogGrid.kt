@@ -54,6 +54,20 @@ internal object FogGrid {
         }
     }
 
+    /** Keep neighboring cells at the date line in the same visible world copy. */
+    fun nearLongitude(corners: DoubleArray, centerLongitude: Double): DoubleArray {
+        if (corners.isEmpty() || !centerLongitude.isFinite()) return corners
+        val shifted = corners.copyOf()
+        for (i in 0 until shifted.size - 7 step 8) {
+            val longitude = (shifted[i + 1] + shifted[i + 3]) / 2.0
+            val copies = floor((centerLongitude - longitude) / 360.0 + 0.5)
+            val offset = copies * 360.0
+            if (offset == 0.0) continue
+            for (corner in 0..3) shifted[i + 2 * corner + 1] += offset
+        }
+        return shifted
+    }
+
     private fun columnCount(row: Int): Int {
         val latitude = (-90.0 + (row + 0.5) * LATITUDE_STEP)
             .coerceIn(-MAX_MERCATOR_LATITUDE, MAX_MERCATOR_LATITUDE)
