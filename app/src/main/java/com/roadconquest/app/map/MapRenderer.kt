@@ -1176,9 +1176,27 @@ class MapRenderer(
         private const val WORLD_FOG_SOURCE_ID = "roadconquest-world-fog"
         private const val WORLD_FOG_LAYER_ID = "roadconquest-world-fog-raster"
         private val overviewFog by lazy {
+            // The instantly available safety layer must use the EXACT same
+            // geographic cloud shader/color as subsequent detailed captures.
+            // Otherwise the first pan/zoom swaps a blue legacy texture in
+            // behind the dark gray clouds and appears to change map tint.
+            val geo = FogGeoRaster.fullWorld(FogTexture.SIZE)
             FogBitmapRenderer.render(FogBitmapRenderer.Request(
-                FogTexture.SIZE, FogTexture.SIZE, 0f, 0f, 1f, OverlayRoads.EMPTY,
-                doubleArrayOf(), 0.0, 1.0, null, null
+                bitmapWidth = FogTexture.SIZE,
+                bitmapHeight = FogTexture.SIZE,
+                screenLeft = 0f,
+                screenTop = 0f,
+                screenScale = 1f,
+                roads = OverlayRoads.EMPTY,
+                roadScreen = doubleArrayOf(),
+                centerLatitude = 0.0,
+                metersPerScreenPixelAtCenter = geo.metersPerPixel,
+                liveLatitude = null,
+                liveScreen = null,
+                textureMatrix = geo.textureMatrix(FogBitmapRenderer.CLOUD_DETAIL_METERS),
+                mediumCloudMatrix = geo.textureMatrix(FogBitmapRenderer.CLOUD_MEDIUM_METERS),
+                broadCloudMatrix = geo.textureMatrix(FogBitmapRenderer.CLOUD_BROAD_METERS),
+                gridMode = true
             ))
         }
         private const val CAR_SOURCE_ID = "roadconquest-car"
