@@ -51,15 +51,12 @@ object DataExporter {
 
     private fun clearTemporarySnapshotsLocked(context: Context) {
         val cache = context.applicationContext.cacheDir
-        cache.listFiles()
-            .orEmpty()
-            .filter { it.name.startsWith(SNAPSHOT_PREFIX) && it.name.endsWith(SNAPSHOT_SUFFIX) }
+        val snapshots = cache.listFiles().orEmpty()
+        snapshots.filter { it.name.startsWith(SNAPSHOT_PREFIX) && it.name.endsWith(SNAPSHOT_SUFFIX) }
             .forEach { SQLiteDatabase.deleteDatabase(it) }
         // deleteDatabase removes normal -wal/-shm files with the base DB. Sweep by prefix too
         // in case process death happened between sidecar creation and the base-file flush.
-        cache.listFiles().orEmpty()
-            .filter { it.name.startsWith(SNAPSHOT_PREFIX) }
-            .forEach { it.delete() }
+        snapshots.filter { it.name.startsWith(SNAPSHOT_PREFIX) }.forEach { it.delete() }
     }
 
     private fun writeMetadata(

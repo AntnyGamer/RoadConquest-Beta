@@ -58,6 +58,7 @@ data class PlaceOverlayCacheResult(val cached: Boolean, val data: PlaceOverlayDa
 object PlaceOverlayCache {
     private const val DIRECTORY = "place-overlays-v3"
     private const val NEGATIVE_CACHE_MS = 15L * 60L * 1000L
+    private const val HEX_DIGITS = "0123456789abcdef"
     private val generation = AtomicLong()
     private val mutationLock = Any()
 
@@ -126,8 +127,14 @@ object PlaceOverlayCache {
     private fun file(context: Context, place: PlaceDiscovery): File {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest("${place.kind.name}|${place.key}".toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(Locale.US, it.toInt() and 0xff) }
-        return File(File(context.applicationContext.filesDir, DIRECTORY), "$digest.json")
+        // Preserve existing lowercase SHA-256 cache filenames without 32 Formatter calls.
+        val hex = CharArray(digest.size * 2)
+        for (i in digest.indices) {
+            val byte = digest[i].toInt() and 0xff
+            hex[i * 2] = HEX_DIGITS[byte ushr 4]
+            hex[i * 2 + 1] = HEX_DIGITS[byte and 0x0f]
+        }
+        return File(File(context.applicationContext.filesDir, DIRECTORY), "${String(hex)}.json")
     }
 }
 
