@@ -224,7 +224,7 @@ class MapRenderer(
             }
             postPlaceOverlay(generation, kind, loaded)
             var fetchedSincePost = 0
-            for ((index, place) in missing.withIndex()) {
+            for (place in missing) {
                 if (destroyed || generation != overlayGeneration ||
                     cacheGeneration != PlaceOverlayCache.generation()) return@execute
                 val result = runCatching { overlayClient.fetch(place) }

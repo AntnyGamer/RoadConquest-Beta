@@ -61,7 +61,7 @@ This checklist is for final device-level validation on supported Android 12+ pho
 
 1. Use **Export driving data** in Settings.
 2. Open the ZIP and verify `metadata.json`, `track_points.csv`, `roads.csv`,
-   `explored_places.csv`, `visited_places.csv`, `place_candidates.csv`,
+   `road_visits.csv`, `explored_places.csv`, `visited_places.csv`, `place_candidates.csv`,
    `progression_rewards.csv`, `progression_purchases.csv`, and
    `progression_counters.csv` are present. Metadata schema version is 8.
 3. Verify metadata point/discovery counts agree with their CSVs and equipped car/road/gold settings
