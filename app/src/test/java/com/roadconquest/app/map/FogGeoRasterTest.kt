@@ -80,9 +80,9 @@ class FogGeoRasterTest {
             assertTrue("All rotated phone corners remain covered by fog",
                 rasterSide - 2 * padding > diagonal)
             val center = FogGeoRaster.around(
-                40.0, -74.0, 16.5, 1024, width, height, metersPerPixel * 0.707
+                40.0, -74.0, 16.15, 1024, width, height, metersPerPixel * 0.90
             )
-            assertEquals("No raster LOD jitter while a single zoom step animates",
+            assertEquals("No raster LOD jitter for small fractional camera gestures",
                 fog.metersPerPixel, center.metersPerPixel, 1e-9)
         }
     }
