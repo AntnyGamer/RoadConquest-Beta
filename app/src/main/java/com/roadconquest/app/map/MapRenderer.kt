@@ -81,6 +81,7 @@ class MapRenderer(
     private var fogRunning = false
     private var fogAgain = false
     private var reusableFogBitmap: Bitmap? = null
+    private var installedFogKey: FogKey? = null
     private var carIconBitmap: Bitmap? = null
     private var appliedCarStyle = ""
     private var appliedCarColor = ""
@@ -976,6 +977,11 @@ class MapRenderer(
             return
         }
         val capture = captureFog() ?: return
+        // MapLibre already animates this georeferenced ImageSource in native
+        // coordinates. Do not repaint/replace an identical cloud rectangle on
+        // each 120ms pan callback: that caused needless texture uploads and
+        // could flash an otherwise stable clearing on the GPU.
+        if (capture.key == installedFogKey) return
         lastFogRenderAt = SystemClock.elapsedRealtime()
         fogAgain = false
         fogRunning = true
@@ -1003,6 +1009,7 @@ class MapRenderer(
                         source?.setCoordinates(capture.quad)
                         // MapLibre 13.6.1 synchronously copies source bitmap pixels.
                         source?.setImage(rendered)
+                        if (source != null) installedFogKey = capture.key
                         if (!capture.world && source != null) {
                             activeDetailedFogAlternate = nextAlternate
                             detailedFogCoordinates = doubleArrayOf(
@@ -1057,6 +1064,11 @@ class MapRenderer(
             LatLng(geographic[4], geographic[5]),
             LatLng(geographic[6], geographic[7])
         )
+        val liveTile = fix?.let { FogGrid.cell(it.latitude, it.longitude)?.key }
+        val key = FogKey(
+            styleGeneration, world, raster.westMeters, raster.northMeters,
+            raster.metersPerPixel, size, placeDataRevision, liveTile
+        )
         return FogCapture(styleGeneration, quad, FogBitmapRenderer.Request(
             bitmapWidth = size,
             bitmapHeight = size,
@@ -1075,7 +1087,7 @@ class MapRenderer(
             gridMode = true,
             gridCoordinates = corners,
             gridScreen = screen
-        ), world = world)
+        ), world = world, key = key)
     }
 
     private fun currentFogQuad(): LatLngQuad {
@@ -1156,11 +1168,23 @@ class MapRenderer(
         }
     }
 
+    private data class FogKey(
+        val styleGeneration: Int,
+        val world: Boolean,
+        val westMeters: Double,
+        val northMeters: Double,
+        val metersPerPixel: Double,
+        val imageDimension: Int,
+        val visitedRevision: Int,
+        val liveCellKey: Long?
+    )
+
     private data class FogCapture(
         val styleGeneration: Int,
         val quad: LatLngQuad,
         val request: FogBitmapRenderer.Request,
-        val world: Boolean = false
+        val world: Boolean,
+        val key: FogKey
     )
 
     fun destroy() {
