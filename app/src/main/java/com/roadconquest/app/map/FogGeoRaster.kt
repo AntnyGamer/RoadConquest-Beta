@@ -1,0 +1,93 @@
+package com.roadconquest.app.map
+
+import kotlin.math.*
+
+/**
+ * One north-up, world-anchored Mercator raster for all cloud layers and visited cells.
+ * No camera animation deltas, previous phase, screen quad inversions, or accumulated
+ * floating point translations enter the position of a visited square.
+ */
+internal class FogGeoRaster private constructor(
+    val westMeters: Double,
+    val northMeters: Double,
+    val metersPerPixel: Double,
+    val width: Int,
+    val height: Int
+) {
+    val eastMeters get() = westMeters + width * metersPerPixel
+    val southMeters get() = northMeters - height * metersPerPixel
+    val centerLongitude get() = Math.toDegrees((westMeters + eastMeters) * 0.5 / RADIUS)
+    private val centerX get() = (westMeters + eastMeters) * 0.5
+
+    /** Top-left, top-right, bottom-right, bottom-left latitude/longitude pairs. */
+    fun corners(): DoubleArray = doubleArrayOf(
+        latitude(northMeters), longitude(westMeters),
+        latitude(northMeters), longitude(eastMeters),
+        latitude(southMeters), longitude(eastMeters),
+        latitude(southMeters), longitude(westMeters)
+    )
+
+    /**
+     * Each visited tile is projected by the exact inverse of the raster's geographic
+     * rectangle. MapLibre then georeferences that rectangle as a single image.
+     */
+    fun project(gridCorners: DoubleArray): DoubleArray {
+        val result = DoubleArray(gridCorners.size)
+        for (i in gridCorners.indices step 2) {
+            val lat = gridCorners[i].coerceIn(-MAX_LATITUDE, MAX_LATITUDE)
+            val lon = gridCorners[i + 1]
+            val x = RADIUS * Math.toRadians(lon)
+            val wrappedX = x + floor((centerX - x) / WORLD_METERS + 0.5) * WORLD_METERS
+            result[i] = (wrappedX - westMeters) / metersPerPixel
+            val y = RADIUS * ln(tan(PI / 4 + Math.toRadians(lat) / 2))
+            result[i + 1] = (northMeters - y) / metersPerPixel
+        }
+        return result
+    }
+
+    /**
+     * Repeat cloud texture in real-world meters, not in screen coordinates. The
+     * modulo bounds the translation to a single texture period, so float matrix
+     * precision stays intact at zoom 20 and on the opposite side of the globe.
+     */
+    fun textureMatrix(tileMeters: Double): FloatArray {
+        val pixelScale = (tileMeters / (FogTexture.SIZE * metersPerPixel)).toFloat()
+        val originX = ((westMeters + HALF_WORLD) % tileMeters + tileMeters) % tileMeters
+        val originY = ((HALF_WORLD - northMeters) % tileMeters + tileMeters) % tileMeters
+        return floatArrayOf(
+            pixelScale, 0f, (-originX / metersPerPixel).toFloat(),
+            0f, pixelScale, (-originY / metersPerPixel).toFloat(),
+            0f, 0f, 1f
+        )
+    }
+
+    companion object {
+        private const val RADIUS = 6378137.0
+        private const val MAX_LATITUDE = 85.05112878
+        const val WORLD_METERS = 2 * PI * RADIUS
+        private const val HALF_WORLD = WORLD_METERS / 2
+
+        fun fullWorld(size: Int): FogGeoRaster =
+            FogGeoRaster(-HALF_WORLD, HALF_WORLD, WORLD_METERS / size, size, size)
+
+        /**
+         * The integer-zoom LOD is stable throughout fractional pinch zooms;
+         * rectangles snap to the world origin at 32 bitmap-pixel intervals. A
+         * typical capture covers about two to four screens, including rotation.
+         */
+        fun around(latitude: Double, longitude: Double, zoom: Double, size: Int): FogGeoRaster {
+            val step = WORLD_METERS / (512.0 * 2.0.pow(floor(zoom).coerceIn(1.0, 21.0) - 1.0))
+            val cx = RADIUS * Math.toRadians(longitude)
+            val cy = RADIUS * ln(tan(PI / 4 + Math.toRadians(latitude.coerceIn(-MAX_LATITUDE, MAX_LATITUDE)) / 2))
+            val snap = step * 32.0
+            val left = floor((cx - step * size / 2) / snap) * snap
+            val top = ceil((cy + step * size / 2) / snap) * snap
+            return FogGeoRaster(left, top, step, size, size)
+        }
+
+        private fun latitude(y: Double): Double =
+            Math.toDegrees(atan(sinh(y.coerceIn(-HALF_WORLD, HALF_WORLD) / RADIUS)))
+
+        private fun longitude(x: Double): Double = Math.toDegrees(x / RADIUS)
+    }
+}
