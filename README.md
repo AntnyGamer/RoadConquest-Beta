@@ -42,8 +42,10 @@ the Google Play listing is created; changing it later would create a different a
 - Where a confirmed road ends in a tiny map-matching micro-segment, junction drawing
   uses the nearest 4 m of that same centerline (within 25 m), avoiding an artificial
   visual gap without relaxing the intersection-safety checks.
-- Drive to save matched road lines and reveal the map. Accurate locations also reveal nearby
-  places while walking or stopped, without adding driving miles.
+- Drive to save matched road lines. Entering a roughly 1-mile × 1-mile world-grid tile
+  permanently clears fog across that entire tile, with a gradual 1,500-foot fade beyond
+  its edges. Good location fixes can unlock tiles while walking or stopped too, without
+  adding driving miles. Existing exploration history remains visible in the new grid.
 - Earn points from newly unlocked roads, achievements and first visits to towns, states/regions
   and countries. Your current point balance is visible directly on the map.
 - Open Garage & Shop to buy and equip car shapes, car colors, road colors, or the Golden
