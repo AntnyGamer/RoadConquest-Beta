@@ -260,6 +260,7 @@ class MapRenderer(
         val layerId = overlayLayerId(mode)
         val feature = map.queryRenderedFeatures(screenPoint, layerId).firstOrNull() ?: return null
         val name = feature.getStringProperty("overlay_name") ?: return null
+        val key = feature.getStringProperty("overlay_key") ?: return null
         val featureKind = runCatching {
             PlaceKind.valueOf(feature.getStringProperty("overlay_kind") ?: kind.name)
         }.getOrDefault(kind)
