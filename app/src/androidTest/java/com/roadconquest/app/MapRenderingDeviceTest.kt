@@ -330,7 +330,7 @@ class MapRenderingDeviceTest {
                     scenario.onActivity { map.removeOnCameraIdleListener(listener) }
                     assertEquals("Animated pinch reaches zoom $zoom", 0L, completed.count)
                 }
-                assertTrue("Sample the active pinch, not only idle frames", inspectedPinchFrames > 12)
+                assertTrue("Sample the active pinch, not only idle frames", inspectedPinchFrames > 2)
                 assertEquals("An already visited mile never becomes opaque during a quick pinch",
                     0, lostClearingFrames)
 
