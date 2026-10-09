@@ -71,6 +71,24 @@ internal class FogGeoRaster private constructor(
             FogGeoRaster(-HALF_WORLD, HALF_WORLD, WORLD_METERS / size, size, size)
 
         /**
+         * Wider, coarser geographic safety image for quick pinch-outs. Its visited
+         * squares are drawn from the SAME coordinates and mask as the detailed
+         * image; unlike the 512px whole-world fog, mile squares still have pixels.
+         * Keep the extent below one Mercator world to avoid wrapping image quads.
+         */
+        fun pinchFallback(
+            latitude: Double, longitude: Double, zoom: Double, size: Int,
+            viewportWidth: Int, viewportHeight: Int, viewportMetersPerPixel: Double
+        ): FogGeoRaster {
+            val zoomReserve = minOf(4.0, (zoom - 6.0).coerceAtLeast(0.0))
+            return around(
+                latitude, longitude, zoom - zoomReserve, size,
+                viewportWidth, viewportHeight,
+                viewportMetersPerPixel * 2.0.pow(zoomReserve)
+            )
+        }
+
+        /**
          * The integer-zoom LOD is stable throughout fractional pinch zooms;
          * rectangles snap to the world origin at 32 bitmap-pixel intervals. A
          * typical capture covers about two to four screens, including rotation.
