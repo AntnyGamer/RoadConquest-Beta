@@ -549,9 +549,18 @@ object FogBitmapRenderer {
         }
         val canvas = Canvas(bitmap)
         val scratch = renderScratch.get()
-        scratch.textureMatrix.setValues(request.textureMatrix)
-        scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
-        canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
+        if (request.gridMode) {
+            // Constant, exactly 80%-opaque color at every camera scale. The old
+            // zoom-dependent cloud bitmap rephased as the camera moved, visibly
+            // changing its shade and producing striped overlaps on layer swaps.
+            // A fixed RGB color cannot slide or flicker relative to the map.
+            canvas.drawColor(STABLE_GRID_FOG_COLOR, PorterDuff.Mode.SRC)
+        } else {
+            // Retain the legacy road-fog renderer for its independent unit tests.
+            scratch.textureMatrix.setValues(request.textureMatrix)
+            scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
+            canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
+        }
         // In grid mode, road geometry and point-radius fog reveals do not contribute.
         // Blue roads still render separately; entering a mile tile is the sole unlock trigger.
         if (request.gridMode) {
@@ -663,6 +672,20 @@ object FogBitmapRenderer {
             // 1-pixel-scale cells perceptible on zoomed-out maps.
             distances[i] = if ((pixels[i] and 0xff) > 0) 0f else infinity
         }
+        val physicalFadePixels = (ROAD_FULL_M * request.screenScale /
+            request.metersPerScreenPixelAtCenter).toFloat()
+        if (physicalFadePixels < 0.75f) {
+            // At continental/world scale a mile square covers far less than one
+            // bitmap pixel. Never turn *any* touched texel into a fully clear
+            // world-sized block. Preserve the polygon's anti-aliased fractional
+            // coverage instead; it naturally fades to imperceptible subpixels.
+            for (i in 0 until count) {
+                val coverage = pixels[i] and 0xff
+                pixels[i] = Color.rgb(coverage, coverage, coverage)
+            }
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+            return
+        }
         val diagonal = 1.41421356f
         for (y in 0 until height) {
             val base = y * width
@@ -678,11 +701,9 @@ object FogBitmapRenderer {
                 distances[i] = distance
             }
         }
-        val metersPerPixel = request.metersPerScreenPixelAtCenter / request.screenScale
-        // The exact physical fade remains 457.2 m; the tiny minimum display width
-        // prevents a harsh raster edge when viewing many miles at once.
-        val radius = maxOf((ROAD_FULL_M / metersPerPixel).toFloat(),
-            MIN_VISIBLE_REVEAL_RADIUS_PX)
+        // One true physical 1,500-foot transition. Do not magnify the physical
+        // fade to a mandatory 1.25-bitmap-pixel halo when zoomed far out.
+        val radius = physicalFadePixels
         for (y in height - 1 downTo 0) {
             val base = y * width
             for (x in width - 1 downTo 0) {
@@ -780,6 +801,10 @@ object FogBitmapRenderer {
     const val ROAD_FULL_M = 1500f * 0.3048f
     const val LOCATION_FULL_M = ROAD_FULL_M
     const val MAX_FOG_ALPHA = 0.80f
+    // The entire visited-grid fog has ONE immutable tint, regardless of zoom or
+    // panning. Underlying map styles may vary, but the fog's RGBA is stable.
+    const val STABLE_GRID_FOG_ARGB: Int = 0xCC263142.toInt()
+    private val STABLE_GRID_FOG_COLOR = STABLE_GRID_FOG_ARGB
     // Confirmed/pending blue roads stay visible farther out than the cleared fog corridor.
     const val MIN_ROAD_ZOOM = 6.0
     const val MIN_FOG_REVEAL_ZOOM = 5.0
