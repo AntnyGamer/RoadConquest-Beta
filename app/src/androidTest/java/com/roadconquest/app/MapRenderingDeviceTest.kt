@@ -58,6 +58,7 @@ class MapRenderingDeviceTest {
         val repository = TrackingRepository(app)
         repository.readableDatabase().execSQL("DELETE FROM roads")
         repository.readableDatabase().execSQL("DELETE FROM explored_places")
+        repository.readableDatabase().execSQL("DELETE FROM explored_grid")
         repository.upsertRoads(listOf(MatchedRoad("Overview test", "[[-0.08,0],[0.08,0]]", 1, 2, 100.0)))
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
