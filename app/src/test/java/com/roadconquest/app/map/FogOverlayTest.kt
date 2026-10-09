@@ -284,29 +284,36 @@ class FogOverlayTest {
         assertEquals(3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
     }
 
-    @Test fun gridFogTintAndOpacityNeverChangeWhenCameraTexturePhaseChanges() {
-        val tile = request(metersPerPixel = 5.0).copy(
+    @Test fun worldAnchoredCloudsHaveVisibleDarkGrayVariationWithoutAlphaFlicker() {
+        val raster = FogGeoRaster.around(40.0, -74.0, 13.0, 640)
+        val tile = request(metersPerPixel = raster.metersPerPixel).copy(
             gridMode = true,
-            gridCoordinates = doubleArrayOf(
-                0.01, -0.01, 0.01, 0.01, -0.01, 0.01, -0.01, -0.01
-            ),
-            gridScreen = doubleArrayOf(
-                200.0, 200.0, 400.0, 200.0, 400.0, 400.0, 200.0, 400.0
-            )
+            textureMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_DETAIL_METERS),
+            mediumCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_MEDIUM_METERS),
+            broadCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_BROAD_METERS)
         )
-        val steady = FogBitmapRenderer.render(tile)
-        val fog = steady.getPixel(50, 50)
-        assertEquals(FogBitmapRenderer.STABLE_GRID_FOG_ARGB, fog)
-        // A camera zoom or pan used to rephase the 512px noise shader, even
-        // at the same geographic point. Ignore such camera-dependent matrices
-        // for grid fog completely, preserving its exact pixel colors.
-        val rephased = FogBitmapRenderer.render(tile.copy(
-            textureMatrix = floatArrayOf(4f, 0f, -991f, 0f, 0.25f, 729f, 0f, 0f, 1f),
-            centerLatitude = 73.0
-        ))
-        for ((x, y) in listOf(50 to 50, 300 to 300, 300 to 170, 165 to 165)) {
-            assertEquals("Geographically identical exploration remains the same shade",
-                steady.getPixel(x, y), rephased.getPixel(x, y))
+        val bitmap = FogBitmapRenderer.render(tile)
+        val colors = (50 until 590 step 20).flatMap { y ->
+            (50 until 590 step 20).map { x -> bitmap.getPixel(x, y) }
+        }
+        assertTrue("Dark clouds are textured, not a solid gray sheet",
+            colors.map(Color::red).distinct().size > 12)
+        assertTrue("Cloud layers remain visually dark gray",
+            colors.all { kotlin.math.abs(Color.red(it) - Color.blue(it)) < 24 })
+        assertTrue("Every unexplored pixel retains an exact 80% alpha",
+            colors.all { Color.alpha(it) == 204 })
+        // Only the explored square changes alpha; the cloud pattern outside it
+        // keeps identical ARGB regardless of whether visits are drawn.
+        val saved = tile.copy(
+            gridCoordinates = doubleArrayOf(
+                40.0, -74.01, 40.0, -74.0, 39.99, -74.0, 39.99, -74.01),
+            gridScreen = raster.project(doubleArrayOf(
+                40.0, -74.01, 40.0, -74.0, 39.99, -74.0, 39.99, -74.01))
+        )
+        val withReveals = FogBitmapRenderer.render(saved)
+        for ((x, y) in listOf(20 to 20, 620 to 20, 20 to 620, 620 to 620)) {
+            assertEquals("Revealing a square never changes unrelated cloud colors",
+                bitmap.getPixel(x, y), withReveals.getPixel(x, y))
         }
     }
 
