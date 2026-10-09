@@ -605,6 +605,9 @@ class MapRenderer(
     }
 
     private fun installPlaceOverlayLayers(style: Style) {
+        // A new MapLibre style has new empty GeoJSON sources even if the names match.
+        shownOverlayKeys = emptyList()
+        shownOverlayCacheGeneration = -1L
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
             style.addSource(GeoJsonSource(overlaySourceId(mode), EMPTY_FEATURES))
             style.addSource(GeoJsonSource(overlayBoundarySourceId(mode), EMPTY_FEATURES))
