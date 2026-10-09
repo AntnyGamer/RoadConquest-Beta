@@ -37,6 +37,47 @@ class FogOverlayTest {
     private fun alpha(x: Int, y: Int, request: FogBitmapRenderer.Request): Int =
         Color.alpha(FogBitmapRenderer.render(request).getPixel(x, y))
 
+    private fun junctionRoad(name: String, time: Long, vararg points: Pair<Double, Double>): RoadRecord {
+        val json = org.json.JSONArray()
+        for ((lon, lat) in points) json.put(org.json.JSONArray().put(lon).put(lat))
+        val lats = points.map { it.second }
+        val lons = points.map { it.first }
+        return RoadRecord(name, name, json.toString(), time, time + 5_000L,
+            lats.min(), lats.max(), lons.min(), lons.max())
+    }
+
+    @Test fun confirmedFlandersToColonialTurnVisuallyJoinsWithoutInventingRoadHistory() {
+        // Translated coordinates derived from the geometry of a recorded broken turn.
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val outgoing = junctionRoad("exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val stitched = OverlayRoads.prepare(listOf(incoming, outgoing))
+        assertEquals("Confirmed centerline turn should become a single blue chain", 2, stitched.starts.size)
+        assertTrue("Intersection vertex adds a short curved corner", stitched.coordinates.size > 12)
+    }
+
+    @Test fun confirmedColonialToNextRoadTurnVisuallyJoinsAcrossTwoMissingFixes() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.095820 to 39.967811, -74.095752 to 39.967787, -74.095658 to 39.967758)
+        val outgoing = junctionRoad("exit", 1_010_000L,
+            -74.095391 to 39.967677, -74.095348 to 39.967762, -74.095284 to 39.967889)
+        val stitched = OverlayRoads.prepare(listOf(incoming, outgoing))
+        assertEquals(2, stitched.starts.size)
+        assertTrue(stitched.coordinates.size > 12)
+    }
+
+    @Test fun distantTimesAndUnrelatedDirectionsNeverCreateAJunctionShortcut() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val delayed = junctionRoad("later trip", 1_120_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        assertEquals(3, OverlayRoads.prepare(listOf(incoming, delayed)).starts.size)
+        val wrongDirection = junctionRoad("wrong direction", 1_008_000L,
+            -74.096525 to 39.968062, -74.096604 to 39.968090, -74.096680 to 39.968117)
+        assertEquals(3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
+    }
+
     @Test fun roadFadeKeepsClearCoreButAvoidsARegionalGlow() {
         val roads = OverlayRoads(doubleArrayOf(0.0, -1.0, 0.0, 1.0), intArrayOf(0, 4))
         val screen = doubleArrayOf(-200.0, 300.0, 900.0, 300.0)
