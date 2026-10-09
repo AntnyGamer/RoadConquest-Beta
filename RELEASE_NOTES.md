@@ -1,14 +1,13 @@
-# Road Conquest 1.0 Beta 30
+# Road Conquest 1.0 Beta 31
 
-- Completely redesign map fog as **soft, dark-gray layered clouds** anchored to a stable geographic Web Mercator coordinate system. Three deterministic cloud-detail scales provide broad mist masses at global zoom, cloud banks at regional zoom and soft wisps at street zoom, without temporal animation or jitter.
-- The permanent explored **1-mile-square cells are holes in exactly that same world-referenced cloud image**. They cannot move separately from the cloud layer or the underlying map during camera pan, zoom or rotation.
-- Remove the old per-camera texture phases and dynamically rotated viewport-projection cutouts, which could visibly relocate uncovered areas during zoom/pan. MapLibre now moves each raster together with the geographic map.
-- Avoid the two-frame handoff in which both 80% opacity fog sources were displayed simultaneously, creating harsh 96%-opaque stripes and abrupt color changes.
-- Use higher-resolution 896/1024-pixel geographically snapped raster regions when near land, rather than magnifying a 512-pixel world map across a city.
-- At worldwide zoom, preserve fractional area coverage of visited cells much smaller than a world pixel; they must not become huge clear square blocks. Exact 1,500-foot outer fades are preserved at usable zoom levels.
-- Keep the previously unlocked squares, road progress, 50-meter historical samples, driving statistics, turns, account/scoring data and purchase/ad behavior unchanged.
-- Add regression tests for cloud color and alpha, whole-square cutouts, subpixel distant zoom, stable geographic cutout coordinates, stable geographic cloud shader phase and real Android map camera changes.
+- Fix visited one-mile squares temporarily appearing covered again during fast pinch zooms. A geographically anchored regional fog mask retains those clearings between detailed redraws, with one active fog raster at a time to prevent double-darkening.
+- Capture town discovery candidates from actual accepted driving GPS locations at finer intervals and smaller geocoding cells, rather than querying an approximate 2-kilometer cell center that might lie outside a briefly crossed town.
+- Re-check accurate saved GPS driving history in bounded batches so previously missed towns can be recovered where the original data contains evidence; preserve each profile's zero-point starting location and never award town points solely for a raw GPS coordinate or twice for an existing place.
+- Show already-cached town/state/country boundaries without clearing them during refresh, and add newly downloaded boundaries individually instead of delaying until four are available.
+- Add **First visited** and **Last visited** timestamps to the popup for each visited town, state or country. The latest confirmed reverse-geocoded visit updates the last timestamp without awarding points again. Existing place records show their first saved visit as both values until a newer revisit is verified.
+- Add unit tests for geographic cutout stability, old history and reset-baseline safety, exact municipal-boundary candidate positions, timestamp ordering, and first/last visits. Test the live rendered fog during animated zoom on Android 12, 15 and 17.
+- Keep recorded roads, mileage, exploration data, verified scoring, achievement balance, purchases and account state unchanged.
 
-Version code **56**, minimum Android 12. Install the signed Beta 30 APK over the existing app without uninstalling or clearing data.
+Version code **57**, minimum Android 12. Install the signed Beta 31 APK over the existing app without uninstalling or clearing data.
 
-For Play Store upload, use only the signed `RoadConquest-1.0-beta.30.aab` attached to the GitHub Release. The existing upload certificate and embedded native debug symbols remain unchanged.
+For Play Store upload, use only the signed `RoadConquest-1.0-beta.31.aab` attached to the GitHub Release. Its signing identity and embedded complete native debug symbols remain unchanged.

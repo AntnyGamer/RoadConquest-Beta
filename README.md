@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 30
+# Road Conquest 1.0 Beta 31
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -7,13 +7,14 @@ cloud-textured fog map.
 [Source and issues](https://github.com/AntnyGamer/RoadConquest-Beta) ·
 [GNU AGPL v3 license](LICENSE)
 
-Beta 30 completely rebuilds the fog as three layers of soft, dark-gray clouds
-geographically attached to the map. The cloud textures and permanently unlocked mile
-squares use the same Mercator raster coordinates, so camera pans, pinch zooms and
-rotations cannot move an explored clearing separately from the map. This release also
-removes the opacity-changing double-layer transition, improves the regional raster
-resolution and prevents a tiny explored mile from becoming a huge white world pixel.
-Existing exploration and its 1,500-foot outer transition remain unchanged.
+Beta 31 fixes explored mile squares that briefly reappear covered in fog during
+fast pinch zooms. A geographically anchored wider backup mask retains the existing
+cloud-fog clearings while the detailed raster catches up, without stacking fog layers.
+The town, state and country overlay popups now show first-visited and last-visited
+timestamps. Geographic discovery samples actual driven GPS locations more densely,
+rechecks stored accurate history after the initial zero-point baseline and shows
+downloaded boundaries incrementally instead of waiting for a batch. Previously
+unlocked roads, exploration, purchases and scoring remain intact.
 
 ## Install
 
@@ -30,7 +31,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 56.
+This release uses Android application ID `com.roadconquest.app` and internal version code 57.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 
@@ -55,7 +56,7 @@ the Google Play listing is created; changing it later would create a different a
 - Open Garage & Shop to buy and equip car shapes, car colors, road colors, or the Golden
   Road Conquest UI and launcher icon. Purchases are one-time and equipped cosmetics can be changed later.
 - Choose Streets, Minimal, Night or Satellite maps, and a Light, Dark or phone-controlled appearance.
-- Use the map overlay button to highlight explored countries in blue, states/regions in purple, or towns in green. Only one overlay type is active at a time; tap a highlighted area for population and area when available.
+- Use the map overlay button to highlight explored countries in blue, states/regions in purple, or towns in green. Only one overlay type is active at a time; tap a highlighted area for population, area, first visit and last visit when available.
 - Tap an unlocked road for its name, saved length, first-unlocked time, last-driven time and times driven.
 - Browse achievements by **Road Conquest**, **Mileage**, **Exploration**, **Ad Rewards**, and **Bonus** categories. Battery challenges live under Bonus; ad milestones have their own Ad Rewards category.
   Optional rewarded ads in the Garage grant the displayed points only after confirmed completion, and count toward ad milestones.
