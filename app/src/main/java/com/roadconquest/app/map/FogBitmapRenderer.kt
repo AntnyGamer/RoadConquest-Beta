@@ -8,6 +8,7 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
@@ -530,7 +531,10 @@ object FogBitmapRenderer {
         val liveScreen: DoubleArray?,
         val textureMatrix: FloatArray = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f),
         val exploredCoordinates: DoubleArray = doubleArrayOf(),
-        val exploredScreen: DoubleArray = doubleArrayOf()
+        val exploredScreen: DoubleArray = doubleArrayOf(),
+        val gridMode: Boolean = false,
+        val gridCoordinates: DoubleArray = doubleArrayOf(),
+        val gridScreen: DoubleArray = doubleArrayOf()
     )
 
     fun render(request: Request, reusable: Bitmap? = null): Bitmap {
@@ -548,6 +552,18 @@ object FogBitmapRenderer {
         scratch.textureMatrix.setValues(request.textureMatrix)
         scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
         canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
+        // In grid mode, road geometry and point-radius fog reveals do not contribute.
+        // Blue roads still render separately; entering a mile tile is the sole unlock trigger.
+        if (request.gridMode) {
+            if (request.gridScreen.isEmpty()) return bitmap
+            val reveal = scratch.acquireRevealBitmap(request.bitmapWidth, request.bitmapHeight)
+            val revealCanvas = Canvas(reveal)
+            for (i in 0 until minOf(request.gridCoordinates.size, request.gridScreen.size) - 7 step 8) {
+                drawGridReveal(revealCanvas, request, i, scratch)
+            }
+            canvas.drawBitmap(reveal, 0f, 0f, scratch.applyRevealPaint)
+            return bitmap
+        }
         if (request.roads.coordinates.isEmpty() && request.exploredCoordinates.isEmpty() && request.liveScreen == null) return bitmap
 
         // Combine the strongest reveal once. Repeated DST_OUT operations multiply the
@@ -597,6 +613,76 @@ object FogBitmapRenderer {
         }
         canvas.drawBitmap(reveal, 0f, 0f, scratch.applyRevealPaint)
         return bitmap
+    }
+
+    /**
+     * Clear the entire visited tile, then fade out from each edge and corner over the
+     * original 1,500-foot distance. LIGHTEN combines adjacent cells by their maximum
+     * reveal; it never compounds the gradient or pushes the fade farther out.
+     */
+    private fun drawGridReveal(canvas: Canvas, request: Request, offset: Int, scratch: RenderScratch) {
+        val xy = scratch.gridPoints
+        for (corner in 0..3) {
+            val i = offset + corner * 2
+            val x = request.gridScreen[i]
+            val y = request.gridScreen[i + 1]
+            if (!x.isFinite() || !y.isFinite()) return
+            xy[corner * 2] = ((x - request.screenLeft) * request.screenScale).toFloat()
+            xy[corner * 2 + 1] = ((y - request.screenTop) * request.screenScale).toFloat()
+        }
+        val latitude = (request.gridCoordinates[offset] + request.gridCoordinates[offset + 4]) / 2.0
+        val centerCos = cos(Math.toRadians(request.centerLatitude.coerceIn(-85.05112878, 85.05112878)))
+            .coerceAtLeast(1e-6)
+        val localCos = cos(Math.toRadians(latitude.coerceIn(-85.05112878, 85.05112878)))
+        val metersPerPixel = request.metersPerScreenPixelAtCenter / centerCos * localCos
+        if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return
+        val radius = maxOf(
+            (ROAD_FULL_M / metersPerPixel * request.screenScale).toFloat(),
+            MIN_VISIBLE_REVEAL_RADIUS_PX * request.screenScale
+        )
+        if (!radius.isFinite() || radius <= 0f) return
+        if (xy.filterIndexed { index, _ -> index % 2 == 0 }.min() - radius > canvas.width ||
+            xy.filterIndexed { index, _ -> index % 2 == 0 }.max() + radius < 0f ||
+            xy.filterIndexed { index, _ -> index % 2 == 1 }.min() - radius > canvas.height ||
+            xy.filterIndexed { index, _ -> index % 2 == 1 }.max() + radius < 0f
+        ) return
+
+        val paint = scratch.revealPaint
+        val path = scratch.gridPath
+        path.reset()
+        path.moveTo(xy[0], xy[1])
+        for (i in 1..3) path.lineTo(xy[i * 2], xy[i * 2 + 1])
+        path.close()
+        paint.shader = null
+        paint.color = Color.WHITE
+        canvas.drawPath(path, paint)
+
+        // Corners are circular, preventing the square 'halo' a blurred bounding box makes.
+        paint.shader = scratch.gridEdgeGradient
+        for (corner in 0..3) {
+            val next = (corner + 1) % 4
+            val x = xy[corner * 2]
+            val y = xy[corner * 2 + 1]
+            val dx = xy[next * 2] - x
+            val dy = xy[next * 2 + 1] - y
+            val length = hypot(dx, dy)
+            if (length <= 0f) continue
+            val save = canvas.save()
+            canvas.translate(x, y)
+            canvas.rotate(Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat())
+            canvas.scale(radius, radius)
+            // Clockwise NW, NE, SE, SW: the outside of each edge is local -Y.
+            canvas.drawRect(0f, -1f, length / radius, 0f, paint)
+            canvas.restoreToCount(save)
+        }
+        paint.shader = scratch.gridCornerGradient
+        for (corner in 0..3) {
+            val save = canvas.save()
+            canvas.translate(xy[corner * 2], xy[corner * 2 + 1])
+            canvas.scale(radius, radius)
+            canvas.drawCircle(0f, 0f, 1f, paint)
+            canvas.restoreToCount(save)
+        }
     }
 
     private fun drawPlaceReveal(canvas: Canvas, request: Request, latitude: Double, x: Double, y: Double,
@@ -710,6 +796,15 @@ object FogBitmapRenderer {
             ))
         }
         val capBounds = RectF(-1f, -1f, 1f, 1f)
+        val gridPoints = FloatArray(8)
+        val gridPath = Path()
+        val gridEdgeGradient = LinearGradient(
+            0f, 0f, 0f, -1f,
+            intArrayOf(Color.WHITE, Color.rgb(140, 140, 140), Color.rgb(51, 51, 51),
+                Color.rgb(15, 15, 15), Color.BLACK),
+            floatArrayOf(0f, 0.20f, 0.50f, 0.80f, 1f), Shader.TileMode.CLAMP
+        )
+        val gridCornerGradient = radial(0f)
         private val roadClearFraction = ROAD_CLEAR_M / ROAD_FULL_M
         val roadLinear = LinearGradient(
             0f, -1f, 0f, 1f,
