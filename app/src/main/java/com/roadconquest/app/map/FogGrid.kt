@@ -5,20 +5,24 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
- * World-wide, deterministic, approximately one-square-mile exploration tiles.
+ * Globally stable, north-aligned exploration squares. Latitude rows and longitude
+ * columns share fixed boundaries: adjacent visited cells form one seamless region.
  *
- * Each latitude band is one statute mile high. Columns are sized at that band's
- * center latitude, giving cells approximately one mile wide on the ground rather
- * than only at the equator (as a fixed Web-Mercator grid would).
- *
- * Old 50 m exploration samples remain usable: this is a rendering projection,
- * not a change to road matching, scoring, or the history database.
+ * At the app's primary mid-latitudes (around 40 degrees N/S) each side is one
+ * statute mile on the ground. Longitude width varies physically with latitude
+ * because a single aligned rectangular grid cannot be exactly square everywhere
+ * on a sphere. Unlike latitude-dependent columns, these cells never create T
+ * junctions or gaps at a row boundary.
  */
 internal object FogGrid {
     private const val MILE_METERS = 1609.344
     private const val METERS_PER_LATITUDE_DEGREE = 111_195.0
     private const val LATITUDE_STEP = MILE_METERS / METERS_PER_LATITUDE_DEGREE
+    private const val REFERENCE_LATITUDE = 40.0
     private const val MAX_MERCATOR_LATITUDE = 85.05112878
+    private val columnCount = (360.0 * METERS_PER_LATITUDE_DEGREE *
+        cos(Math.toRadians(REFERENCE_LATITUDE)) / MILE_METERS).roundToInt()
+    private val longitudeStep = 360.0 / columnCount
 
     data class Cell(val row: Int, val column: Int) {
         val key: Long get() = (row.toLong() shl 32) or (column.toLong() and 0xffff_ffffL)
@@ -28,18 +32,22 @@ internal object FogGrid {
         if (!latitude.isFinite() || !longitude.isFinite() ||
             latitude !in -90.0..90.0 || longitude !in -180.0..180.0
         ) return null
-        val row = floor((latitude.coerceIn(-MAX_MERCATOR_LATITUDE, MAX_MERCATOR_LATITUDE) + 90.0) / LATITUDE_STEP).toInt()
-        val columns = columnCount(row)
+        val row = floor((latitude.coerceIn(-MAX_MERCATOR_LATITUDE, MAX_MERCATOR_LATITUDE) +
+            90.0) / LATITUDE_STEP).toInt()
         val wrapped = ((longitude + 180.0) % 360.0 + 360.0) % 360.0
-        return Cell(row, floor(wrapped / (360.0 / columns)).toInt().coerceIn(0, columns - 1))
+        return Cell(row, floor(wrapped / longitudeStep).toInt().coerceIn(0, columnCount - 1))
     }
 
-    /** Four corners in clockwise map-projection order: NW, NE, SE, SW (lat, lon). */
+    fun center(cell: Cell): Pair<Double, Double> {
+        val south = (-90.0 + cell.row * LATITUDE_STEP).coerceAtLeast(-MAX_MERCATOR_LATITUDE)
+        val north = (-90.0 + (cell.row + 1) * LATITUDE_STEP).coerceAtMost(MAX_MERCATOR_LATITUDE)
+        return (south + north) / 2.0 to (-180.0 + (cell.column + 0.5) * longitudeStep)
+    }
+
+    /** Four clockwise corners: NW, NE, SE, SW as latitude/longitude pairs. */
     fun corners(latitude: Double, longitude: Double): DoubleArray {
         val tile = cell(latitude, longitude) ?: return doubleArrayOf()
-        val coordinates = DoubleArray(8)
-        writeCorners(tile, coordinates, 0)
-        return coordinates
+        return DoubleArray(8).also { writeCorners(tile, it, 0) }
     }
 
     fun visitedCorners(samples: DoubleArray): DoubleArray {
@@ -54,42 +62,31 @@ internal object FogGrid {
         }
     }
 
-    /** Keep neighboring cells at the date line in the same visible world copy. */
+    /** Project date-line cells into the same copy of the world as the camera. */
     fun nearLongitude(corners: DoubleArray, centerLongitude: Double): DoubleArray {
         if (corners.isEmpty() || !centerLongitude.isFinite()) return corners
         val shifted = corners.copyOf()
         for (i in 0 until shifted.size - 7 step 8) {
             val longitude = (shifted[i + 1] + shifted[i + 3]) / 2.0
-            val copies = floor((centerLongitude - longitude) / 360.0 + 0.5)
-            val offset = copies * 360.0
+            val offset = floor((centerLongitude - longitude) / 360.0 + 0.5) * 360.0
             if (offset == 0.0) continue
             for (corner in 0..3) shifted[i + 2 * corner + 1] += offset
         }
         return shifted
     }
 
-    private fun columnCount(row: Int): Int {
-        val latitude = (-90.0 + (row + 0.5) * LATITUDE_STEP)
-            .coerceIn(-MAX_MERCATOR_LATITUDE, MAX_MERCATOR_LATITUDE)
-        val latitudeCos = cos(Math.toRadians(latitude))
-        val widthDegrees = MILE_METERS / (METERS_PER_LATITUDE_DEGREE * latitudeCos)
-        return (360.0 / widthDegrees).roundToInt().coerceAtLeast(1)
-    }
-
-    private fun writeCorners(cell: Cell, coordinates: DoubleArray, i: Int) {
-        val columns = columnCount(cell.row)
-        val width = 360.0 / columns
+    private fun writeCorners(cell: Cell, output: DoubleArray, i: Int) {
         val north = (-90.0 + (cell.row + 1) * LATITUDE_STEP).coerceAtMost(MAX_MERCATOR_LATITUDE)
         val south = (-90.0 + cell.row * LATITUDE_STEP).coerceAtLeast(-MAX_MERCATOR_LATITUDE)
-        val west = -180.0 + cell.column * width
-        val east = -180.0 + (cell.column + 1) * width
-        coordinates[i] = north
-        coordinates[i + 1] = west
-        coordinates[i + 2] = north
-        coordinates[i + 3] = east
-        coordinates[i + 4] = south
-        coordinates[i + 5] = east
-        coordinates[i + 6] = south
-        coordinates[i + 7] = west
+        val west = -180.0 + cell.column * longitudeStep
+        val east = west + longitudeStep
+        output[i] = north
+        output[i + 1] = west
+        output[i + 2] = north
+        output[i + 3] = east
+        output[i + 4] = south
+        output[i + 5] = east
+        output[i + 6] = south
+        output[i + 7] = west
     }
 }
