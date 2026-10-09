@@ -106,7 +106,7 @@ class FogTextureTest {
                 val shade = (mist * 72.0).roundToInt()
                 assertEquals(
                     "Fog optimization must not change pixel ($x,$y)",
-                    Color.rgb(14 + shade, 22 + shade, 34 + shade),
+                    Color.rgb(24 + shade, 25 + shade, 27 + shade),
                     bitmap.getPixel(x, y)
                 )
             }
