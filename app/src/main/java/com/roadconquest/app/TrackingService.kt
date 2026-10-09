@@ -319,15 +319,12 @@ class TrackingService : Service(), LocationListener {
             if (savePlaceCandidate || saveExplored) {
                 storageExecutor.execute {
                     try {
-                        if (savePlaceCandidate && !progressionRepository.recordPlaceCandidate(visited)) {
-                            // Another fix in the same geocode cell was already saved; harmless.
-                        }
+                        if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
                         if (saveExplored && exploredCell != null &&
                             repository.recordExploredPlace(visited, exploredCell)
                         ) sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
                     } catch (error: Exception) {
                         if (saveExplored && exploredCell != null) exploredCellsThisSession.remove(exploredCell)
-                        if (savePlaceCandidate) lastPlaceCandidate = null
                         Log.e("RoadConquest", "Could not save explored place or town candidate", error)
                     }
                 }
