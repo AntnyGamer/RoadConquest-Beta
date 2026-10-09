@@ -20,7 +20,7 @@ object FogTexture {
         val pixels = IntArray(size * size)
         // Only 73 shades are possible. Build their exact colors once rather than calling
         // Color.rgb for every texel; output is pixel-for-pixel identical.
-        val palette = IntArray(73) { shade -> Color.rgb(14 + shade, 22 + shade, 34 + shade) }
+        val palette = IntArray(73) { shade -> Color.rgb(24 + shade, 25 + shade, 27 + shade) }
         // The final row/column intentionally sample the same mathematical point as the first,
         // so REPEAT filtering cannot expose a tile seam.
         val denominator = (size - 1).coerceAtLeast(1).toDouble()
