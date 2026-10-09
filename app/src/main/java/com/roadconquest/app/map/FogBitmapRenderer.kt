@@ -694,6 +694,10 @@ object FogBitmapRenderer {
                     if (x > 0) distance = minOf(distance, distances[i + width - 1] + diagonal)
                     if (x + 1 < width) distance = minOf(distance, distances[i + width + 1] + diagonal)
                 }
+                // The reverse scan MUST store each relaxed distance. Upper/left
+                // pixels depend on already-processed lower/right neighbors; omitting
+                // this assignment leaves half of the outer fade fully opaque.
+                distances[i] = distance
                 // This smooth easing removes gray/checkerboard edge bands caused by
                 // separate side/corner shaders and low-resolution raster sampling.
                 val fraction = (distance / radius).coerceIn(0f, 1f)
