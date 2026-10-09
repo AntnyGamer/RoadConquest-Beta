@@ -57,8 +57,8 @@ internal object RoadGrouping {
             .filter { it.isNotEmpty() }
             .toCollection(linkedSetOf())
 
-    // normalizeName already turns the placeholder "unnamed road" into an empty key.
-    fun isUnnamed(nameKey: String): Boolean = nameKey.isEmpty()
+    fun isUnnamed(nameKey: String): Boolean =
+        nameKey.isEmpty() || nameKey == "unnamed road"
 
     /**
      * Any shared signed route ref is strong local identity evidence. The repository narrows
