@@ -36,6 +36,17 @@ class FogGridTest {
         assertEquals(16, next.size)
     }
 
+    @Test fun antimeridianTilesProjectIntoTheNearestWorldCopy() {
+        val westOfDateLine = FogGrid.corners(0.0, -179.999)
+        val nearEastSide = FogGrid.nearLongitude(westOfDateLine, 179.9)
+        assertTrue(nearEastSide[1] >= 179.9)
+        assertTrue(nearEastSide[3] >= 179.9)
+        assertEquals(westOfDateLine[0], nearEastSide[0], 0.0)
+        assertEquals(westOfDateLine[1] + 360.0, nearEastSide[1], 1e-9)
+        val unchanged = FogGrid.nearLongitude(FogGrid.corners(39.9, -75.0), -75.0)
+        assertArrayEquals(FogGrid.corners(39.9, -75.0), unchanged, 0.0)
+    }
+
     @Test fun worldWrapAndInvalidCoordinatesNeverMakeInventedCells() {
         assertEquals(FogGrid.cell(0.0, -180.0), FogGrid.cell(0.0, 180.0))
         assertNull(FogGrid.cell(Double.NaN, 0.0))
