@@ -3,6 +3,7 @@ package com.roadconquest.app
 import android.Manifest
 import android.app.NotificationManager
 import android.content.Intent
+import android.location.Location
 import android.graphics.Color
 import android.view.TextureView
 import android.view.View
@@ -226,12 +227,35 @@ class MapRenderingDeviceTest {
                         } }
                     }
                 }
+                // The old Beta 28 cutoff intentionally hid all saved exploration
+                // below zoom 9. Verify a real persisted tile now clears the native map
+                // even at a broader zoom, not only in the bitmap unit tests.
+                val exploredPoint = LatLng(40.0, -74.0)
+                scenario.onActivity {
+                    assertTrue(repository.recordExploredGridCell(Location("gps").apply {
+                        latitude = exploredPoint.latitude
+                        longitude = exploredPoint.longitude
+                        accuracy = 3f
+                    }))
+                    renderer.refreshExploration()
+                }
+                move(exploredPoint, 8.8)
+                awaitPixels("Saved mile cell is visible on native map below old zoom cutoff") { bitmap ->
+                    val p = map.projection.toScreenLocation(exploredPoint)
+                    val x = p.x.toInt().coerceIn(0, bitmap.width - 1)
+                    val y = p.y.toInt().coerceIn(0, bitmap.height - 1)
+                    val pixel = bitmap.getPixel(x, y)
+                    Color.red(pixel) > 230 && Color.green(pixel) > 230 && Color.blue(pixel) > 230
+                }
                 scenario.onActivity {
                     val ids = map.style!!.layers.map { it.id }
                     assertTrue(ids.indexOf("roadconquest-fog-raster") < ids.indexOf("roadconquest-traveled-roads-line"))
                 }
             }
-        } finally { repository.readableDatabase().execSQL("DELETE FROM roads") }
+        } finally {
+            repository.readableDatabase().execSQL("DELETE FROM roads")
+            repository.readableDatabase().execSQL("DELETE FROM explored_grid")
+        }
     }
 
     @Test fun nativeFogAndCarSurvivePanningZoom20RecenteringAndSatelliteStyleReload() {
