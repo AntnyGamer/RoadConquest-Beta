@@ -1,12 +1,13 @@
-# Road Conquest 1.0 Beta 24
+# Road Conquest 1.0 Beta 25
 
-- Repair short visual breaks at confirmed intersections, including the Flanders Road → Colonial Road and nearby Colonial Road turn shown in the driving export. The map renderer identifies uniquely supported road ends first recorded seconds apart, computes a centerline corner, and displays a continuous blue line without a diagonal shortcut.
-- Limit display-only joins to road endpoints within 30 meters and 15 seconds of one another, with matching road directions and a uniquely supported successor. Avoid connecting unrelated roads, long gaps, ambiguous intersections or different trips.
-- Existing local road data is preserved. Joining displayed blue segments does not award additional roads, mileage, achievements or leaderboard credit and does not loosen OSRM matching, GPS acceptance, or confidence rules.
-- Carry forward Beta 23's stalled GPS callback recovery, Beta 22's older-unmatched-fix retry fairness, unchanged permanent signing identity, and full native MapLibre debug symbols plus R8 mapping embedded in the Google Play bundle.
+- Fix a confirmed-road visual gap near the Exit 14B / Benigno Boulevard turn: Beta 24's display-only junction check looked only at the final two centerline vertices, so an otherwise trustworthy approach ending in a 0.64-meter micro-segment was rejected.
+- Use a nearby point farther back on the **same already-confirmed road geometry** when the immediate endpoint segment is shorter than the existing 4-meter direction threshold. The extra search is bounded to 25 meters; use the original adjacent vertex whenever it is already sufficiently long.
+- Keep the existing 15-second, 30-meter, centerline intersection, direction and mutually unique-continuation safeguards. Do not connect unknown roads, guessed turns, separate drives or roads with insufficient direction evidence.
+- Retain all history, road unlocks, mileage, points, map appearance and leaderboard rules. These display-only junction links do not modify the road database or award any progress, and the CR 607 / Beckett Road connection eligible in Beta 24 remains supported.
+- Preserve existing GPS tracking behavior, OSRM confidence and road matching, permanent upload-signing certificate, and complete MapLibre native debug symbols plus R8 mapping embedded in the Google Play AAB.
 
-Android version code is 50. Android 12 or newer is required. Install the signed APK over your existing installation to retain local driving history. Do not uninstall or clear app storage.
+Android version code is 51. Android 12 or newer is required. Install the signed APK over your existing installation to retain all local history; do not uninstall or clear app data.
 
-For Google Play, upload only the signed `RoadConquest-1.0-beta.24.aab` from GitHub Releases. The application ID and upload-signing key remain unchanged.
+For Google Play, upload only the signed `RoadConquest-1.0-beta.25.aab` from GitHub Releases. The app ID and permanent upload key remain unchanged.
 
-Note: display-only junction repairs require accepted road geometry on both sides. They cannot recreate a drive with no GPS samples or safely guess an ambiguous intersection.
+Some parking aisles are not present in the underlying road data. This release intentionally does not manufacture unlocked roads or historical driving paths without sufficient confirmed geometry.

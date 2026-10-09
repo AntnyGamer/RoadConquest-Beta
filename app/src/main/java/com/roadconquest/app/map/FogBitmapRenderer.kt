@@ -272,18 +272,50 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
             val bendLongitude get() = bend.second
         }
 
+        /** Find the closest sound approach/exit bearing; never extrapolate far down a road. */
+        private fun junctionTangentIndex(coordinates: DoubleArray, atEnd: Boolean): Int? {
+            val end = if (atEnd) coordinates.size - 2 else 0
+            val step = if (atEnd) -2 else 2
+            var previous = end
+            var index = end + step
+            var walked = 0.0
+            while (index >= 0 && index + 1 < coordinates.size) {
+                walked += metersBetween(
+                    coordinates[previous], coordinates[previous + 1],
+                    coordinates[index], coordinates[index + 1]
+                )
+                if (metersBetween(
+                    coordinates[end], coordinates[end + 1],
+                    coordinates[index], coordinates[index + 1]
+                ) >= MIN_JUNCTION_DIRECTION_M) {
+                    // Preserve the previous behavior when the immediate edge is already long.
+                    if (index == end + step || walked <= MAX_JUNCTION_TANGENT_LOOKBACK_M) return index
+                    return null
+                }
+                if (walked > MAX_JUNCTION_TANGENT_LOOKBACK_M) return null
+                previous = index
+                index += step
+            }
+            return null
+        }
+
         private fun supportedJunctionBend(
             left: DoubleArray, right: DoubleArray, directMeters: Double
         ): Pair<Double, Double>? {
             if (left.size < 4 || right.size < 4) return null
             val aLat = left[left.size - 2]
             val aLon = left.last()
-            val bLat = left[left.size - 4]
-            val bLon = left[left.size - 3]
+            // OSRM can end an otherwise sound road with a sub-meter vertex. Use the
+            // nearest sufficiently long tangent on that same confirmed polyline instead
+            // of rejecting an ordinary turn because only its final micro-edge is short.
+            val before = junctionTangentIndex(left, atEnd = true) ?: return null
+            val after = junctionTangentIndex(right, atEnd = false) ?: return null
+            val bLat = left[before]
+            val bLon = left[before + 1]
             val cLat = right[0]
             val cLon = right[1]
-            val dLat = right[2]
-            val dLon = right[3]
+            val dLat = right[after]
+            val dLon = right[after + 1]
             val metersPerDegree = EARTH_RADIUS_M * PI / 180.0
             val metersPerLongitude = metersPerDegree * cos(Math.toRadians((aLat + cLat) / 2.0))
             if (metersPerLongitude <= 0.0) return null
@@ -410,6 +442,7 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
         private const val MAX_SUPPORTED_JUNCTION_TIME_MS = 15_000L
         private const val MAX_SUPPORTED_JUNCTION_DISTANCE_M = 30.0
         private const val MIN_JUNCTION_DIRECTION_M = 4.0
+        private const val MAX_JUNCTION_TANGENT_LOOKBACK_M = 25.0
         private const val MIN_UNIQUE_JUNCTION_MARGIN_M = 3.0
         private const val DUPLICATE_ENDPOINT_M = 0.01
     }
