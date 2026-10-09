@@ -95,6 +95,9 @@ class MapRenderer(
     private val fogTextureTransform = FogTextureTransform()
     private var displayedRoads = OverlayRoads.EMPTY
     private var displayedRoadFeatures = EMPTY_FEATURES
+    // A newly installed GeoJSON source already contains EMPTY_FEATURES. Avoid sending the
+    // same empty data over the native bridge on every viewport/GPS refresh.
+    private var pendingRouteSourceIsEmpty = true
     private var displayedPlaces = doubleArrayOf()
     private var loadedRoadBounds: RoadQueryBounds? = null
     private var loadedPlaceBounds: RoadQueryBounds? = null
@@ -462,7 +465,7 @@ class MapRenderer(
         val cameraPosition = map.cameraPosition
         if (cameraPosition.zoom < FogBitmapRenderer.MIN_ROAD_ZOOM) {
             mainHandler.removeCallbacks(expirePendingRoutes)
-            (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
+            applyPendingRoute(EMPTY_FEATURES, hasPending = false)
             loadedPlaceBounds = null
             setDisplayedPlaces(doubleArrayOf())
             if (loadRoads) {
@@ -540,7 +543,8 @@ class MapRenderer(
                     places,
                     footprint.takeIf { roadQuery?.complete == true },
                     footprint.takeIf { queryPlaces },
-                    roadFeatures(OverlayRoads.prepare(pending.roads)),
+                    if (pending.roads.isEmpty()) EMPTY_FEATURES
+                    else roadFeatures(OverlayRoads.prepare(pending.roads)),
                     pending.roads.isNotEmpty(),
                     pending.oldestVisiblePendingTimestampMillis?.plus(PENDING_ROUTE_MAX_AGE_MS)
                 )
@@ -552,7 +556,7 @@ class MapRenderer(
                 if (!viewportActive) return@post
                 if (revision == viewportRevision) {
                     result.getOrNull()?.let {
-                        (map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(it.pendingRoute)
+                        applyPendingRoute(it.pendingRoute, hasPending = it.pendingVisible)
                         // Also expire the preview when the map is idle and location updates stop.
                         mainHandler.removeCallbacks(expirePendingRoutes)
                         if (it.pendingVisible && it.nextPendingExpiryMillis != null) {
@@ -753,8 +757,19 @@ class MapRenderer(
         transparent.recycle()
     }
 
+    private fun applyPendingRoute(features: FeatureCollection, hasPending: Boolean) {
+        // The native source starts empty after each style install. Only upload an empty
+        // collection once when clearing a previously nonempty preview; preserve every
+        // nonempty update so new/changed corners are still shown immediately.
+        if (!hasPending && pendingRouteSourceIsEmpty) return
+        val source = map.style?.getSource(PENDING_ROUTE_SOURCE_ID) as? GeoJsonSource ?: return
+        source.setGeoJson(if (hasPending) features else EMPTY_FEATURES)
+        pendingRouteSourceIsEmpty = !hasPending
+    }
+
     private fun installRecordedRouteLayer(style: Style) {
         style.addSource(GeoJsonSource(PENDING_ROUTE_SOURCE_ID, EMPTY_FEATURES))
+        pendingRouteSourceIsEmpty = true
         // Pending evidence is raw GPS, not final road geometry. Keep a faint, narrow
         // provisional trace so the map never appears to have a random hole while OSRM is
         // resolving the interval. Confirmed traveled roads remain thicker and nearly opaque,
