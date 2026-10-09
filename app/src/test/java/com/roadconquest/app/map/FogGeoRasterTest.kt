@@ -66,6 +66,27 @@ class FogGeoRasterTest {
         }
     }
 
+    @Test fun portraitAndRotatedViewportRemainInsideDetailedFogRaster() {
+        for ((width, height) in listOf(720 to 1600, 1080 to 2400, 1600 to 720)) {
+            val metersPerPixel = 2.4
+            val fog = FogGeoRaster.around(
+                40.0, -74.0, 16.0, 1024, width, height, metersPerPixel
+            )
+            val diagonal = hypot(width.toDouble(), height.toDouble()) * metersPerPixel
+            val rasterSide = 1024 * fog.metersPerPixel
+            val padding = 32 * fog.metersPerPixel
+            // A rectangular viewport rotated by any bearing fits inside the
+            // square raster even when its center is snapped by 32 pixels.
+            assertTrue("All rotated phone corners remain covered by fog",
+                rasterSide - 2 * padding > diagonal)
+            val center = FogGeoRaster.around(
+                40.0, -74.0, 16.5, 1024, width, height, metersPerPixel * 0.707
+            )
+            assertEquals("No raster LOD jitter while a single zoom step animates",
+                fog.metersPerPixel, center.metersPerPixel, 1e-9)
+        }
+    }
+
     @Test fun globalBitmapDoesNotMagicallyClearAnAreaWiderThanAMile() {
         val world = FogGeoRaster.fullWorld(512)
         val oneMile = FogGrid.corners(39.98, -75.02)
