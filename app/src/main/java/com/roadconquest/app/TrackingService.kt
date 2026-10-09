@@ -306,30 +306,26 @@ class TrackingService : Service(), LocationListener {
             // duplicate database work after a location would already have been processed.
             val visited = Location(location)
             lastExplored = visited
+            // Geocoding must not be tied to the first write to a 50-m explored cell:
+            // the same road may be revisited after new town boundaries are crossed.
             val savePlaceCandidate = (lastPlaceCandidate?.distanceTo(visited) ?: Float.POSITIVE_INFINITY) >=
                 PLACE_CANDIDATE_MIN_DISTANCE_M
-            // Preserve the original candidate-spacing state even when this exact fog cell was
-            // already persisted and its redundant SQLite insert can be skipped.
             if (savePlaceCandidate) lastPlaceCandidate = visited
             val exploredCell = TrackingRepository.exploredCellKey(visited.latitude, visited.longitude)
-            if (exploredCell != null) {
-                // Bound this purely opportunistic cache. Clearing it only restores the original
-                // conflict-ignore database behavior; it cannot change exploration or scoring.
-                if (exploredCellsThisSession.size >= MAX_EXPLORED_CELL_CACHE) {
-                    exploredCellsThisSession.clear()
-                }
+            if (exploredCell != null && exploredCellsThisSession.size >= MAX_EXPLORED_CELL_CACHE) {
+                exploredCellsThisSession.clear()
             }
-            if (exploredCell != null && exploredCellsThisSession.add(exploredCell)) {
+            val saveExplored = exploredCell != null && exploredCellsThisSession.add(exploredCell)
+            if (savePlaceCandidate || saveExplored) {
                 storageExecutor.execute {
                     try {
-                        if (repository.recordExploredPlace(visited, exploredCell)) {
-                            if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
-                            sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
-                        }
+                        if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
+                        if (saveExplored && exploredCell != null &&
+                            repository.recordExploredPlace(visited, exploredCell)
+                        ) sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
                     } catch (error: Exception) {
-                        // A failed write must remain eligible for a later accepted fix in this cell.
-                        exploredCellsThisSession.remove(exploredCell)
-                        Log.e("RoadConquest", "Could not save explored place", error)
+                        if (saveExplored && exploredCell != null) exploredCellsThisSession.remove(exploredCell)
+                        Log.e("RoadConquest", "Could not save explored place or town candidate", error)
                     }
                 }
             }
@@ -818,7 +814,7 @@ class TrackingService : Service(), LocationListener {
         private const val MAX_LOCATION_AGE_NANOS = MAX_LOCATION_AGE_MS * 1_000_000L
         private const val MAX_START_ANCHOR_AGE_MS = 10_000L
         private const val MATCH_INTERVAL_MS = 10_000L
-        private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 1_000f
+        private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 125f
         private const val MAX_EXPLORED_CELL_CACHE = 4_096
         // A partial result usually means an intersection needs one or two newer fixes.
         // Retry on the normal matching cadence so turn holes close while the drive is still live.

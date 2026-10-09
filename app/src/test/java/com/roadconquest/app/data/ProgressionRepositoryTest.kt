@@ -83,6 +83,64 @@ class ProgressionRepositoryTest {
         assertEquals(80L, progression.snapshot().pointsSpent)
     }
 
+    @Test fun townsStatesAndCountriesKeepFirstAndLastVisitsWithoutRepeatPoints() {
+        val progression = ProgressionRepository(context)
+        val places = listOf(
+            PlaceDiscovery(PlaceKind.TOWN, "us|nj|paulsboro", "Paulsboro", "New Jersey", "United States",
+                2_000L, 39.83, -75.24),
+            PlaceDiscovery(PlaceKind.STATE, "us|nj", "New Jersey", "United States", "United States",
+                2_000L, 39.83, -75.24),
+            PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States", "", "United States",
+                2_000L, 39.83, -75.24)
+        )
+        for (place in places) {
+            assertNull(progression.placeVisitTimes(place.kind, place.key))
+            assertTrue(progression.recordPlace(place))
+            assertEquals(PlaceVisitTimes(2_000L, 2_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+        }
+        val balance = progression.snapshot().balance
+        for (place in places) {
+            assertFalse(progression.recordPlace(place.copy(visitedAt = 6_000L)))
+            assertEquals(PlaceVisitTimes(2_000L, 6_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+            assertFalse(progression.recordPlace(place.copy(visitedAt = 3_000L)))
+            assertEquals(PlaceVisitTimes(2_000L, 6_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+            // Historical candidate may be resolved after more recent visits.
+            assertFalse(progression.recordPlace(place.copy(visitedAt = 1_500L)))
+            assertEquals(PlaceVisitTimes(1_500L, 6_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+        }
+        assertEquals(balance, progression.snapshot().balance)
+        assertEquals(3, places.size)
+        progression.clearProgression()
+        assertTrue(places.all { progression.placeVisitTimes(it.kind, it.key) == null })
+    }
+
+    @Test fun resolvingSameTownStateAndCountryTwiceRefreshesTheirLastVisit() {
+        val progression = ProgressionRepository(context)
+        val initial = listOf(
+            PlaceDiscovery(PlaceKind.TOWN, "us|nj|town", "Town", "New Jersey", "United States", 1_000L, 39.8, -75.2),
+            PlaceDiscovery(PlaceKind.STATE, "us|nj", "New Jersey", "United States", "United States", 1_000L, 39.8, -75.2),
+            PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States", "", "United States", 1_000L, 39.8, -75.2)
+        )
+        val baseline = android.location.Location("gps").apply {
+            latitude = 39.8; longitude = -75.2; accuracy = 3f; time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(baseline))
+        val firstCandidate = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+        assertEquals(0, progression.resolveCandidate(firstCandidate, initial))
+        val followUp = firstCandidate.copy(cellX = 123L, cellY = 456L, visitedAt = 7_000L)
+        assertEquals(0, progression.resolveCandidate(followUp, initial.map { it.copy(visitedAt = 7_000L) }))
+        for (place in initial) {
+            assertEquals(PlaceVisitTimes(1_000L, 7_000L),
+                progression.placeVisitTimes(place.kind, place.key))
+        }
+        assertEquals(0L, progression.snapshot().balance)
+        assertEquals(1_000L, progression.startingLocation()?.recordedAt)
+    }
+
     @Test fun firstResolvedPlacesAfterResetBecomeUnrewardedBaseline() {
         val progression = ProgressionRepository(context)
         val fix = android.location.Location("gps").apply {
@@ -474,7 +532,7 @@ class ProgressionRepositoryTest {
     }
 
 
-    @Test fun placeCandidateCellCenterStaysInsideLongitudeRangeAtDateLine() {
+    @Test fun precisePlaceCandidateStaysInsideLongitudeRangeAtDateLine() {
         val progression = ProgressionRepository(context)
         val start = android.location.Location("gps").apply {
             latitude = 0.0
@@ -506,6 +564,102 @@ class ProgressionRepositoryTest {
         val candidate = progression.pendingPlaceCandidates(nowMillis = 4_000L).single()
         assertTrue(candidate.longitude in -180.0..180.0)
         assertTrue(kotlin.math.abs(kotlin.math.abs(candidate.longitude) - 180.0) < 0.05)
+        assertEquals("Resolve the actual driven coordinate, not a nearby grid center",
+            nearDateLine.latitude, candidate.latitude, 0.0)
+        assertEquals(nearDateLine.longitude, candidate.longitude, 1e-8)
     }
 
+
+    @Test fun oldDrivenFixesBackfillInBoundedPagesWithoutGrantingUnverifiedTownPoints() {
+        val progression = ProgressionRepository(context)
+        val database = AppDatabase.get(context).writableDatabase
+        database.execSQL("DELETE FROM track_points")
+        assertEquals("Never replay before the exact first-location baseline is established",
+            0, progression.backfillPlaceCandidates(2))
+
+        val start = android.location.Location("gps").apply {
+            latitude = 39.987654
+            longitude = -74.876543
+            accuracy = 5f
+            time = 1_000L
+        }
+        assertTrue(progression.recordBaselineCandidate(start))
+        val baseline = progression.pendingPlaceCandidates(nowMillis = 2_000L).single()
+        progression.resolveCandidate(
+            baseline, listOf(
+                PlaceDiscovery(PlaceKind.COUNTRY, "us", "United States",
+                    visitedAt = 1_000L, latitude = start.latitude, longitude = start.longitude),
+                PlaceDiscovery(PlaceKind.STATE, "us|nj", "New Jersey",
+                    "United States", "United States", 1_000L, start.latitude, start.longitude),
+                PlaceDiscovery(PlaceKind.TOWN, "us|nj|start", "Start",
+                    "New Jersey", "United States", 1_000L, start.latitude, start.longitude)
+            )
+        )
+        fun storedFix(latitude: Double, longitude: Double, accuracy: Int, whenMs: Long) {
+            database.execSQL(
+                """INSERT INTO track_points(latitude, longitude, accuracy_m, speed_mps,
+                   bearing_deg, timestamp_ms) VALUES (?, ?, ?, 10, 0, ?)""",
+                arrayOf(latitude, longitude, accuracy, whenMs)
+            )
+        }
+        // Earlier driving history survives a progression-only reset. It must not
+        // earn old towns after a newer zero-point baseline.
+        storedFix(39.97, -75.045, 5, 500L)
+        storedFix(39.96, -75.015, 5, 3_000L)
+        storedFix(39.96, -75.006, 75, 4_000L) // Not a trustworthy visit.
+        storedFix(39.96, -75.002, 5, 5_000L)
+        try {
+            assertEquals(1, progression.backfillPlaceCandidates(1))
+            assertEquals(1, progression.backfillPlaceCandidates(1))
+            assertEquals("A durable cursor must prevent rerecording old drives",
+                0, progression.backfillPlaceCandidates(1))
+            assertEquals("GPS data alone must NEVER grant points before place resolution",
+                0L, progression.snapshot().balance)
+
+            val candidates = progression.pendingPlaceCandidates(limit = 8, nowMillis = 6_000L)
+            assertEquals(2, candidates.size)
+            assertTrue(candidates.any {
+                it.latitude == 39.96 && kotlin.math.abs(it.longitude + 75.002) < 1e-8
+            })
+            assertTrue(candidates.any {
+                it.latitude == 39.96 && kotlin.math.abs(it.longitude + 75.015) < 1e-8
+            })
+            assertFalse("Never recover places driven before the new baseline",
+                candidates.any { it.latitude == 39.97 })
+            assertEquals(1, progression.resolveCandidate(
+                candidates.first(),
+                listOf(PlaceDiscovery(PlaceKind.TOWN, "us|nj|newtown", "Newtown",
+                    "New Jersey", "United States", 5_000L, 39.96, -75.002))
+            ))
+            assertEquals(100L, progression.snapshot().balance)
+            assertEquals(0, progression.resolveCandidate(
+                candidates.last(),
+                listOf(PlaceDiscovery(PlaceKind.TOWN, "us|nj|newtown", "Newtown",
+                    "New Jersey", "United States", 3_000L, 39.96, -75.015))
+            ))
+            assertEquals(100L, progression.snapshot().balance)
+        } finally {
+            database.execSQL("DELETE FROM track_points")
+        }
+    }
+
+    @Test fun aFreshTownCandidateRetainsTheRealFixAtMunicipalBoundaries() {
+        val progression = ProgressionRepository(context)
+        assertTrue(progression.recordPlace(PlaceDiscovery(
+            PlaceKind.TOWN, "us|nj|initial", "Initial",
+            "New Jersey", "United States", 1_000L, 39.95, -75.02
+        )))
+        val first = android.location.Location("gps").apply {
+            latitude = 39.967921; longitude = -75.240047; accuracy = 4f; time = 2_000L
+        }
+        val second = android.location.Location("gps").apply {
+            latitude = 39.968435; longitude = -75.229471; accuracy = 4f; time = 3_000L
+        }
+        assertTrue(progression.recordPlaceCandidate(first))
+        assertTrue(progression.recordPlaceCandidate(second))
+        val candidates = progression.pendingPlaceCandidates(limit = 10, nowMillis = 4_000L)
+        assertEquals(2, candidates.size)
+        assertTrue(candidates.any { it.latitude == first.latitude && kotlin.math.abs(it.longitude - first.longitude) < 1e-8 })
+        assertTrue(candidates.any { it.latitude == second.latitude && kotlin.math.abs(it.longitude - second.longitude) < 1e-8 })
+    }
 }

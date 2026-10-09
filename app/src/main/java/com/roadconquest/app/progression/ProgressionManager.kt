@@ -77,6 +77,9 @@ object ProgressionManager {
     fun resolvePendingPlaces(context: Context, limit: Int = 6): Int {
         require(limit > 0)
         val repository = ProgressionRepository(context)
+        // Recover real GPS visits from older builds before resolving towns. The
+        // replay is bounded and records no rewards without reverse geocoding.
+        repository.backfillPlaceCandidates()
         var added = 0
         var processed = 0
         while (processed < limit) {

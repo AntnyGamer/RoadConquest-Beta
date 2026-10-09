@@ -82,12 +82,19 @@ class MapRenderer(
     private var fogAgain = false
     private var reusableFogBitmap: Bitmap? = null
     private var installedFogKey: FogKey? = null
+    // A wider, geographically anchored mask preserves visited mile squares when a
+    // fast pinch outruns the detailed bitmap. The 512px world image cannot resolve them.
+    private var regionalFogRunning = false
+    private var reusableRegionalFogBitmap: Bitmap? = null
+    private var installedRegionalFogKey: FogKey? = null
     private var carIconBitmap: Bitmap? = null
     private var appliedCarStyle = ""
     private var appliedCarColor = ""
     private var appliedRoadColor = ""
     private var fogEnabled = Prefs.isFogEnabled(context)
     private var overlayMode = Prefs.placeOverlayMode(context)
+    private var shownOverlayKeys = emptyList<String>()
+    private var shownOverlayCacheGeneration = -1L
     private val overlayClient = PlaceOverlayClient()
     @Volatile private var overlayGeneration = 0
     @Volatile private var destroyed = false
@@ -116,8 +123,10 @@ class MapRenderer(
     private val liveCoordinates = DoubleArray(2)
     private val liveScreenCache = DoubleArray(2)
     private var detailedFogCoordinates: DoubleArray? = null
+    private var regionalFogCoordinates: DoubleArray? = null
     private val fogCoverageScreen = DoubleArray(8)
     private var showingDetailedFog = false
+    private var showingRegionalFog = false
     private var activeDetailedFogAlternate = false
     private var lastFogRenderAt = 0L
     private var minimumZoom = Double.NaN
@@ -195,13 +204,13 @@ class MapRenderer(
         if (destroyed || mode == overlayMode) return
         overlayMode = mode
         Prefs.setPlaceOverlayMode(context, mode)
+        clearPlaceOverlaySources()
         refreshPlaceOverlays()
     }
 
     fun refreshPlaceOverlays() {
         if (destroyed) return
         val generation = ++overlayGeneration
-        clearPlaceOverlaySources()
         val kind = overlayMode.kind ?: return
         val cacheGeneration = PlaceOverlayCache.generation()
         overlayExecutor.execute {
@@ -220,7 +229,6 @@ class MapRenderer(
                 cached.data?.let(loaded::add)
             }
             postPlaceOverlay(generation, kind, loaded)
-            var fetchedSincePost = 0
             for (place in missing) {
                 if (destroyed || generation != overlayGeneration ||
                     cacheGeneration != PlaceOverlayCache.generation()) return@execute
@@ -234,16 +242,11 @@ class MapRenderer(
                 if (!PlaceOverlayCache.write(context, place, data, cacheGeneration)) return@execute
                 if (data != null) {
                     loaded += data
-                    fetchedSincePost++
-                    if (fetchedSincePost >= OVERLAY_UPDATE_BATCH) {
-                        postPlaceOverlay(generation, kind, loaded)
-                        fetchedSincePost = 0
-                    }
+                    // The public boundary service is deliberately rate-limited. Show
+                    // each completed town now rather than waiting for four requests.
+                    postPlaceOverlay(generation, kind, loaded)
                 }
             }
-            // Flush a partial final batch even when the last request failed or returned no
-            // boundary. Successful earlier downloads should appear without waiting for refresh.
-            if (fetchedSincePost > 0) postPlaceOverlay(generation, kind, loaded)
         }
     }
 
@@ -257,12 +260,13 @@ class MapRenderer(
         val layerId = overlayLayerId(mode)
         val feature = map.queryRenderedFeatures(screenPoint, layerId).firstOrNull() ?: return null
         val name = feature.getStringProperty("overlay_name") ?: return null
+        val key = feature.getStringProperty("overlay_key") ?: return null
         val featureKind = runCatching {
             PlaceKind.valueOf(feature.getStringProperty("overlay_kind") ?: kind.name)
         }.getOrDefault(kind)
         val population = feature.getNumberProperty("population")?.toLong()
         val area = feature.getNumberProperty("area_sq_km")?.toDouble() ?: return null
-        return PlaceOverlayInfo(name, featureKind, population, area)
+        return PlaceOverlayInfo(key, name, featureKind, population, area)
     }
 
     fun refreshCosmetics() {
@@ -602,6 +606,9 @@ class MapRenderer(
     }
 
     private fun installPlaceOverlayLayers(style: Style) {
+        // A new MapLibre style has new empty GeoJSON sources even if the names match.
+        shownOverlayKeys = emptyList()
+        shownOverlayCacheGeneration = -1L
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
             style.addSource(GeoJsonSource(overlaySourceId(mode), EMPTY_FEATURES))
             style.addSource(GeoJsonSource(overlayBoundarySourceId(mode), EMPTY_FEATURES))
@@ -643,6 +650,8 @@ class MapRenderer(
     }
 
     private fun clearPlaceOverlaySources() {
+        shownOverlayKeys = emptyList()
+        shownOverlayCacheGeneration = -1L
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
             (map.style?.getSource(overlayBoundarySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
@@ -662,10 +671,15 @@ class MapRenderer(
                 com.roadconquest.app.data.PlaceKind.STATE -> PlaceOverlayMode.STATE
                 com.roadconquest.app.data.PlaceKind.TOWN -> PlaceOverlayMode.TOWN
             }
+            val keys = snapshot.map(PlaceOverlayData::key)
+            val cacheGeneration = PlaceOverlayCache.generation()
+            if (keys == shownOverlayKeys && cacheGeneration == shownOverlayCacheGeneration) return@post
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)
                 ?.setGeoJson(overlayFeatureCollection(snapshot))
             (map.style?.getSource(overlayBoundarySourceId(mode)) as? GeoJsonSource)
                 ?.setGeoJson(overlayBoundaryFeatureCollection(snapshot))
+            shownOverlayKeys = keys
+            shownOverlayCacheGeneration = cacheGeneration
         }
     }
 
@@ -751,7 +765,10 @@ class MapRenderer(
     private fun installFogLayer(style: Style) {
         activeDetailedFogAlternate = false
         detailedFogCoordinates = null
+        regionalFogCoordinates = null
         showingDetailedFog = false
+        showingRegionalFog = false
+        installedRegionalFogKey = null
         // Keep a ready native world layer behind the detailed viewport. A fast pinch can
         // outrun even a padded bitmap; it must never reveal an unrendered rectangle.
         style.addSource(ImageSource(WORLD_FOG_SOURCE_ID, worldFogQuad(), overviewFog))
@@ -759,6 +776,12 @@ class MapRenderer(
             rasterOpacity(if (fogEnabled) 1f else 0f), rasterFadeDuration(0f)
         ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) })
         val transparent = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        // Kept at a broader map scale while idle. Only one fog raster is visible:
+        // stacking world/regional/detail would darken the unexplored map and cover holes.
+        style.addSource(ImageSource(REGIONAL_FOG_SOURCE_ID, currentFogQuad(), transparent))
+        style.addLayer(RasterLayer(REGIONAL_FOG_LAYER_ID, REGIONAL_FOG_SOURCE_ID).withProperties(
+            rasterOpacity(0f), rasterFadeDuration(0f)
+        ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) })
         style.addSource(ImageSource(FOG_SOURCE_ID, currentFogQuad(), transparent))
         style.addLayer(
             RasterLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
@@ -832,7 +855,14 @@ class MapRenderer(
                     if (cameraMoving) FOG_MOVING_COVERAGE_MARGIN_FRACTION else 0.0
                 )
             }
-        val changed = detailed != showingDetailedFog
+        val regional = fogEnabled && !detailed && regionalFogCoordinates?.let { region ->
+            map.projection.toScreenLocations(region, fogCoverageScreen)
+            FogCoverage.coversViewport(
+                fogCoverageScreen, mapView.width, mapView.height,
+                if (cameraMoving) FOG_MOVING_COVERAGE_MARGIN_FRACTION else 0.0
+            )
+        } == true
+        val changed = detailed != showingDetailedFog || regional != showingRegionalFog
         if (!force && !changed) return
         val detail = map.style?.getLayer(
             if (activeDetailedFogAlternate) FOG_ALT_LAYER_ID else FOG_LAYER_ID
@@ -841,22 +871,32 @@ class MapRenderer(
             if (activeDetailedFogAlternate) FOG_LAYER_ID else FOG_ALT_LAYER_ID
         ) as? RasterLayer
         val worldLayer = map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer
+        val regionalLayer = map.style?.getLayer(REGIONAL_FOG_LAYER_ID) as? RasterLayer
         showingDetailedFog = detailed
-        // Switch both layer opacities together in one UI callback. The previous
+        showingRegionalFog = regional
+        // Switch all layer opacities together in one UI callback. The previous
         // two-rendered-frame handoff displayed TWO 80%-opaque fog layers at once,
         // producing a 96%-dark band that visibly changed color while zooming.
         // No overlapping transition may outlive this callback.
         if (!fogEnabled) {
             worldLayer?.setProperties(rasterOpacity(0f))
+            regionalLayer?.setProperties(rasterOpacity(0f))
             detail?.setProperties(rasterOpacity(0f))
             inactive?.setProperties(rasterOpacity(0f))
         } else if (detailed) {
             inactive?.setProperties(rasterOpacity(0f))
+            regionalLayer?.setProperties(rasterOpacity(0f))
             detail?.setProperties(rasterOpacity(1f))
             worldLayer?.setProperties(rasterOpacity(0f))
+        } else if (regional) {
+            detail?.setProperties(rasterOpacity(0f))
+            inactive?.setProperties(rasterOpacity(0f))
+            worldLayer?.setProperties(rasterOpacity(0f))
+            regionalLayer?.setProperties(rasterOpacity(1f))
         } else {
             detail?.setProperties(rasterOpacity(0f))
             inactive?.setProperties(rasterOpacity(0f))
+            regionalLayer?.setProperties(rasterOpacity(0f))
             worldLayer?.setProperties(rasterOpacity(1f))
         }
     }
@@ -981,7 +1021,10 @@ class MapRenderer(
         // coordinates. Do not repaint/replace an identical cloud rectangle on
         // each 120ms pan callback: that caused needless texture uploads and
         // could flash an otherwise stable clearing on the GPU.
-        if (capture.key == installedFogKey) return
+        if (capture.key == installedFogKey) {
+            if (!cameraMoving) scheduleRegionalFogRender()
+            return
+        }
         lastFogRenderAt = SystemClock.elapsedRealtime()
         fogAgain = false
         fogRunning = true
@@ -1026,16 +1069,70 @@ class MapRenderer(
                 if (fogAgain) {
                     fogAgain = false
                     scheduleFogRender()
+                } else if (!cameraMoving) {
+                    scheduleRegionalFogRender()
                 }
             }
         }
     }
 
-    private fun captureFog(): FogCapture? {
+    /**
+     * A second, wider raster remains in native map coordinates during a pinch.
+     * Render it only at rest, behind the priority detailed job, and never move its
+     * ImageSource while visible. World fog remains the final safety layer.
+     */
+    private fun scheduleRegionalFogRender() {
+        if (destroyed || !viewportActive || !fogEnabled || cameraMoving ||
+            regionalFogRunning || fogRunning
+        ) return
+        val capture = captureFog(regional = true) ?: return
+        if (capture.key == installedRegionalFogKey) return
+        regionalFogRunning = true
+        val reusable = reusableRegionalFogBitmap
+        reusableRegionalFogBitmap = null
+        fogExecutor.execute {
+            val bitmap = runCatching { FogBitmapRenderer.render(capture.request, reusable) }
+            bitmap.exceptionOrNull()?.let { Log.e("RoadConquest", "Could not render regional fog", it) }
+            mainHandler.post {
+                val rendered = bitmap.getOrNull()
+                if (destroyed) {
+                    rendered?.recycle()
+                    return@post
+                }
+                regionalFogRunning = false
+                if (rendered != null) {
+                    // Recheck motion after drawing: a newly started pinch must not
+                    // publish an obsolete backup over the region currently displayed.
+                    if (viewportActive && !cameraMoving && !showingRegionalFog &&
+                        capture.styleGeneration == styleGeneration
+                    ) {
+                        val source = map.style?.getSource(REGIONAL_FOG_SOURCE_ID) as? ImageSource
+                        source?.setCoordinates(capture.quad)
+                        source?.setImage(rendered)
+                        if (source != null) {
+                            installedRegionalFogKey = capture.key
+                            regionalFogCoordinates = doubleArrayOf(
+                                capture.quad.topLeft.latitude, capture.quad.topLeft.longitude,
+                                capture.quad.topRight.latitude, capture.quad.topRight.longitude,
+                                capture.quad.bottomRight.latitude, capture.quad.bottomRight.longitude,
+                                capture.quad.bottomLeft.latitude, capture.quad.bottomLeft.longitude
+                            )
+                            updateFogCoverage(force = true)
+                        }
+                    }
+                    reusableRegionalFogBitmap = rendered
+                }
+            }
+        }
+    }
+
+    private fun captureFog(regional: Boolean = false): FogCapture? {
         if (mapView.width <= 0 || mapView.height <= 0 || map.style == null) return null
         val position = map.cameraPosition
         val center = position.target ?: return null
-        val size = FogBitmapRenderer.bitmapDimensionForZoom(position.zoom)
+        if (regional && position.zoom < REGIONAL_FOG_MIN_ZOOM) return null
+        val size = if (regional) REGIONAL_FOG_DIMENSION
+            else FogBitmapRenderer.bitmapDimensionForZoom(position.zoom)
         val mercatorMetersPerPixel =
             map.projection.getMetersPerPixelAtLatitude(center.latitude) /
                 mapView.pixelRatio / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
@@ -1044,14 +1141,20 @@ class MapRenderer(
         // The raster and ALL its erased mile-cell geometry use exactly the same
         // north-up Web Mercator coordinates. Neither depends on camera bearing,
         // device screen projection, previous gesture deltas nor texture phase.
-        val world = position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
+        val world = !regional && (position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
             maxOf(mapView.width, mapView.height) * mercatorMetersPerPixel >=
-                FogGeoRaster.WORLD_METERS
-        val raster = if (world) FogGeoRaster.fullWorld(size)
-            else FogGeoRaster.around(
+                FogGeoRaster.WORLD_METERS)
+        val raster = when {
+            world -> FogGeoRaster.fullWorld(size)
+            regional -> FogGeoRaster.pinchFallback(
                 center.latitude, center.longitude, position.zoom, size,
                 mapView.width, mapView.height, mercatorMetersPerPixel
             )
+            else -> FogGeoRaster.around(
+                center.latitude, center.longitude, position.zoom, size,
+                mapView.width, mapView.height, mercatorMetersPerPixel
+            )
+        }
         val savedCorners = savedGridCoordinates
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
@@ -1199,6 +1302,8 @@ class MapRenderer(
         resumeFrameListener = null
         reusableFogBitmap?.recycle()
         reusableFogBitmap = null
+        reusableRegionalFogBitmap?.recycle()
+        reusableRegionalFogBitmap = null
         carIconBitmap?.recycle()
         carIconBitmap = null
         overlayGeneration++
@@ -1230,6 +1335,10 @@ class MapRenderer(
         private const val FOG_ALT_LAYER_ID = "roadconquest-fog-buffer-raster"
         private const val WORLD_FOG_SOURCE_ID = "roadconquest-world-fog"
         private const val WORLD_FOG_LAYER_ID = "roadconquest-world-fog-raster"
+        private const val REGIONAL_FOG_SOURCE_ID = "roadconquest-regional-fog"
+        private const val REGIONAL_FOG_LAYER_ID = "roadconquest-regional-fog-raster"
+        private const val REGIONAL_FOG_DIMENSION = 768
+        private const val REGIONAL_FOG_MIN_ZOOM = 7.0
         private val overviewFog by lazy {
             // The instantly available safety layer must use the EXACT same
             // geographic cloud shader/color as subsequent detailed captures.
@@ -1268,7 +1377,6 @@ class MapRenderer(
         private const val PENDING_ROUTE_MAX_AGE_MS = 120_000L
         private const val FOG_RENDER_INTERVAL_MS = 120L
         private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.05
-        private const val OVERLAY_UPDATE_BATCH = 4
         private const val STARTING_LOCATION_ZOOM = 15.0
     }
 }

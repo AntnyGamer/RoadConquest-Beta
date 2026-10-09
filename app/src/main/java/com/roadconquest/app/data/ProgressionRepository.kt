@@ -43,6 +43,8 @@ data class StartingLocation(
     val recordedAt: Long
 )
 
+data class PlaceVisitTimes(val firstVisitedAt: Long, val lastVisitedAt: Long)
+
 data class ProgressionSnapshot(
     val balance: Long,
     val lifetimeEarned: Long,
@@ -115,21 +117,7 @@ class ProgressionRepository(context: Context) {
         val db = dbHelper.writableDatabase
         db.beginTransaction()
         try {
-            val inserted = db.insertWithOnConflict(
-                "visited_places",
-                null,
-                ContentValues().apply {
-                    put("kind", discovery.kind.name)
-                    put("place_key", discovery.key)
-                    put("display_name", discovery.displayName)
-                    put("parent_name", discovery.parentName)
-                    put("country_name", discovery.countryName)
-                    put("first_visited_at", discovery.visitedAt)
-                    put("latitude", discovery.latitude)
-                    put("longitude", discovery.longitude)
-                },
-                SQLiteDatabase.CONFLICT_IGNORE
-            ) != -1L
+            val inserted = insertVisitedPlace(db, discovery)
             if (inserted) {
                 awardOnce(
                     db,
@@ -157,25 +145,78 @@ class ProgressionRepository(context: Context) {
         // Keep discoveries observed while the exact zero-point baseline is still resolving.
         // pendingPlaceCandidates() gates them behind the baseline, so they cannot earn points
         // early, but a short visit is not lost merely because reverse geocoding took minutes.
+        insertPlaceCandidate(db, location.latitude, location.longitude,
+            location.time.takeIf { it > 0L } ?: System.currentTimeMillis())
+    }
+
+    /**
+     * Revisit accepted, persisted GPS fixes from releases where 2 km/center-based
+     * town sampling could miss an actual driven township. Process a bounded page
+     * per foreground discovery pass, newest first, with a durable cursor: no data
+     * migration, no guesses from a road's drawn geometry, and no duplicate rewards.
+     */
+    fun backfillPlaceCandidates(limit: Int = 3_000): Int = synchronized(dbHelper.historyLock) {
+        require(limit in 1..10_000)
+        if (!isCurrentHistory()) return@synchronized 0
+        val db = dbHelper.writableDatabase
+        // Replaying fixes from BEFORE a fresh/reset progression baseline would silently
+        // award already-erased towns. Only visits after this profile's exact live start count.
+        val baselineTime = startingLocation()?.recordedAt ?: return@synchronized 0
+        if (!db.rawQuery("SELECT 1 FROM visited_places LIMIT 1", null).use { it.moveToFirst() }) {
+            // Wait until the zero-point places are resolved before queuing old GPS fixes.
+            return@synchronized 0
+        }
+        val nextId = counterOrNull(db, COUNTER_PLACE_BACKFILL_NEXT_ID)
+            ?: db.rawQuery("SELECT COALESCE(MAX(id), 0) + 1 FROM track_points", null)
+                .use { it.moveToFirst(); it.getLong(0) }
+        if (nextId <= 1L) return@synchronized 0
+        var inserted = 0
+        var next = nextId
+        var examined = 0
+        db.beginTransaction()
+        try {
+            db.rawQuery(
+                """SELECT id, latitude, longitude, timestamp_ms FROM track_points
+                   WHERE id < ? AND timestamp_ms >= ? AND accuracy_m BETWEEN 0.01 AND 25
+                   ORDER BY id DESC LIMIT ?""",
+                arrayOf(nextId.toString(), baselineTime.toString(), limit.toString())
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    examined++
+                    next = cursor.getLong(0)
+                    if (insertPlaceCandidate(db, cursor.getDouble(1), cursor.getDouble(2),
+                            cursor.getLong(3))) inserted++
+                }
+            }
+            // No eligible rows remain in the old history; stop scanning on later resumes.
+            putCounter(db, COUNTER_PLACE_BACKFILL_NEXT_ID, if (examined == 0) 1L else next)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        inserted
+    }
+
+    /** V2 keys cannot collide with old 2 km keys while pending old visits resolve. */
+    private fun insertPlaceCandidate(db: SQLiteDatabase, latitude: Double, longitude: Double, time: Long): Boolean {
+        if (!latitude.isFinite() || !longitude.isFinite() ||
+            latitude !in -85.0..85.0 || longitude !in -180.0..180.0) return false
         val radius = 6_378_137.0
-        val longitude = ((location.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-        val x = floor(radius * Math.toRadians(longitude) / PLACE_CANDIDATE_CELL_M).toLong()
-        val y = floor(
-            radius * ln(tan(PI / 4 + Math.toRadians(location.latitude.coerceIn(-85.0, 85.0)) / 2)) /
-                PLACE_CANDIDATE_CELL_M
-        ).toLong()
-        val latitude = Math.toDegrees(atan(sinh((y + 0.5) * PLACE_CANDIDATE_CELL_M / radius)))
-        val rawCellLongitude = Math.toDegrees((x + 0.5) * PLACE_CANDIDATE_CELL_M / radius)
-        val cellLongitude = ((rawCellLongitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-        db.insertWithOnConflict(
-            "place_candidates",
-            null,
+        val normalized = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+        val x = floor(radius * Math.toRadians(normalized) / PLACE_CANDIDATE_CELL_M).toLong() +
+            PLACE_CANDIDATE_VERSION_OFFSET
+        val y = floor(radius * ln(tan(PI / 4 + Math.toRadians(latitude) / 2)) /
+            PLACE_CANDIDATE_CELL_M).toLong()
+        return db.insertWithOnConflict(
+            "place_candidates", null,
             ContentValues().apply {
                 put("cell_x", x)
                 put("cell_y", y)
+                // Reverse-geocode the ACTUAL driven fix, not an arbitrary 2 km
+                // grid center which may sit across the municipal boundary.
                 put("latitude", latitude)
-                put("longitude", cellLongitude)
-                put("first_seen_at", location.time.takeIf { it > 0L } ?: System.currentTimeMillis())
+                put("longitude", normalized)
+                put("first_seen_at", time)
                 put("attempts", 0)
                 put("next_attempt_ms", 0)
             },
@@ -279,7 +320,7 @@ class ProgressionRepository(context: Context) {
             ),
             null,
             null,
-            "attempts ASC, next_attempt_ms ASC, first_seen_at ASC, cell_x ASC, cell_y ASC",
+            "attempts ASC, next_attempt_ms ASC, first_seen_at DESC, cell_x ASC, cell_y ASC",
             limit.toString()
         ).use { cursor ->
             while (cursor.moveToNext()) {
@@ -576,6 +617,27 @@ class ProgressionRepository(context: Context) {
         return result
     }
 
+    /**
+     * First visit is stored with the place; latest resolved GPS visit is recorded
+     * separately in existing counters to avoid a schema change or losing old data.
+     * Legacy discoveries display the first timestamp for both values until revisited.
+     */
+    fun placeVisitTimes(kind: PlaceKind, key: String): PlaceVisitTimes? =
+        synchronized(dbHelper.historyLock) {
+            if (!isCurrentHistory()) return@synchronized null
+            val db = dbHelper.readableDatabase
+            db.query(
+                "visited_places", arrayOf("first_visited_at"),
+                "kind = ? AND place_key = ?", arrayOf(kind.name, key),
+                null, null, null, "1"
+            ).use { rows ->
+                if (!rows.moveToFirst()) return@synchronized null
+                val first = rows.getLong(0)
+                val last = counterOrNull(db, placeLastVisitKey(kind, key)) ?: first
+                PlaceVisitTimes(first, maxOf(first, last))
+            }
+        }
+
     fun clearProgression() = synchronized(dbHelper.historyLock) {
         val db = dbHelper.writableDatabase
         db.beginTransaction()
@@ -593,10 +655,9 @@ class ProgressionRepository(context: Context) {
         }
     }
 
-    private fun insertVisitedPlace(db: SQLiteDatabase, discovery: PlaceDiscovery): Boolean =
-        db.insertWithOnConflict(
-            "visited_places",
-            null,
+    private fun insertVisitedPlace(db: SQLiteDatabase, discovery: PlaceDiscovery): Boolean {
+        val inserted = db.insertWithOnConflict(
+            "visited_places", null,
             ContentValues().apply {
                 put("kind", discovery.kind.name)
                 put("place_key", discovery.key)
@@ -609,6 +670,32 @@ class ProgressionRepository(context: Context) {
             },
             SQLiteDatabase.CONFLICT_IGNORE
         ) != -1L
+        if (discovery.visitedAt > 0L) {
+            // Older backfilled GPS samples can resolve out of order. Preserve the
+            // earliest confirmed fix without altering reward or baseline counters.
+            if (!inserted) {
+                db.update(
+                    "visited_places",
+                    ContentValues().apply {
+                        put("first_visited_at", discovery.visitedAt)
+                        put("latitude", discovery.latitude)
+                        put("longitude", discovery.longitude)
+                    },
+                    "kind = ? AND place_key = ? AND first_visited_at > ?",
+                    arrayOf(discovery.kind.name, discovery.key, discovery.visitedAt.toString())
+                )
+            }
+            val key = placeLastVisitKey(discovery.kind, discovery.key)
+            val previous = counterOrNull(db, key)
+            if (previous == null || discovery.visitedAt > previous) {
+                putCounter(db, key, discovery.visitedAt)
+            }
+        }
+        return inserted
+    }
+
+    private fun placeLastVisitKey(kind: PlaceKind, key: String): String =
+        "last_visit:${kind.name.lowercase()}:$key"
 
     private fun baselineKey(discovery: PlaceDiscovery): String =
         "baseline:${discovery.kind.name.lowercase()}:${discovery.key}"
@@ -709,7 +796,9 @@ class ProgressionRepository(context: Context) {
 
     companion object {
         const val POINTS_PER_ROAD = 5L
-        private const val PLACE_CANDIDATE_CELL_M = 2_000.0
+        private const val PLACE_CANDIDATE_CELL_M = 400.0
+        private const val PLACE_CANDIDATE_VERSION_OFFSET = 1_000_000_000L
+        private const val COUNTER_PLACE_BACKFILL_NEXT_ID = "place_backfill_next_track_id_v2"
         private const val BASELINE_RETRY_MS = 60_000L
         private const val BASELINE_RETRY_MAX_MS = 15 * 60_000L
         private const val BASELINE_PARTIAL_RESOLUTION_LIMIT = 3
