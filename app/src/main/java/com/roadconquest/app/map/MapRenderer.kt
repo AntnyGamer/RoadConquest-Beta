@@ -93,6 +93,8 @@ class MapRenderer(
     private var appliedRoadColor = ""
     private var fogEnabled = Prefs.isFogEnabled(context)
     private var overlayMode = Prefs.placeOverlayMode(context)
+    private var shownOverlayKeys = emptyList<String>()
+    private var shownOverlayCacheGeneration = -1L
     private val overlayClient = PlaceOverlayClient()
     @Volatile private var overlayGeneration = 0
     @Volatile private var destroyed = false
@@ -202,13 +204,13 @@ class MapRenderer(
         if (destroyed || mode == overlayMode) return
         overlayMode = mode
         Prefs.setPlaceOverlayMode(context, mode)
+        clearPlaceOverlaySources()
         refreshPlaceOverlays()
     }
 
     fun refreshPlaceOverlays() {
         if (destroyed) return
         val generation = ++overlayGeneration
-        clearPlaceOverlaySources()
         val kind = overlayMode.kind ?: return
         val cacheGeneration = PlaceOverlayCache.generation()
         overlayExecutor.execute {
@@ -227,7 +229,6 @@ class MapRenderer(
                 cached.data?.let(loaded::add)
             }
             postPlaceOverlay(generation, kind, loaded)
-            var fetchedSincePost = 0
             for (place in missing) {
                 if (destroyed || generation != overlayGeneration ||
                     cacheGeneration != PlaceOverlayCache.generation()) return@execute
@@ -241,16 +242,11 @@ class MapRenderer(
                 if (!PlaceOverlayCache.write(context, place, data, cacheGeneration)) return@execute
                 if (data != null) {
                     loaded += data
-                    fetchedSincePost++
-                    if (fetchedSincePost >= OVERLAY_UPDATE_BATCH) {
-                        postPlaceOverlay(generation, kind, loaded)
-                        fetchedSincePost = 0
-                    }
+                    // The public boundary service is deliberately rate-limited. Show
+                    // each completed town now rather than waiting for four requests.
+                    postPlaceOverlay(generation, kind, loaded)
                 }
             }
-            // Flush a partial final batch even when the last request failed or returned no
-            // boundary. Successful earlier downloads should appear without waiting for refresh.
-            if (fetchedSincePost > 0) postPlaceOverlay(generation, kind, loaded)
         }
     }
 
@@ -650,6 +646,8 @@ class MapRenderer(
     }
 
     private fun clearPlaceOverlaySources() {
+        shownOverlayKeys = emptyList()
+        shownOverlayCacheGeneration = -1L
         for (mode in listOf(PlaceOverlayMode.COUNTRY, PlaceOverlayMode.STATE, PlaceOverlayMode.TOWN)) {
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
             (map.style?.getSource(overlayBoundarySourceId(mode)) as? GeoJsonSource)?.setGeoJson(EMPTY_FEATURES)
@@ -669,10 +667,15 @@ class MapRenderer(
                 com.roadconquest.app.data.PlaceKind.STATE -> PlaceOverlayMode.STATE
                 com.roadconquest.app.data.PlaceKind.TOWN -> PlaceOverlayMode.TOWN
             }
+            val keys = snapshot.map(PlaceOverlayData::key)
+            val cacheGeneration = PlaceOverlayCache.generation()
+            if (keys == shownOverlayKeys && cacheGeneration == shownOverlayCacheGeneration) return@post
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)
                 ?.setGeoJson(overlayFeatureCollection(snapshot))
             (map.style?.getSource(overlayBoundarySourceId(mode)) as? GeoJsonSource)
                 ?.setGeoJson(overlayBoundaryFeatureCollection(snapshot))
+            shownOverlayKeys = keys
+            shownOverlayCacheGeneration = cacheGeneration
         }
     }
 
@@ -1370,7 +1373,6 @@ class MapRenderer(
         private const val PENDING_ROUTE_MAX_AGE_MS = 120_000L
         private const val FOG_RENDER_INTERVAL_MS = 120L
         private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.05
-        private const val OVERLAY_UPDATE_BATCH = 4
         private const val STARTING_LOCATION_ZOOM = 15.0
     }
 }
