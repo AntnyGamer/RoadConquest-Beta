@@ -267,10 +267,17 @@ class OverlayRoads(val coordinates: DoubleArray, val starts: IntArray) {
                     for (second in time / 1_000L..time / 1_000L + 15L) {
                         for (to in startsBySecond[second].orEmpty()) {
                             if (to == from || seenFrom[to] == from) continue
-                            val firstGap = firstTimes[to] - time
-                            val lastGap = lastTimes[to] - time
-                            if (firstGap !in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS &&
-                                lastGap !in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS) continue
+                            val timeMatches = if (visits == null) {
+                                val firstGap = firstTimes[to] - time
+                                val lastGap = lastTimes[to] - time
+                                firstGap in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS ||
+                                    lastGap in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS
+                            } else {
+                                visits[to].any { (startedAt, _) ->
+                                    startedAt - time in 1L..MAX_SUPPORTED_JUNCTION_TIME_MS
+                                }
+                            }
+                            if (!timeMatches) continue
                             val right = segments[to]
                             val distance = metersBetween(
                                 nodes[left.endNode].latitude, nodes[left.endNode].longitude,
