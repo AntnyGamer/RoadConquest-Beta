@@ -1000,100 +1000,53 @@ class MapRenderer(
 
     private fun captureFog(): FogCapture? {
         if (mapView.width <= 0 || mapView.height <= 0 || map.style == null) return null
-        // Capture after camera-limit updates; the caller's move-event snapshot may predate
-        // a native zoom clamp. Reuse this fresh snapshot throughout the bitmap calculation.
         val position = map.cameraPosition
-        // Avoid allocating four-screen-wide, subpixel-accurate images at region
-        // zooms. They were downscaled heavily and snapped to gray rectangles.
-        // Detailed driving zoom retains the original generous pan coverage.
-        val padding = if (position.zoom < 9.0) 0.55f
-            else FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER
-        val padX = mapView.width * padding
-        val padY = mapView.height * padding
-        val left = -padX
-        val top = -padY
-        val right = mapView.width + padX
-        val bottom = mapView.height + padY
-        val expandedWidth = right - left
-        val expandedHeight = bottom - top
-        if (expandedWidth <= 0f || expandedHeight <= 0f) return null
-        val maxBitmapDimension = FogBitmapRenderer.bitmapDimensionForZoom(position.zoom)
-        val scale = min(
-            maxBitmapDimension / expandedWidth,
-            maxBitmapDimension / expandedHeight
-        ).coerceAtMost(1f)
-        val bitmapWidth = (expandedWidth * scale).roundToInt().coerceAtLeast(2)
-        val bitmapHeight = (expandedHeight * scale).roundToInt().coerceAtLeast(2)
-        // Fog no longer depends on the road linework or point-radius clearings.
-        // Deduplicate visited cells once per data update, project only the grid corners.
+        val center = position.target ?: return null
+        val size = FogBitmapRenderer.bitmapDimensionForZoom(position.zoom)
+        val mercatorMetersPerPixel =
+            map.projection.getMetersPerPixelAtLatitude(center.latitude) /
+                mapView.pixelRatio / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
+        if (!mercatorMetersPerPixel.isFinite() || mercatorMetersPerPixel <= 0.0) return null
+
+        // The raster and ALL its erased mile-cell geometry use exactly the same
+        // north-up Web Mercator coordinates. Neither depends on camera bearing,
+        // device screen projection, previous gesture deltas nor texture phase.
+        val world = position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
+            maxOf(mapView.width, mapView.height) * mercatorMetersPerPixel >=
+                FogGeoRaster.WORLD_METERS
+        val raster = if (world) FogGeoRaster.fullWorld(size)
+            else FogGeoRaster.around(center.latitude, center.longitude, position.zoom, size)
         val savedCorners = savedGridCoordinates
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
-        val gridCorners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
-        val center = position.target ?: return null
-        val metersPerPixel = map.projection.getMetersPerPixelAtLatitude(center.latitude) / mapView.pixelRatio
-        if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return null
-        // Grid fog is a fixed geographic RGBA overlay, never a camera-phased
-        // cloud bitmap. Bitmap pixels and quad corners are both map-anchored.
-        val mercatorMetersPerPixel = metersPerPixel / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
-        // Screen corners can span several wrapped worlds at overview zooms. An ImageSource
-        // cannot represent those as one narrow wrapped quad; use one complete Mercator world.
-        // At most one non-wrapping world may be represented by an ImageSource.
-        // Below that limit prefer a viewport-specific raster: magnifying 512
-        // world pixels caused the enormous moving square in the recording.
-        if (position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
-            maxOf(expandedWidth, expandedHeight) * mercatorMetersPerPixel >= 2 * PI * 6378137.0) {
-            val world = 2 * PI * 6378137.0
-            val size = maxBitmapDimension
-            // A complete global projection is required for overview zooms: native
-            // screen coordinates can span repeated worlds and cannot be reused here.
-            val worldGridScreen = DoubleArray(gridCorners.size)
-            for (i in gridCorners.indices step 2) {
-                val latitude = gridCorners[i].coerceIn(-85.05112878, 85.05112878)
-                val longitudeAtCorner = gridCorners[i + 1].coerceIn(-180.0, 180.0)
-                val mercator = ln(tan(PI / 4.0 + Math.toRadians(latitude) / 2.0))
-                worldGridScreen[i] = (longitudeAtCorner + 180.0) / 360.0 * size
-                worldGridScreen[i + 1] = (1.0 - mercator / PI) * 0.5 * size
-            }
-            return FogCapture(styleGeneration, worldFogQuad(), FogBitmapRenderer.Request(
-                size, size, 0f, 0f, 1f, OverlayRoads.EMPTY, doubleArrayOf(), 0.0,
-                world / size, null, null,
-                gridMode = true, gridCoordinates = gridCorners, gridScreen = worldGridScreen
-            ), world = true)
-        }
-        // Only detailed bitmaps require native corner projection. The world
-        // bitmap above uses its own geographic projection and skips this work.
-        val savedScreen = projectPlaces(savedCorners)
-        val currentScreen = DoubleArray(currentCorners.size)
-        if (currentCorners.isNotEmpty()) {
-            map.projection.toScreenLocations(
-                FogGrid.nearLongitude(currentCorners, center.longitude), currentScreen
-            )
-        }
-        // The UI cache may change on the next pan; snapshot before background draw.
-        val gridScreen = if (currentScreen.isEmpty()) savedScreen.copyOf() else savedScreen + currentScreen
-        val quad = fogQuad(left, top, right, bottom, center.longitude)
-
-        return FogCapture(
-            styleGeneration,
-            quad,
-            FogBitmapRenderer.Request(
-                bitmapWidth,
-                bitmapHeight,
-                left,
-                top,
-                scale,
-                OverlayRoads.EMPTY,
-                doubleArrayOf(),
-                center.latitude,
-                metersPerPixel,
-                null,
-                null,
-                gridMode = true,
-                gridCoordinates = gridCorners,
-                gridScreen = gridScreen
-            )
+        val corners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
+        val screen = raster.project(corners)
+        val geographic = raster.corners()
+        val quad = LatLngQuad(
+            LatLng(geographic[0], geographic[1]),
+            LatLng(geographic[2], geographic[3]),
+            LatLng(geographic[4], geographic[5]),
+            LatLng(geographic[6], geographic[7])
         )
+        return FogCapture(styleGeneration, quad, FogBitmapRenderer.Request(
+            bitmapWidth = size,
+            bitmapHeight = size,
+            screenLeft = 0f,
+            screenTop = 0f,
+            screenScale = 1f,
+            roads = OverlayRoads.EMPTY,
+            roadScreen = doubleArrayOf(),
+            centerLatitude = center.latitude,
+            metersPerScreenPixelAtCenter = raster.metersPerPixel,
+            liveLatitude = null,
+            liveScreen = null,
+            textureMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_DETAIL_METERS),
+            mediumCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_MEDIUM_METERS),
+            broadCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_BROAD_METERS),
+            gridMode = true,
+            gridCoordinates = corners,
+            gridScreen = screen
+        ), world = world)
     }
 
     private fun currentFogQuad(): LatLngQuad {
