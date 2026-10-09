@@ -969,7 +969,8 @@ class MapRenderer(
             if (placeScreenCache.size != places.size) {
                 placeScreenCache = DoubleArray(places.size)
             }
-            map.projection.toScreenLocations(places, placeScreenCache)
+            val centerLongitude = map.cameraPosition.target?.longitude ?: 0.0
+            map.projection.toScreenLocations(FogGrid.nearLongitude(places, centerLongitude), placeScreenCache)
             placeProjectionDataRevision = placeDataRevision
             placeProjectionViewportRevision = viewportRevision
             placeProjectionWidth = width
@@ -1085,7 +1086,8 @@ class MapRenderer(
         val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
         val currentScreen = DoubleArray(currentCorners.size)
         if (currentCorners.isNotEmpty()) {
-            map.projection.toScreenLocations(currentCorners, currentScreen)
+            val centerLongitude = position.target?.longitude ?: 0.0
+            map.projection.toScreenLocations(FogGrid.nearLongitude(currentCorners, centerLongitude), currentScreen)
         }
         val gridCorners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
         // The cached projection is mutable on the UI thread; give the fog worker an
