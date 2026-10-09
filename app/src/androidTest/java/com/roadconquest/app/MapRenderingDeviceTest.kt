@@ -290,13 +290,23 @@ class MapRenderingDeviceTest {
                 val regionalDeadline = SystemClock.elapsedRealtime() + 12_000L
                 while (!regionalReady && SystemClock.elapsedRealtime() < regionalDeadline) {
                     scenario.onActivity {
-                        regionalReady = MapRenderer::class.java
-                            .getDeclaredField("regionalFogCoordinates")
-                            .apply { isAccessible = true }.get(renderer) != null
+                        // Presence of *any* backup is insufficient. A zoom-8
+                        // backup can cover the zoom-15 viewport yet have subpixel
+                        // visited cells. Wait for the correct geography, data
+                        // revision AND zoom level before testing a rapid pinch.
+                        val capture = MapRenderer::class.java
+                            .getDeclaredMethod("captureFog", Boolean::class.javaPrimitiveType)
+                            .apply { isAccessible = true }.invoke(renderer, true)
+                        val desiredKey = capture?.javaClass
+                            ?.getDeclaredField("key")?.apply { isAccessible = true }?.get(capture)
+                        val installedKey = MapRenderer::class.java
+                            .getDeclaredField("installedRegionalFogKey")
+                            .apply { isAccessible = true }.get(renderer)
+                        regionalReady = desiredKey != null && desiredKey == installedKey
                     }
                     if (!regionalReady) SystemClock.sleep(100)
                 }
-                assertTrue("The geographically anchored pinch backup is ready", regionalReady)
+                assertTrue("The geographically anchored pinch backup has the current zoom, coordinates, and explored data", regionalReady)
                 var inspectedPinchFrames = 0
                 var lostClearingFrames = 0
                 val darkFrameDetails = ArrayList<String>()
