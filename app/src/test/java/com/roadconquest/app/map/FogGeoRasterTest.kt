@@ -96,4 +96,41 @@ class FogGeoRasterTest {
         assertTrue("A mile is far below one 512px world texel", maxX - minX < 0.1)
         assertTrue(world.metersPerPixel > 70_000)
     }
+    @Test fun regionalPinchBackupRetainsReadableMileSquaresAndCoversFourZoomLevels() {
+        val width = 1080
+        val height = 2340
+        val metersPerPixel = 3.0
+        val backup = FogGeoRaster.pinchFallback(
+            39.96, -75.02, 15.0, 768, width, height, metersPerPixel
+        )
+        val square = FogGrid.corners(39.96, -75.02)
+        val projected = backup.project(square)
+        val span = (0..3).map { projected[it * 2] }.let { it.max() - it.min() }
+        assertTrue("A mile square must occupy real backup pixels, unlike a world texel", span >= 2.0)
+        val diagonalAtFourZoomLevelsOut = hypot(width.toDouble(), height.toDouble()) *
+            metersPerPixel * 16.0
+        assertTrue("The backup must cover a four-level pinch-out and a safety margin",
+            768 * backup.metersPerPixel > diagonalAtFourZoomLevelsOut * 1.25)
+        assertTrue("The visited cell remains inside the backup",
+            projected.indices.step(2).all { i ->
+                projected[i] in 0.0..768.0 && projected[i + 1] in 0.0..768.0
+            })
+        assertTrue("The backup must be geographically wider than the detailed source",
+            backup.metersPerPixel >
+                FogGeoRaster.around(39.96, -75.02, 15.0, 1024,
+                    width, height, metersPerPixel).metersPerPixel)
+    }
+
+    @Test fun regionalBackupKeepsDateLineCellsInTheirCorrectWorldCopy() {
+        for (lon in listOf(179.97, -179.97)) {
+            val backing = FogGeoRaster.pinchFallback(
+                0.0, lon, 15.0, 768, 1080, 2340, 3.0
+            )
+            val corners = FogGrid.corners(0.0, lon)
+            val xy = backing.project(corners)
+            assertTrue(xy.indices.step(2).all { i ->
+                xy[i] in 0.0..768.0 && xy[i + 1] in 0.0..768.0
+            })
+        }
+    }
 }
