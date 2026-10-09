@@ -284,6 +284,53 @@ class FogOverlayTest {
         assertEquals(3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
     }
 
+    @Test fun gridFogTintAndOpacityNeverChangeWhenCameraTexturePhaseChanges() {
+        val tile = request(metersPerPixel = 5.0).copy(
+            gridMode = true,
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.01, 0.01, 0.01, -0.01, 0.01, -0.01, -0.01
+            ),
+            gridScreen = doubleArrayOf(
+                200.0, 200.0, 400.0, 200.0, 400.0, 400.0, 200.0, 400.0
+            )
+        )
+        val steady = FogBitmapRenderer.render(tile)
+        val fog = steady.getPixel(50, 50)
+        assertEquals(FogBitmapRenderer.STABLE_GRID_FOG_ARGB, fog)
+        // A camera zoom or pan used to rephase the 512px noise shader, even
+        // at the same geographic point. Ignore such camera-dependent matrices
+        // for grid fog completely, preserving its exact pixel colors.
+        val rephased = FogBitmapRenderer.render(tile.copy(
+            textureMatrix = floatArrayOf(4f, 0f, -991f, 0f, 0.25f, 729f, 0f, 0f, 1f),
+            centerLatitude = 73.0
+        ))
+        for ((x, y) in listOf(50 to 50, 300 to 300, 300 to 170, 165 to 165)) {
+            assertEquals("Geographically identical exploration remains the same shade",
+                steady.getPixel(x, y), rephased.getPixel(x, y))
+        }
+    }
+
+    @Test fun subpixelMileCellsAtWorldZoomCannotMakeEnormousClearSquare() {
+        // One visited mile is much smaller than a 78-km Mercator-world texel
+        // at a 512px overview. Anti-aliased fractional coverage must remain
+        // fractional instead of turning the entire giant pixel transparent.
+        val distant = request(metersPerPixel = 78_000.0).copy(
+            bitmapWidth = 128, bitmapHeight = 128, gridMode = true,
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.01, 0.01, 0.01, -0.01, 0.01, -0.01, -0.01
+            ),
+            gridScreen = doubleArrayOf(
+                50.25, 50.25, 50.75, 50.25, 50.75, 50.75, 50.25, 50.75
+            )
+        )
+        val bitmap = FogBitmapRenderer.render(distant)
+        val smallestAlpha = (49..52).minOf { x -> (49..52).minOf { y ->
+            Color.alpha(bitmap.getPixel(x, y))
+        } }
+        assertTrue("Subpixel world cells never punch out a 78-km map pixel", smallestAlpha > 100)
+        assertEquals(204, Color.alpha(bitmap.getPixel(90, 90)))
+    }
+
     @Test fun visitedMileTileClearsEntireInteriorWithOriginal1500FootFade() {
         val tile = request(metersPerPixel = 5.0).copy(
             gridMode = true,
@@ -468,10 +515,10 @@ class FogOverlayTest {
     }
 
     @Test fun wideZoomFogUsesSmallerUploadBitmaps() {
-        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(4.9))
-        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(5.0))
-        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(11.9))
-        assertEquals(768, FogBitmapRenderer.bitmapDimensionForZoom(12.0))
+        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(3.4))
+        assertEquals(896, FogBitmapRenderer.bitmapDimensionForZoom(3.5))
+        assertEquals(896, FogBitmapRenderer.bitmapDimensionForZoom(11.9))
+        assertEquals(1024, FogBitmapRenderer.bitmapDimensionForZoom(12.0))
         assertTrue(FogBitmapRenderer.MIN_ROAD_ZOOM > FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM)
     }
 
