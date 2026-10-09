@@ -274,6 +274,66 @@ class MapRenderingDeviceTest {
                         }
                     }
                 }
+                // Regression for the user's quick back-and-forth pinch: the
+                // explored mile cell must remain clear on *moving* frames, not
+                // disappear into opaque world fog until rendering catches up.
+                move(exploredPoint, 15.0)
+                awaitPixels("Local visited cell is clear before rapid pinch") { bitmap ->
+                    val point = map.projection.toScreenLocation(exploredPoint)
+                    val pixel = bitmap.getPixel(
+                        point.x.toInt().coerceIn(0, bitmap.width - 1),
+                        point.y.toInt().coerceIn(0, bitmap.height - 1)
+                    )
+                    Color.red(pixel) > 225 && Color.green(pixel) > 225
+                }
+                var regionalReady = false
+                val regionalDeadline = SystemClock.elapsedRealtime() + 12_000L
+                while (!regionalReady && SystemClock.elapsedRealtime() < regionalDeadline) {
+                    scenario.onActivity {
+                        regionalReady = MapRenderer::class.java
+                            .getDeclaredField("regionalFogCoordinates")
+                            .apply { isAccessible = true }.get(renderer) != null
+                    }
+                    if (!regionalReady) SystemClock.sleep(100)
+                }
+                assertTrue("The geographically anchored pinch backup is ready", regionalReady)
+                var inspectedPinchFrames = 0
+                var lostClearingFrames = 0
+                for (zoom in listOf(11.5, 15.0, 11.5, 15.0)) {
+                    val completed = CountDownLatch(1)
+                    val listener = MapLibreMap.OnCameraIdleListener { completed.countDown() }
+                    scenario.onActivity {
+                        map.addOnCameraIdleListener(listener)
+                        map.animateCamera(CameraUpdateFactory.newCameraPosition(
+                            org.maplibre.android.camera.CameraPosition.Builder()
+                                .target(exploredPoint).zoom(zoom).bearing(0.0).tilt(0.0).build()
+                        ), 350)
+                    }
+                    val deadline = SystemClock.elapsedRealtime() + 5_000L
+                    while (completed.count > 0L && SystemClock.elapsedRealtime() < deadline) {
+                        scenario.onActivity {
+                            (view.renderView as TextureView).bitmap?.let { bitmap ->
+                                val p = map.projection.toScreenLocation(exploredPoint)
+                                val pixel = bitmap.getPixel(
+                                    p.x.toInt().coerceIn(0, bitmap.width - 1),
+                                    p.y.toInt().coerceIn(0, bitmap.height - 1)
+                                )
+                                inspectedPinchFrames++
+                                if (Color.red(pixel) < 220 || Color.green(pixel) < 220) {
+                                    lostClearingFrames++
+                                }
+                                bitmap.recycle()
+                            }
+                        }
+                        SystemClock.sleep(16)
+                    }
+                    scenario.onActivity { map.removeOnCameraIdleListener(listener) }
+                    assertEquals("Animated pinch reaches zoom $zoom", 0L, completed.count)
+                }
+                assertTrue("Sample the active pinch, not only idle frames", inspectedPinchFrames > 12)
+                assertEquals("An already visited mile never becomes opaque during a quick pinch",
+                    0, lostClearingFrames)
+
                 scenario.onActivity {
                     val ids = map.style!!.layers.map { it.id }
                     assertTrue(ids.indexOf("roadconquest-fog-raster") < ids.indexOf("roadconquest-traveled-roads-line"))
