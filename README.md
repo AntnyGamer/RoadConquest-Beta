@@ -1,4 +1,4 @@
-# Road Conquest 1.0 Beta 29
+# Road Conquest 1.0 Beta 30
 
 Road Conquest remembers the roads you drive and the places you visit, revealing them through a
 cloud-textured fog map.
@@ -7,11 +7,13 @@ cloud-textured fog map.
 [Source and issues](https://github.com/AntnyGamer/RoadConquest-Beta) ·
 [GNU AGPL v3 license](LICENSE)
 
-Beta 29 stores explored mile-scale cells as permanent progress and reveals each whole square
-on entry, independent of road linework. Neighboring squares form one seamless explored area,
-with a smooth, 1,500-foot transition only along the outer fog edge. Existing 50-meter
-exploration and accepted raw driving samples are safely backfilled on upgrade; previous
-driving records, scoring, and matching remain intact.
+Beta 30 completely rebuilds the fog as three layers of soft, dark-gray clouds
+geographically attached to the map. The cloud textures and permanently unlocked mile
+squares use the same Mercator raster coordinates, so camera pans, pinch zooms and
+rotations cannot move an explored clearing separately from the map. This release also
+removes the opacity-changing double-layer transition, improves the regional raster
+resolution and prevents a tiny explored mile from becoming a huge white world pixel.
+Existing exploration and its 1,500-foot outer transition remain unchanged.
 
 ## Install
 
@@ -28,7 +30,7 @@ Grant Precise location. For automatic background tracking, choose Allow all the 
 location settings and allow background battery use. Settings includes shortcuts to the relevant
 Android screens. Allow notifications to see the tracking notification and its Stop tracking control.
 
-This release uses Android application ID `com.roadconquest.app` and internal version code 55.
+This release uses Android application ID `com.roadconquest.app` and internal version code 56.
 The app shows its exact version in Settings → About. Treat the application ID as permanent once
 the Google Play listing is created; changing it later would create a different app.
 

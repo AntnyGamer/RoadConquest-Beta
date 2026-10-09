@@ -15,7 +15,9 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:17-alpine
+        # Docker Hub's shared CI IPs are rate-limited. Use the same upstream
+        # Docker Official Image mirrored on AWS Public ECR instead.
+        image: public.ecr.aws/docker/library/postgres:17-alpine
         env:
           POSTGRES_DB: roadconquest_test
           POSTGRES_USER: roadconquest

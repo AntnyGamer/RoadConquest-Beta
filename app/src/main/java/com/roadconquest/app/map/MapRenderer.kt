@@ -3,7 +3,6 @@ package com.roadconquest.app.map
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.PointF
 import android.os.Handler
 import android.os.Looper
@@ -82,6 +81,7 @@ class MapRenderer(
     private var fogRunning = false
     private var fogAgain = false
     private var reusableFogBitmap: Bitmap? = null
+    private var installedFogKey: FogKey? = null
     private var carIconBitmap: Bitmap? = null
     private var appliedCarStyle = ""
     private var appliedCarColor = ""
@@ -92,7 +92,6 @@ class MapRenderer(
     @Volatile private var overlayGeneration = 0
     @Volatile private var destroyed = false
     private val liveLocation = LiveLocation()
-    private val fogTextureTransform = FogTextureTransform()
     private var displayedRoads = OverlayRoads.EMPTY
     private var displayedRoadFeatures = EMPTY_FEATURES
     // A newly installed GeoJSON source already contains EMPTY_FEATURES. Avoid sending the
@@ -116,13 +115,10 @@ class MapRenderer(
     private var placeScreenCache = doubleArrayOf()
     private val liveCoordinates = DoubleArray(2)
     private val liveScreenCache = DoubleArray(2)
-    private val fogMatrix = Matrix()
-    private val fogMatrixValues = FloatArray(9)
     private var detailedFogCoordinates: DoubleArray? = null
     private val fogCoverageScreen = DoubleArray(8)
     private var showingDetailedFog = false
-    private var fogHandoffGeneration = 0
-    private var fogHandoffFrameListener: MapView.OnDidFinishRenderingFrameListener? = null
+    private var activeDetailedFogAlternate = false
     private var lastFogRenderAt = 0L
     private var minimumZoom = Double.NaN
     private val renderFog = Runnable { scheduleFogRender() }
@@ -400,7 +396,6 @@ class MapRenderer(
         fogAgain = false
         queryAgain = false
         queryRoadsAgain = false
-        cancelFogHandoff()
     }
 
     fun resumeViewport(reloadRoads: Boolean) {
@@ -754,8 +749,8 @@ class MapRenderer(
     }
 
     private fun installFogLayer(style: Style) {
+        activeDetailedFogAlternate = false
         detailedFogCoordinates = null
-        cancelFogHandoff()
         showingDetailedFog = false
         // Keep a ready native world layer behind the detailed viewport. A fast pinch can
         // outrun even a padded bitmap; it must never reveal an unrendered rectangle.
@@ -767,6 +762,16 @@ class MapRenderer(
         style.addSource(ImageSource(FOG_SOURCE_ID, currentFogQuad(), transparent))
         style.addLayer(
             RasterLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
+                rasterOpacity(0f),
+                rasterFadeDuration(0f)
+            ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) }
+        )
+        // Prepare the NEXT georeferenced raster while it is invisible.
+        // Updating pixels and corners in place on the visible ImageSource
+        // displayed the old clearing at the new coordinates for a frame.
+        style.addSource(ImageSource(FOG_ALT_SOURCE_ID, currentFogQuad(), transparent))
+        style.addLayer(
+            RasterLayer(FOG_ALT_LAYER_ID, FOG_ALT_SOURCE_ID).withProperties(
                 rasterOpacity(0f),
                 rasterFadeDuration(0f)
             ).apply { setRasterOpacityTransition(TransitionOptions(0L, 0L)) }
@@ -813,10 +818,10 @@ class MapRenderer(
         cameraPosition: CameraPosition = map.cameraPosition
     ) {
         val coordinates = detailedFogCoordinates
-        // Keep the detailed bitmap during ordinary movement, but reserve extra off-screen
-        // coverage while the camera is moving. Android 12 can present a native frame before the
-        // Java camera callback catches up; switching to the ready world layer early prevents a
-        // bitmap edge from flashing as a white rectangle without closing fog on every gesture.
+        // The detailed ImageSource remains geographically attached to its quad
+        // while MapLibre animates the camera. Keep it active until its actual
+        // image bounds approach the viewport, instead of oscillating between a
+        // low-resolution world mask and a detailed mask during every pinch.
         val detailed = fogEnabled && cameraPosition.zoom >= FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM &&
             coordinates != null && run {
                 map.projection.toScreenLocations(coordinates, fogCoverageScreen)
@@ -829,76 +834,31 @@ class MapRenderer(
             }
         val changed = detailed != showingDetailedFog
         if (!force && !changed) return
-        val detailedLayer = map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer
+        val detail = map.style?.getLayer(
+            if (activeDetailedFogAlternate) FOG_ALT_LAYER_ID else FOG_LAYER_ID
+        ) as? RasterLayer
+        val inactive = map.style?.getLayer(
+            if (activeDetailedFogAlternate) FOG_LAYER_ID else FOG_ALT_LAYER_ID
+        ) as? RasterLayer
         val worldLayer = map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer
-        if (!fogEnabled) {
-            cancelFogHandoff()
-            showingDetailedFog = false
-            worldLayer?.setProperties(rasterOpacity(0f))
-            detailedLayer?.setProperties(rasterOpacity(0f))
-            return
-        }
-        if (!changed) {
-            // A completed handoff already has the correct native layer state. During a pending
-            // handoff, a fresh detailed bitmap must not prematurely hide the safety layer.
-            if (fogHandoffFrameListener == null) {
-                detailedLayer?.setProperties(rasterOpacity(if (detailed) 1f else 0f))
-                worldLayer?.setProperties(rasterOpacity(if (detailed) 0f else 1f))
-            }
-            return
-        }
-
-        cancelFogHandoff()
         showingDetailedFog = detailed
-        val generation = fogHandoffGeneration
-        // Enable the incoming raster immediately, but keep the outgoing raster until MapLibre
-        // has actually completed two native rendered frames. An Android Choreographer frame is
-        // not sufficient: MapLibre's renderer can run on a different cadence and briefly show
-        // neither source during a rapid animated zoom. Two native frames cover an in-flight
-        // frame plus the first frame guaranteed to include the new opacity.
-        if (detailed) {
-            detailedLayer?.setProperties(rasterOpacity(1f))
+        // Switch both layer opacities together in one UI callback. The previous
+        // two-rendered-frame handoff displayed TWO 80%-opaque fog layers at once,
+        // producing a 96%-dark band that visibly changed color while zooming.
+        // No overlapping transition may outlive this callback.
+        if (!fogEnabled) {
+            worldLayer?.setProperties(rasterOpacity(0f))
+            detail?.setProperties(rasterOpacity(0f))
+            inactive?.setProperties(rasterOpacity(0f))
+        } else if (detailed) {
+            inactive?.setProperties(rasterOpacity(0f))
+            detail?.setProperties(rasterOpacity(1f))
+            worldLayer?.setProperties(rasterOpacity(0f))
         } else {
+            detail?.setProperties(rasterOpacity(0f))
+            inactive?.setProperties(rasterOpacity(0f))
             worldLayer?.setProperties(rasterOpacity(1f))
         }
-        awaitFogHandoffFrames(generation, detailed)
-    }
-
-    private fun cancelFogHandoff() {
-        fogHandoffGeneration++
-        fogHandoffFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
-        fogHandoffFrameListener = null
-    }
-
-    private fun awaitFogHandoffFrames(generation: Int, detailed: Boolean) {
-        var renderedFrames = 0
-        lateinit var listener: MapView.OnDidFinishRenderingFrameListener
-        listener = MapView.OnDidFinishRenderingFrameListener { _, _, _ ->
-            if (destroyed || generation != fogHandoffGeneration ||
-                detailed != showingDetailedFog || !fogEnabled
-            ) {
-                mapView.removeOnDidFinishRenderingFrameListener(listener)
-                if (fogHandoffFrameListener === listener) fogHandoffFrameListener = null
-                return@OnDidFinishRenderingFrameListener
-            }
-            renderedFrames++
-            if (renderedFrames < FOG_HANDOFF_RENDERED_FRAMES) {
-                map.triggerRepaint()
-                return@OnDidFinishRenderingFrameListener
-            }
-            mapView.removeOnDidFinishRenderingFrameListener(listener)
-            if (fogHandoffFrameListener === listener) fogHandoffFrameListener = null
-            if (detailed) {
-                (map.style?.getLayer(WORLD_FOG_LAYER_ID) as? RasterLayer)
-                    ?.setProperties(rasterOpacity(0f))
-            } else {
-                (map.style?.getLayer(FOG_LAYER_ID) as? RasterLayer)
-                    ?.setProperties(rasterOpacity(0f))
-            }
-        }
-        fogHandoffFrameListener = listener
-        mapView.addOnDidFinishRenderingFrameListener(listener)
-        map.triggerRepaint()
     }
 
     private fun installCarLayer(style: Style) {
@@ -1017,6 +977,11 @@ class MapRenderer(
             return
         }
         val capture = captureFog() ?: return
+        // MapLibre already animates this georeferenced ImageSource in native
+        // coordinates. Do not repaint/replace an identical cloud rectangle on
+        // each 120ms pan callback: that caused needless texture uploads and
+        // could flash an otherwise stable clearing on the GPU.
+        if (capture.key == installedFogKey) return
         lastFogRenderAt = SystemClock.elapsedRealtime()
         fogAgain = false
         fogRunning = true
@@ -1034,12 +999,19 @@ class MapRenderer(
                 fogRunning = false
                 if (rendered != null) {
                     if (viewportActive && capture.styleGeneration == styleGeneration) {
-                        val id = if (capture.world) WORLD_FOG_SOURCE_ID else FOG_SOURCE_ID
+                        val nextAlternate = !activeDetailedFogAlternate
+                        val id = if (capture.world) WORLD_FOG_SOURCE_ID
+                            else if (nextAlternate) FOG_ALT_SOURCE_ID else FOG_SOURCE_ID
                         val source = map.style?.getSource(id) as? ImageSource
+                        // The incoming detailed source is HIDDEN while its quad
+                        // and bitmap are both replaced; visible pixels cannot be
+                        // mistakenly attached to a new geographic location.
                         source?.setCoordinates(capture.quad)
-                        // MapLibre 13.6.1 copies Android bitmap pixels synchronously in nativeSetImage.
+                        // MapLibre 13.6.1 synchronously copies source bitmap pixels.
                         source?.setImage(rendered)
+                        if (source != null) installedFogKey = capture.key
                         if (!capture.world && source != null) {
+                            activeDetailedFogAlternate = nextAlternate
                             detailedFogCoordinates = doubleArrayOf(
                                 capture.quad.topLeft.latitude, capture.quad.topLeft.longitude,
                                 capture.quad.topRight.latitude, capture.quad.topRight.longitude,
@@ -1061,107 +1033,61 @@ class MapRenderer(
 
     private fun captureFog(): FogCapture? {
         if (mapView.width <= 0 || mapView.height <= 0 || map.style == null) return null
-        // Capture after camera-limit updates; the caller's move-event snapshot may predate
-        // a native zoom clamp. Reuse this fresh snapshot throughout the bitmap calculation.
         val position = map.cameraPosition
-        val padX = mapView.width * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER
-        val padY = mapView.height * FogBitmapRenderer.VIEWPORT_PADDING_MULTIPLIER
-        val left = -padX
-        val top = -padY
-        val right = mapView.width + padX
-        val bottom = mapView.height + padY
-        val expandedWidth = right - left
-        val expandedHeight = bottom - top
-        if (expandedWidth <= 0f || expandedHeight <= 0f) return null
-        val maxBitmapDimension = FogBitmapRenderer.bitmapDimensionForZoom(position.zoom)
-        val scale = min(
-            maxBitmapDimension / expandedWidth,
-            maxBitmapDimension / expandedHeight
-        ).coerceAtMost(1f)
-        val bitmapWidth = (expandedWidth * scale).roundToInt().coerceAtLeast(2)
-        val bitmapHeight = (expandedHeight * scale).roundToInt().coerceAtLeast(2)
-        // Fog no longer depends on the road linework or point-radius clearings.
-        // Deduplicate visited cells once per data update, project only the grid corners.
+        val center = position.target ?: return null
+        val size = FogBitmapRenderer.bitmapDimensionForZoom(position.zoom)
+        val mercatorMetersPerPixel =
+            map.projection.getMetersPerPixelAtLatitude(center.latitude) /
+                mapView.pixelRatio / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
+        if (!mercatorMetersPerPixel.isFinite() || mercatorMetersPerPixel <= 0.0) return null
+
+        // The raster and ALL its erased mile-cell geometry use exactly the same
+        // north-up Web Mercator coordinates. Neither depends on camera bearing,
+        // device screen projection, previous gesture deltas nor texture phase.
+        val world = position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
+            maxOf(mapView.width, mapView.height) * mercatorMetersPerPixel >=
+                FogGeoRaster.WORLD_METERS
+        val raster = if (world) FogGeoRaster.fullWorld(size)
+            else FogGeoRaster.around(
+                center.latitude, center.longitude, position.zoom, size,
+                mapView.width, mapView.height, mercatorMetersPerPixel
+            )
         val savedCorners = savedGridCoordinates
         val fix = liveLocation.current(SystemClock.elapsedRealtime())
         val currentCorners = fix?.let { FogGrid.corners(it.latitude, it.longitude) } ?: doubleArrayOf()
-        val gridCorners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
-        val center = position.target ?: return null
-        val metersPerPixel = map.projection.getMetersPerPixelAtLatitude(center.latitude) / mapView.pixelRatio
-        if (!metersPerPixel.isFinite() || metersPerPixel <= 0) return null
-        if (!fogTextureTransform.update(center.latitude, center.longitude, position.zoom,
-                { coordinates, output -> map.projection.toScreenLocations(coordinates, output) }, fogMatrix)) return null
-        val mercatorMetersPerPixel = metersPerPixel / cos(Math.toRadians(center.latitude)).coerceAtLeast(0.01)
-        // Screen corners can span several wrapped worlds at overview zooms. An ImageSource
-        // cannot represent those as one narrow wrapped quad; use one complete Mercator world.
-        if (position.zoom < FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM ||
-            (expandedWidth + expandedHeight) * mercatorMetersPerPixel >= 2 * PI * 6378137.0) {
-            val world = 2 * PI * 6378137.0
-            val size = maxBitmapDimension
-            val inverse = Matrix()
-            if (!fogMatrix.invert(inverse)) return null
-            val centerScreen = map.projection.toScreenLocation(center)
-            val phase = floatArrayOf(centerScreen.x, centerScreen.y)
-            inverse.mapPoints(phase)
-            val texelScale = (FogTextureTransform.tileMetersForZoom(position.zoom) / world * size / FogTexture.SIZE).toFloat()
-            val longitude = ((center.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-            val mercatorY = 6378137.0 * ln(tan(PI / 4 + Math.toRadians(center.latitude.coerceIn(-85.05112878, 85.05112878)) / 2))
-            fogMatrix.setScale(texelScale, texelScale)
-            fogMatrix.postTranslate(((longitude + 180.0) / 360.0 * size).toFloat() - texelScale * phase[0],
-                ((0.5 - mercatorY / world) * size).toFloat() - texelScale * phase[1])
-            // A complete global projection is required for overview zooms: native
-            // screen coordinates can span repeated worlds and cannot be reused here.
-            val worldGridScreen = DoubleArray(gridCorners.size)
-            for (i in gridCorners.indices step 2) {
-                val latitude = gridCorners[i].coerceIn(-85.05112878, 85.05112878)
-                val longitudeAtCorner = gridCorners[i + 1].coerceIn(-180.0, 180.0)
-                val mercator = ln(tan(PI / 4.0 + Math.toRadians(latitude) / 2.0))
-                worldGridScreen[i] = (longitudeAtCorner + 180.0) / 360.0 * size
-                worldGridScreen[i + 1] = (1.0 - mercator / PI) * 0.5 * size
-            }
-            return FogCapture(styleGeneration, worldFogQuad(), FogBitmapRenderer.Request(
-                size, size, 0f, 0f, 1f, OverlayRoads.EMPTY, doubleArrayOf(), 0.0,
-                world / size, null, null, fogMatrixValues.also { fogMatrix.getValues(it) }.copyOf(),
-                gridMode = true, gridCoordinates = gridCorners, gridScreen = worldGridScreen
-            ), world = true)
-        }
-        // Only detailed bitmaps require native corner projection. The world
-        // bitmap above uses its own geographic projection and skips this work.
-        val savedScreen = projectPlaces(savedCorners)
-        val currentScreen = DoubleArray(currentCorners.size)
-        if (currentCorners.isNotEmpty()) {
-            map.projection.toScreenLocations(
-                FogGrid.nearLongitude(currentCorners, center.longitude), currentScreen
-            )
-        }
-        // The UI cache may change on the next pan; snapshot before background draw.
-        val gridScreen = if (currentScreen.isEmpty()) savedScreen.copyOf() else savedScreen + currentScreen
-        val quad = fogQuad(left, top, right, bottom, center.longitude)
-        fogMatrix.postTranslate(-left, -top)
-        fogMatrix.postScale(scale, scale)
-        fogMatrix.getValues(fogMatrixValues)
-
-        return FogCapture(
-            styleGeneration,
-            quad,
-            FogBitmapRenderer.Request(
-                bitmapWidth,
-                bitmapHeight,
-                left,
-                top,
-                scale,
-                OverlayRoads.EMPTY,
-                doubleArrayOf(),
-                center.latitude,
-                metersPerPixel,
-                null,
-                null,
-                fogMatrixValues.copyOf(),
-                gridMode = true,
-                gridCoordinates = gridCorners,
-                gridScreen = gridScreen
-            )
+        val corners = if (currentCorners.isEmpty()) savedCorners else savedCorners + currentCorners
+        val screen = raster.project(corners)
+        val geographic = raster.corners()
+        val quad = LatLngQuad(
+            LatLng(geographic[0], geographic[1]),
+            LatLng(geographic[2], geographic[3]),
+            LatLng(geographic[4], geographic[5]),
+            LatLng(geographic[6], geographic[7])
         )
+        val liveTile = fix?.let { FogGrid.cell(it.latitude, it.longitude)?.key }
+        val key = FogKey(
+            styleGeneration, world, raster.westMeters, raster.northMeters,
+            raster.metersPerPixel, size, placeDataRevision, liveTile
+        )
+        return FogCapture(styleGeneration, quad, FogBitmapRenderer.Request(
+            bitmapWidth = size,
+            bitmapHeight = size,
+            screenLeft = 0f,
+            screenTop = 0f,
+            screenScale = 1f,
+            roads = OverlayRoads.EMPTY,
+            roadScreen = doubleArrayOf(),
+            centerLatitude = center.latitude,
+            metersPerScreenPixelAtCenter = raster.metersPerPixel,
+            liveLatitude = null,
+            liveScreen = null,
+            textureMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_DETAIL_METERS),
+            mediumCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_MEDIUM_METERS),
+            broadCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_BROAD_METERS),
+            gridMode = true,
+            gridCoordinates = corners,
+            gridScreen = screen
+        ), world = world, key = key)
     }
 
     private fun currentFogQuad(): LatLngQuad {
@@ -1242,11 +1168,23 @@ class MapRenderer(
         }
     }
 
+    private data class FogKey(
+        val styleGeneration: Int,
+        val world: Boolean,
+        val westMeters: Double,
+        val northMeters: Double,
+        val metersPerPixel: Double,
+        val imageDimension: Int,
+        val visitedRevision: Int,
+        val liveCellKey: Long?
+    )
+
     private data class FogCapture(
         val styleGeneration: Int,
         val quad: LatLngQuad,
         val request: FogBitmapRenderer.Request,
-        val world: Boolean = false
+        val world: Boolean,
+        val key: FogKey
     )
 
     fun destroy() {
@@ -1259,7 +1197,6 @@ class MapRenderer(
         mainHandler.removeCallbacksAndMessages(null)
         resumeFrameListener?.let(mapView::removeOnDidFinishRenderingFrameListener)
         resumeFrameListener = null
-        cancelFogHandoff()
         reusableFogBitmap?.recycle()
         reusableFogBitmap = null
         carIconBitmap?.recycle()
@@ -1289,12 +1226,32 @@ class MapRenderer(
         private const val ROAD_LAYER_ID = "roadconquest-traveled-roads-line"
         private const val FOG_SOURCE_ID = "roadconquest-fog"
         private const val FOG_LAYER_ID = "roadconquest-fog-raster"
+        private const val FOG_ALT_SOURCE_ID = "roadconquest-fog-buffer"
+        private const val FOG_ALT_LAYER_ID = "roadconquest-fog-buffer-raster"
         private const val WORLD_FOG_SOURCE_ID = "roadconquest-world-fog"
         private const val WORLD_FOG_LAYER_ID = "roadconquest-world-fog-raster"
         private val overviewFog by lazy {
+            // The instantly available safety layer must use the EXACT same
+            // geographic cloud shader/color as subsequent detailed captures.
+            // Otherwise the first pan/zoom swaps a blue legacy texture in
+            // behind the dark gray clouds and appears to change map tint.
+            val geo = FogGeoRaster.fullWorld(FogTexture.SIZE)
             FogBitmapRenderer.render(FogBitmapRenderer.Request(
-                FogTexture.SIZE, FogTexture.SIZE, 0f, 0f, 1f, OverlayRoads.EMPTY,
-                doubleArrayOf(), 0.0, 1.0, null, null
+                bitmapWidth = FogTexture.SIZE,
+                bitmapHeight = FogTexture.SIZE,
+                screenLeft = 0f,
+                screenTop = 0f,
+                screenScale = 1f,
+                roads = OverlayRoads.EMPTY,
+                roadScreen = doubleArrayOf(),
+                centerLatitude = 0.0,
+                metersPerScreenPixelAtCenter = geo.metersPerPixel,
+                liveLatitude = null,
+                liveScreen = null,
+                textureMatrix = geo.textureMatrix(FogBitmapRenderer.CLOUD_DETAIL_METERS),
+                mediumCloudMatrix = geo.textureMatrix(FogBitmapRenderer.CLOUD_MEDIUM_METERS),
+                broadCloudMatrix = geo.textureMatrix(FogBitmapRenderer.CLOUD_BROAD_METERS),
+                gridMode = true
             ))
         }
         private const val CAR_SOURCE_ID = "roadconquest-car"
@@ -1310,8 +1267,7 @@ class MapRenderer(
         // Their matching/retry state and GPS history remain in the database.
         private const val PENDING_ROUTE_MAX_AGE_MS = 120_000L
         private const val FOG_RENDER_INTERVAL_MS = 120L
-        private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.50
-        private const val FOG_HANDOFF_RENDERED_FRAMES = 2
+        private const val FOG_MOVING_COVERAGE_MARGIN_FRACTION = 0.05
         private const val OVERLAY_UPDATE_BATCH = 4
         private const val STARTING_LOCATION_ZOOM = 15.0
     }

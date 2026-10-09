@@ -530,6 +530,8 @@ object FogBitmapRenderer {
         val liveLatitude: Double?,
         val liveScreen: DoubleArray?,
         val textureMatrix: FloatArray = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f),
+        val mediumCloudMatrix: FloatArray = textureMatrix,
+        val broadCloudMatrix: FloatArray = textureMatrix,
         val exploredCoordinates: DoubleArray = doubleArrayOf(),
         val exploredScreen: DoubleArray = doubleArrayOf(),
         val gridMode: Boolean = false,
@@ -549,9 +551,19 @@ object FogBitmapRenderer {
         }
         val canvas = Canvas(bitmap)
         val scratch = renderScratch.get()
-        scratch.textureMatrix.setValues(request.textureMatrix)
-        scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
-        canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
+        if (request.gridMode) {
+            // All three cloud octaves use geographic Mercator texture matrices,
+            // never the camera's previous pan or zoom. The dark, layered wisps
+            // therefore travel WITH the map while the alpha remains exactly 80%.
+            canvas.drawColor(STABLE_GRID_FOG_COLOR, PorterDuff.Mode.SRC)
+            val metersPerPixel = request.metersPerScreenPixelAtCenter / request.screenScale
+            scratch.drawClouds(canvas, request, metersPerPixel)
+        } else {
+            // Retain the legacy road-fog renderer for its independent unit tests.
+            scratch.textureMatrix.setValues(request.textureMatrix)
+            scratch.cloudShader.setLocalMatrix(scratch.textureMatrix)
+            canvas.drawRect(0f, 0f, request.bitmapWidth.toFloat(), request.bitmapHeight.toFloat(), scratch.cloudPaint)
+        }
         // In grid mode, road geometry and point-radius fog reveals do not contribute.
         // Blue roads still render separately; entering a mile tile is the sole unlock trigger.
         if (request.gridMode) {
@@ -663,6 +675,20 @@ object FogBitmapRenderer {
             // 1-pixel-scale cells perceptible on zoomed-out maps.
             distances[i] = if ((pixels[i] and 0xff) > 0) 0f else infinity
         }
+        val physicalFadePixels = (ROAD_FULL_M * request.screenScale /
+            request.metersPerScreenPixelAtCenter).toFloat()
+        if (physicalFadePixels < 0.75f) {
+            // At continental/world scale a mile square covers far less than one
+            // bitmap pixel. Never turn *any* touched texel into a fully clear
+            // world-sized block. Preserve the polygon's anti-aliased fractional
+            // coverage instead; it naturally fades to imperceptible subpixels.
+            for (i in 0 until count) {
+                val coverage = pixels[i] and 0xff
+                pixels[i] = Color.rgb(coverage, coverage, coverage)
+            }
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+            return
+        }
         val diagonal = 1.41421356f
         for (y in 0 until height) {
             val base = y * width
@@ -678,11 +704,9 @@ object FogBitmapRenderer {
                 distances[i] = distance
             }
         }
-        val metersPerPixel = request.metersPerScreenPixelAtCenter / request.screenScale
-        // The exact physical fade remains 457.2 m; the tiny minimum display width
-        // prevents a harsh raster edge when viewing many miles at once.
-        val radius = maxOf((ROAD_FULL_M / metersPerPixel).toFloat(),
-            MIN_VISIBLE_REVEAL_RADIUS_PX)
+        // One true physical 1,500-foot transition. Do not magnify the physical
+        // fade to a mandatory 1.25-bitmap-pixel halo when zoomed far out.
+        val radius = physicalFadePixels
         for (y in height - 1 downTo 0) {
             val base = y * width
             for (x in width - 1 downTo 0) {
@@ -780,20 +804,29 @@ object FogBitmapRenderer {
     const val ROAD_FULL_M = 1500f * 0.3048f
     const val LOCATION_FULL_M = ROAD_FULL_M
     const val MAX_FOG_ALPHA = 0.80f
+    // The entire visited-grid fog has ONE immutable tint, regardless of zoom or
+    // panning. Underlying map styles may vary, but the fog's RGBA is stable.
+    const val STABLE_GRID_FOG_ARGB: Int = -869717202 // #CC292B2E
+    private val STABLE_GRID_FOG_COLOR = STABLE_GRID_FOG_ARGB
+    // Fixed physical scales, not fixed screen pixels. Large weather masses are
+    // visible at world zoom; fine diffuse cloud structure appears when closer.
+    const val CLOUD_DETAIL_METERS = 12_000.0
+    const val CLOUD_MEDIUM_METERS = 250_000.0
+    const val CLOUD_BROAD_METERS = 6_400_000.0
     // Confirmed/pending blue roads stay visible farther out than the cleared fog corridor.
     const val MIN_ROAD_ZOOM = 6.0
-    const val MIN_FOG_REVEAL_ZOOM = 5.0
+    const val MIN_FOG_REVEAL_ZOOM = 3.5
     const val MAX_ZOOM = 20.0
     const val CENTER_ZOOM = 18.0
-    const val MAX_BITMAP_DIMENSION = 768
+    const val MAX_BITMAP_DIMENSION = 1024
     const val VIEWPORT_PADDING_MULTIPLIER = 1.5f
     // Keep narrow road/place reveals perceptible at the farthest supported overview zoom
     // without changing their real-world fade distance at ordinary driving zoom levels.
     private const val MIN_VISIBLE_REVEAL_RADIUS_PX = 1.25f
 
     fun bitmapDimensionForZoom(zoom: Double): Int = when {
-        zoom < MIN_FOG_REVEAL_ZOOM -> 512
-        zoom < 12.0 -> 640
+        zoom < MIN_FOG_REVEAL_ZOOM -> 512 // Full Mercator world, without oversized mask pixels.
+        zoom < 12.0 -> 896 // Local raster, not a 512-pixel world blown up at regional zoom.
         else -> MAX_BITMAP_DIMENSION
     }
 
@@ -806,6 +839,55 @@ object FogBitmapRenderer {
             shader = cloudShader
             alpha = (MAX_FOG_ALPHA * 255).roundToInt()
             xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC)
+        }
+        private val mediumShader = BitmapShader(cloudTexture, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        private val broadShader = BitmapShader(cloudTexture, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        private val mediumMatrix = Matrix()
+        private val broadMatrix = Matrix()
+        // SRC_ATOP changes RGB without increasing the already fixed 80% fog alpha.
+        private val detailMistPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+            shader = cloudShader
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
+        }
+        private val mediumMistPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+            shader = mediumShader
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
+        }
+        private val broadMistPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+            shader = broadShader
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
+        }
+
+        fun drawClouds(canvas: Canvas, request: Request, metersPerPixel: Double) {
+            // Don't alias a 12-km cloud texture down to one sample per 78-km
+            // world texel. The broader anchored layers still provide weather-like
+            // variation when the viewer sees the entire world.
+            fun cloudStrength(scale: Double, alpha: Int): Int =
+                (alpha * (scale / (metersPerPixel * 48.0)).coerceIn(0.0, 1.0)).roundToInt()
+            val detail = cloudStrength(CLOUD_DETAIL_METERS, 140)
+            val medium = cloudStrength(CLOUD_MEDIUM_METERS, 110)
+            val broad = cloudStrength(CLOUD_BROAD_METERS, 90)
+            val width = request.bitmapWidth.toFloat()
+            val height = request.bitmapHeight.toFloat()
+            // Broad bodies first; medium diffuse banks and close-up wisps over them.
+            if (broad > 0) {
+                broadMatrix.setValues(request.broadCloudMatrix)
+                broadShader.setLocalMatrix(broadMatrix)
+                broadMistPaint.alpha = broad
+                canvas.drawRect(0f, 0f, width, height, broadMistPaint)
+            }
+            if (medium > 0) {
+                mediumMatrix.setValues(request.mediumCloudMatrix)
+                mediumShader.setLocalMatrix(mediumMatrix)
+                mediumMistPaint.alpha = medium
+                canvas.drawRect(0f, 0f, width, height, mediumMistPaint)
+            }
+            if (detail > 0) {
+                textureMatrix.setValues(request.textureMatrix)
+                cloudShader.setLocalMatrix(textureMatrix)
+                detailMistPaint.alpha = detail
+                canvas.drawRect(0f, 0f, width, height, detailMistPaint)
+            }
         }
         val revealPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             xfermode = PorterDuffXfermode(PorterDuff.Mode.LIGHTEN)

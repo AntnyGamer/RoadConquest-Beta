@@ -284,6 +284,60 @@ class FogOverlayTest {
         assertEquals(3, OverlayRoads.prepare(listOf(incoming, wrongDirection)).starts.size)
     }
 
+    @Test fun worldAnchoredCloudsHaveVisibleDarkGrayVariationWithoutAlphaFlicker() {
+        val raster = FogGeoRaster.around(40.0, -74.0, 13.0, 640)
+        val tile = request(metersPerPixel = raster.metersPerPixel).copy(
+            gridMode = true,
+            textureMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_DETAIL_METERS),
+            mediumCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_MEDIUM_METERS),
+            broadCloudMatrix = raster.textureMatrix(FogBitmapRenderer.CLOUD_BROAD_METERS)
+        )
+        val bitmap = FogBitmapRenderer.render(tile)
+        val colors = (50 until 590 step 20).flatMap { y ->
+            (50 until 590 step 20).map { x -> bitmap.getPixel(x, y) }
+        }
+        assertTrue("Dark clouds are textured, not a solid gray sheet",
+            colors.map(Color::red).distinct().size > 12)
+        assertTrue("Cloud layers remain visually dark gray",
+            colors.all { kotlin.math.abs(Color.red(it) - Color.blue(it)) < 24 })
+        assertTrue("Every unexplored pixel retains an exact 80% alpha",
+            colors.all { Color.alpha(it) == 204 })
+        // Only the explored square changes alpha; the cloud pattern outside it
+        // keeps identical ARGB regardless of whether visits are drawn.
+        val saved = tile.copy(
+            gridCoordinates = doubleArrayOf(
+                40.0, -74.01, 40.0, -74.0, 39.99, -74.0, 39.99, -74.01),
+            gridScreen = raster.project(doubleArrayOf(
+                40.0, -74.01, 40.0, -74.0, 39.99, -74.0, 39.99, -74.01))
+        )
+        val withReveals = FogBitmapRenderer.render(saved)
+        for ((x, y) in listOf(20 to 20, 620 to 20, 20 to 620, 620 to 620)) {
+            assertEquals("Revealing a square never changes unrelated cloud colors",
+                bitmap.getPixel(x, y), withReveals.getPixel(x, y))
+        }
+    }
+
+    @Test fun subpixelMileCellsAtWorldZoomCannotMakeEnormousClearSquare() {
+        // One visited mile is much smaller than a 78-km Mercator-world texel
+        // at a 512px overview. Anti-aliased fractional coverage must remain
+        // fractional instead of turning the entire giant pixel transparent.
+        val distant = request(metersPerPixel = 78_000.0).copy(
+            bitmapWidth = 128, bitmapHeight = 128, gridMode = true,
+            gridCoordinates = doubleArrayOf(
+                0.01, -0.01, 0.01, 0.01, -0.01, 0.01, -0.01, -0.01
+            ),
+            gridScreen = doubleArrayOf(
+                50.25, 50.25, 50.75, 50.25, 50.75, 50.75, 50.25, 50.75
+            )
+        )
+        val bitmap = FogBitmapRenderer.render(distant)
+        val smallestAlpha = (49..52).minOf { x -> (49..52).minOf { y ->
+            Color.alpha(bitmap.getPixel(x, y))
+        } }
+        assertTrue("Subpixel world cells never punch out a 78-km map pixel", smallestAlpha > 100)
+        assertEquals(204, Color.alpha(bitmap.getPixel(90, 90)))
+    }
+
     @Test fun visitedMileTileClearsEntireInteriorWithOriginal1500FootFade() {
         val tile = request(metersPerPixel = 5.0).copy(
             gridMode = true,
@@ -468,10 +522,10 @@ class FogOverlayTest {
     }
 
     @Test fun wideZoomFogUsesSmallerUploadBitmaps() {
-        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(4.9))
-        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(5.0))
-        assertEquals(640, FogBitmapRenderer.bitmapDimensionForZoom(11.9))
-        assertEquals(768, FogBitmapRenderer.bitmapDimensionForZoom(12.0))
+        assertEquals(512, FogBitmapRenderer.bitmapDimensionForZoom(3.4))
+        assertEquals(896, FogBitmapRenderer.bitmapDimensionForZoom(3.5))
+        assertEquals(896, FogBitmapRenderer.bitmapDimensionForZoom(11.9))
+        assertEquals(1024, FogBitmapRenderer.bitmapDimensionForZoom(12.0))
         assertTrue(FogBitmapRenderer.MIN_ROAD_ZOOM > FogBitmapRenderer.MIN_FOG_REVEAL_ZOOM)
     }
 
