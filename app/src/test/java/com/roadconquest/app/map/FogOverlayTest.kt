@@ -187,6 +187,37 @@ class FogOverlayTest {
         assertArrayEquals(original.starts, withVisits.starts)
     }
 
+    @Test fun competingVisitCandidateCannotDisplaceOriginalConfirmedCorner() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val originalExit = junctionRoad("original exit", 1_008_000L,
+            -74.096525 to 39.968062, -74.096446 to 39.968034, -74.096312 to 39.967987)
+        val otherExit = junctionRoad("later exit", 1_300_000L,
+            -74.096445 to 39.968062, -74.096366 to 39.968034, -74.096232 to 39.967987)
+        val roads = listOf(incoming, originalExit, otherExit)
+        val original = OverlayRoads.prepare(roads)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            otherExit.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        val withNewCandidate = OverlayRoads.prepare(roads, visits)
+        assertArrayEquals(original.coordinates, withNewCandidate.coordinates, 0.0)
+        assertArrayEquals(original.starts, withNewCandidate.starts)
+    }
+
+    @Test fun visitEvidenceStillRejectsOpposingExitDirection() {
+        val incoming = junctionRoad("approach", 1_000_000L,
+            -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
+        val opposite = junctionRoad("wrong exit", 1_120_000L,
+            -74.096525 to 39.968062, -74.096604 to 39.968090, -74.096680 to 39.968117)
+        val roads = listOf(incoming, opposite)
+        val visits = mapOf(
+            incoming.segmentId to listOf(2_000_000L to 2_005_000L),
+            opposite.segmentId to listOf(2_010_000L to 2_015_000L)
+        )
+        assertEquals(3, OverlayRoads.prepare(roads, visits).starts.size)
+    }
+
     @Test fun unrelatedVisitWindowsDoNotCreateNewTurns() {
         val incoming = junctionRoad("approach", 1_000_000L,
             -74.096758 to 39.967769, -74.096682 to 39.967903, -74.096632 to 39.967990)
