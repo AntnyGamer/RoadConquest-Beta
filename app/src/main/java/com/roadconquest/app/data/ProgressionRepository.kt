@@ -171,8 +171,11 @@ class ProgressionRepository(context: Context) {
         require(limit in 1..10_000)
         if (!isCurrentHistory()) return@synchronized 0
         val db = dbHelper.writableDatabase
+        // Replaying fixes from BEFORE a fresh/reset progression baseline would silently
+        // award already-erased towns. Only visits after this profile's exact live start count.
+        val baselineTime = startingLocation()?.recordedAt ?: return@synchronized 0
         if (!db.rawQuery("SELECT 1 FROM visited_places LIMIT 1", null).use { it.moveToFirst() }) {
-            // Wait for the exact zero-point baseline. It deletes stale ordinary candidates.
+            // Wait until the zero-point places are resolved before queuing old GPS fixes.
             return@synchronized 0
         }
         val nextId = counterOrNull(db, COUNTER_PLACE_BACKFILL_NEXT_ID)
@@ -181,21 +184,24 @@ class ProgressionRepository(context: Context) {
         if (nextId <= 1L) return@synchronized 0
         var inserted = 0
         var next = nextId
+        var examined = 0
         db.beginTransaction()
         try {
             db.rawQuery(
                 """SELECT id, latitude, longitude, timestamp_ms FROM track_points
-                   WHERE id < ? AND accuracy_m BETWEEN 0.01 AND 25
+                   WHERE id < ? AND timestamp_ms >= ? AND accuracy_m BETWEEN 0.01 AND 25
                    ORDER BY id DESC LIMIT ?""",
-                arrayOf(nextId.toString(), limit.toString())
+                arrayOf(nextId.toString(), baselineTime.toString(), limit.toString())
             ).use { cursor ->
                 while (cursor.moveToNext()) {
+                    examined++
                     next = cursor.getLong(0)
                     if (insertPlaceCandidate(db, cursor.getDouble(1), cursor.getDouble(2),
                             cursor.getLong(3))) inserted++
                 }
             }
-            putCounter(db, COUNTER_PLACE_BACKFILL_NEXT_ID, next)
+            // No eligible rows remain in the old history; stop scanning on later resumes.
+            putCounter(db, COUNTER_PLACE_BACKFILL_NEXT_ID, if (examined == 0) 1L else next)
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
