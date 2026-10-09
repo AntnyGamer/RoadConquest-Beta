@@ -759,11 +759,25 @@ class MainActivity : Activity() {
         } else {
             String.format(Locale.getDefault(), "%,.2f sq mi (%,.2f km²)", squareMiles, info.areaSquareKilometers)
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(info.name)
-            .setMessage("$type\nPopulation: $population\nArea: $area")
+            .setMessage("$type\nPopulation: $population\nArea: $area\nFirst visited: Loading…\nLast visited: Loading…")
             .setPositiveButton("Close", null)
             .show()
+        // Query local visit history off the UI thread. The overlay responds
+        // immediately even with years of trips saved.
+        summaryExecutor.execute {
+            val visits = runCatching {
+                ProgressionRepository(applicationContext).placeVisitTimes(info.kind, info.key)
+            }.getOrNull()
+            runOnUiThread {
+                if (isDestroyed || !dialog.isShowing) return@runOnUiThread
+                val formatted = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                val first = visits?.let { formatted.format(Date(it.firstVisitedAt)) } ?: "Not available"
+                val last = visits?.let { formatted.format(Date(it.lastVisitedAt)) } ?: "Not available"
+                dialog.setMessage("$type\nPopulation: $population\nArea: $area\nFirst visited: $first\nLast visited: $last")
+            }
+        }
     }
 
     private fun loadRoadDetails(latitude: Double, longitude: Double, radiusMeters: Double) {
