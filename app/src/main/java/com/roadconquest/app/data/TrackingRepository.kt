@@ -800,33 +800,42 @@ class TrackingRepository(context: Context) {
         val endedAt = max(firstTimestamp, lastTimestamp)
         var mergedStart = startedAt
         var mergedEnd = endedAt
-        val merged = ArrayList<Pair<Long, Long>>()
+        val merged = HashSet<Pair<Long, Long>>()
+        val candidates = ArrayList<Pair<Long, Long>>()
+        val seen = HashSet<Pair<Long, Long>>()
+        var scannedStart = startedAt
+        var scannedEnd = endedAt
 
-        // First collect candidates. Removing rows inside an active cursor would
-        // make the result dependent on the SQLite cursor implementation.
-        val candidateWindows = ArrayList<Pair<Long, Long>>()
-        db.rawQuery(
-            "SELECT started_at, ended_at FROM road_visits " +
-                "WHERE segment_id = ? AND started_at <= ? AND ended_at >= ? ORDER BY started_at",
-            arrayOf(
-                segmentId,
-                (endedAt + VISIT_CONTINUATION_MS).toString(),
-                (startedAt - VISIT_CONTINUATION_MS).toString()
-            )
-        ).use { cursor ->
-            while (cursor.moveToNext()) candidateWindows += cursor.getLong(0) to cursor.getLong(1)
+        // Use the composite segment/time index to avoid loading years of unrelated
+        // visits. Expand only when a matched window grows beyond the original query.
+        // A single fixed query misses a legacy fragment attached to the far end of
+        // a long window when match batches are replayed out of order.
+        fun loadCandidates() {
+            db.rawQuery(
+                "SELECT started_at, ended_at FROM road_visits " +
+                    "WHERE segment_id = ? AND started_at <= ? AND ended_at >= ? ORDER BY started_at",
+                arrayOf(
+                    segmentId,
+                    (scannedEnd + VISIT_CONTINUATION_MS).toString(),
+                    (scannedStart - VISIT_CONTINUATION_MS).toString()
+                )
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val window = cursor.getLong(0) to cursor.getLong(1)
+                    if (seen.add(window)) candidates += window
+                }
+            }
         }
 
-        // Multiple matcher batches can arrive out of order. Expand the merged
-        // interval until no neighboring fragment can attach to it.
+        loadCandidates()
         var changed: Boolean
         do {
             changed = false
-            for ((start, end) in candidateWindows) {
+            for ((start, end) in candidates) {
                 if ((start to end) in merged) continue
+                val overlaps = start <= mergedEnd && end >= mergedStart
                 val gapStart = if (end < mergedStart) end else mergedEnd
                 val gapEnd = if (end < mergedStart) mergedStart else start
-                val overlaps = start <= mergedEnd && end >= mergedStart
                 val close = gapEnd >= gapStart && gapEnd - gapStart <= VISIT_CONTINUATION_MS
                 if (!overlaps && !(close && !hasConfirmedDeparture(
                         db, segmentId, gapStart, gapEnd
@@ -834,6 +843,12 @@ class TrackingRepository(context: Context) {
                 merged += start to end
                 mergedStart = min(mergedStart, start)
                 mergedEnd = max(mergedEnd, end)
+                changed = true
+            }
+            if (mergedStart < scannedStart || mergedEnd > scannedEnd) {
+                scannedStart = mergedStart
+                scannedEnd = mergedEnd
+                loadCandidates()
                 changed = true
             }
         } while (changed)
