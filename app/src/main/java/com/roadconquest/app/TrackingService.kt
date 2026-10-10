@@ -325,14 +325,24 @@ class TrackingService : Service(), LocationListener {
             val saveExplored = exploredCell != null && exploredCellsThisSession.add(exploredCell)
             if (savePlaceCandidate || saveExplored) {
                 storageExecutor.execute {
-                    try {
-                        if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
-                        if (saveExplored && exploredCell != null &&
-                            repository.recordExploredPlace(visited, exploredCell)
-                        ) sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
-                    } catch (error: Exception) {
-                        if (saveExplored && exploredCell != null) exploredCellsThisSession.remove(exploredCell)
-                        Log.e("RoadConquest", "Could not save explored place or town candidate", error)
+                    // Independent writes: a failed optional municipal candidate must never
+                    // prevent an accurate 50 m exploration sample from being persisted.
+                    if (saveExplored && exploredCell != null) {
+                        try {
+                            if (repository.recordExploredPlace(visited, exploredCell)) {
+                                sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
+                            }
+                        } catch (error: Exception) {
+                            exploredCellsThisSession.remove(exploredCell)
+                            Log.e("RoadConquest", "Could not save explored place", error)
+                        }
+                    }
+                    if (savePlaceCandidate && ::progressionRepository.isInitialized) {
+                        try {
+                            progressionRepository.recordPlaceCandidate(visited)
+                        } catch (error: Exception) {
+                            Log.e("RoadConquest", "Could not save municipal discovery candidate", error)
+                        }
                     }
                 }
             }
