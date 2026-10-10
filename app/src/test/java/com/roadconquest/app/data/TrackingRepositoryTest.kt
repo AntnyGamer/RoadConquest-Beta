@@ -438,6 +438,80 @@ class TrackingRepositoryTest {
         assertEquals(2, repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single().timesDriven)
     }
 
+    @Test fun longOutOfOrderMatchedWindowReconnectsEarlierLegacyFragments() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_000_000, 1_010_000, 0.99)))
+        val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+
+        // Old releases stored this additional fragment separately because only
+        // strictly overlapping windows were joined. It is 90 seconds after the
+        // first fragment, but outside the new late batch's initial 120s query.
+        val db = repository.readableDatabase()
+        db.execSQL(
+            "INSERT INTO road_visits(segment_id,started_at,ended_at) VALUES (?,?,?)",
+            arrayOf(road.segmentId, 1_100_000L, 1_500_000L)
+        )
+        db.execSQL("UPDATE roads SET drive_count = 2 WHERE segment_id = ?",
+            arrayOf(road.segmentId))
+
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_490_000, 1_495_000, 0.99)))
+        val updated = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        assertEquals(1, updated.timesDriven)
+        db.rawQuery("SELECT started_at,ended_at FROM road_visits WHERE segment_id = ?",
+            arrayOf(road.segmentId)).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1_000_000L, cursor.getLong(0))
+            assertEquals(1_500_000L, cursor.getLong(1))
+            assertFalse(cursor.moveToNext())
+        }
+    }
+
+    @Test fun transitiveMergeNeverErasesGpsConfirmedReturn() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_000_000, 1_010_000, 0.99)))
+        val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        val db = repository.readableDatabase()
+        db.execSQL(
+            "INSERT INTO road_visits(segment_id,started_at,ended_at) VALUES (?,?,?)",
+            arrayOf(road.segmentId, 1_100_000L, 1_500_000L)
+        )
+        // There was a real departure from the road inside that 90-second gap.
+        point(1_060_000L, lat = 40.004, lon = -74.003)
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_490_000, 1_495_000, 0.99)))
+        assertEquals(2, repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single().timesDriven)
+    }
+
+    @Test fun tappingHistoricRoadEstimatesMergedPassesWithoutModifyingSavedVisits() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Legacy St", geometry, 1_000_000, 1_010_000, 0.99)))
+        val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        val db = repository.readableDatabase()
+        db.execSQL("INSERT INTO road_visits(segment_id, started_at, ended_at) VALUES (?,?,?)",
+            arrayOf(road.segmentId, 1_080_000L, 1_095_000L))
+        db.execSQL("UPDATE roads SET drive_count = 2 WHERE segment_id = ?", arrayOf(road.segmentId))
+
+        val stored = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        assertEquals(2, stored.timesDriven)
+        assertEquals(1, repository.estimatedRoadVisitCount(stored))
+        assertEquals("Read-only recount must preserve original intervals", 2L,
+            db.rawQuery("SELECT COUNT(*) FROM road_visits WHERE segment_id = ?",
+                arrayOf(road.segmentId)).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                cursor.getLong(0)
+            })
+    }
+
+    @Test fun historicRecountRetainsGpsConfirmedSeparateTrips() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Legacy St", geometry, 1_000_000, 1_010_000, 0.99)))
+        val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        val db = repository.readableDatabase()
+        db.execSQL("INSERT INTO road_visits(segment_id, started_at, ended_at) VALUES (?,?,?)",
+            arrayOf(road.segmentId, 1_080_000L, 1_095_000L))
+        point(1_045_000L, lat = 40.004, lon = -74.003)
+        assertEquals(2, repository.estimatedRoadVisitCount(road))
+    }
+
     @Test fun roadHitTestingReturnsOnlyNearbySavedRoads() {
         repository.upsertRoads(listOf(
             MatchedRoad("Tap Me", "[[-74.001,40],[-74.000,40]]", 100, 200, 1.0)

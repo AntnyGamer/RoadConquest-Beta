@@ -785,7 +785,11 @@ class MainActivity : Activity() {
         summaryExecutor.execute {
             val result = runCatching {
                 repository.findRoadNear(latitude, longitude, radiusMeters)?.let { road ->
-                    road to repository.roadLengthMeters(road)
+                    // Normalize legacy visit windows only for the tapped road, off the UI
+                    // thread. No visit records are deleted or changed by this estimate.
+                    val estimated = repository.estimatedRoadVisitCount(road)
+                    road.copy(timesDriven = estimated, timesDrivenExact = false) to
+                        repository.roadLengthMeters(road)
                 }
             }
             runOnUiThread {
