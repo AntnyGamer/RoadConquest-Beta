@@ -267,23 +267,31 @@ class TrackingRepository(context: Context) {
     fun loadMatchingWindow(
         limit: Int = 50,
         nowMillis: Long = System.currentTimeMillis(),
-        maxPendingId: Long? = null
+        maxPendingId: Long? = null,
+        retryGapStartId: Long? = null
     ): MatchingWindow {
         val maxPoints = limit.coerceAtLeast(2)
-        // At production batch sizes reserve one extra context slot. Turn retries benefit much
-        // more from seeing two points after the junction than from sending one additional
-        // unresolved point. Keep tiny test/debug windows on the old two-anchor behavior.
-        val anchorSlots = minOf(if (maxPoints >= 6) 3 else 2, maxPoints - 1)
+        // A long previously missed turn may contain eight consecutive, accurate raw fixes.
+        // The public OSRM demo accepts only ten points: use eight fixes and one genuine
+        // context fix on either side, but ONLY when revisiting an old unresolved island.
+        // Ordinary live batches retain three context slots and their existing behavior.
+        val wideRetry = retryGapStartId != null && maxPoints >= 10
+        val anchorSlots = minOf(if (wideRetry) 2 else if (maxPoints >= 6) 3 else 2, maxPoints - 1)
         val pending = ArrayList<TrackPoint>(maxPoints - anchorSlots)
         val pendingSelection = buildString {
             append("matched = 0 AND next_match_attempt_ms <= ?")
             if (maxPendingId != null) append(" AND id <= ?")
+            if (wideRetry) append(" AND id >= ? AND id <= ?")
         }
-        val pendingArgs = if (maxPendingId == null) {
-            arrayOf(nowMillis.toString())
-        } else {
-            arrayOf(nowMillis.toString(), maxPendingId.toString())
-        }
+        val pendingArgs = buildList {
+            add(nowMillis.toString())
+            if (maxPendingId != null) add(maxPendingId.toString())
+            if (wideRetry) {
+                val start = requireNotNull(retryGapStartId)
+                add(start.toString())
+                add((start + (maxPoints - anchorSlots - 1)).toString())
+            }
+        }.toTypedArray()
         dbHelper.readableDatabase.query(
             "track_points",
             TRACK_COLUMNS,
@@ -378,8 +386,10 @@ class TrackingRepository(context: Context) {
             olderAnchors.reverse()
         }
 
-        val preferredNewerSlots = if (maxPoints >= 6) maxOf(2, contextSlots / 2)
-            else newerAnchorLimit
+        // Preserve at least one matched anchor on EACH side of a 7–8 fix retry
+        // instead of spending both final request slots after the turn.
+        val preferredNewerSlots = if (wideRetry && newestFirst.size >= 7) 1
+            else if (maxPoints >= 6) maxOf(2, contextSlots / 2) else newerAnchorLimit
         var newerCount = minOf(newerAnchors.size, preferredNewerSlots)
         val olderCount = minOf(olderAnchors.size, contextSlots - newerCount)
         newerCount = minOf(newerAnchors.size, contextSlots - olderCount)

@@ -31,6 +31,80 @@ class OsrmMatcherTest {
         }
     }
 
+    /**
+     * Synthetic translations of two observed corner patterns: a six-fix arterial turn
+     * and an eight-fix parking-access turn. No user's exact GPS position is in the test.
+     */
+    @Test fun sixAndEightFixTurnsCanRetryWithoutBearingsOnlyWithConfirmedRoadEnds() {
+        val sixFixTurn = listOf(
+            -74.00085 to 40.00065, -74.00065 to 40.000525,
+            -74.00047 to 40.0004, -74.00038 to 40.000305,
+            -74.00045 to 40.000175, -74.00046 to 40.0000,
+            -74.00047 to 39.9998, -74.00041 to 39.99955,
+            -74.00032 to 39.99932, -74.00018 to 39.9991
+        )
+        val eightFixTurn = listOf(
+            -74.0006 to 40.00000, -74.0006 to 40.00009,
+            -74.0006 to 40.00018, -74.0006 to 40.00027,
+            -74.0006 to 40.00036, -74.0006 to 40.00045,
+            -74.0006 to 40.00054, -74.00045 to 40.00057,
+            -74.00025 to 40.00057, -74.00005 to 40.00057
+        )
+        for ((coords, before, gap) in listOf(
+            Triple(sixFixTurn, 2, 6), Triple(eightFixTurn, 1, 8)
+        )) {
+            val points = coords.mapIndexed { index, coordinate ->
+                TrackPoint(
+                    10_000L + index, coordinate.second, coordinate.first,
+                    3.8f, 9f, 0f, 100_000L + 2_000L * index,
+                    index < before || index >= before + gap
+                )
+            }
+            val waypoints = coords.map { (lon, lat) -> "[$lon,$lat]" }
+            val traces = waypoints.mapIndexed { i, coord ->
+                """{"matchings_index":0,"waypoint_index":$i,"alternatives_count":0,"location":$coord}"""
+            }
+            val legs = waypoints.zipWithNext().map { (start, end) ->
+                """{"steps":[{"name":"Confirmed road","distance":18,"geometry":{"type":"LineString","coordinates":[$start,$end]}}]}"""
+            }
+            val completeResponse = """{"code":"Ok","tracepoints":[${traces.joinToString(",")}],
+              "matchings":[{"confidence":0.97,"legs":[${legs.joinToString(",")}]}]}"""
+            MockWebServer().use { server ->
+                server.enqueue(MockResponse().setBody("""{"code":"NoMatch"}"""))
+                server.enqueue(MockResponse().setBody(completeResponse))
+                server.start()
+                val result = requireNotNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(points))
+                assertEquals("Long corner must receive a second attempt", 2, server.requestCount)
+                assertNotNull(server.takeRequest().requestUrl?.queryParameter("bearings"))
+                assertNull("Only the retry omits bearing restrictions",
+                    server.takeRequest().requestUrl?.queryParameter("bearings"))
+                assertTrue((before until before + gap).all {
+                    (result.matchedPointConfidences[points[it].id] ?: 0.0) >=
+                        OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE
+                })
+                assertTrue(result.roads.isNotEmpty())
+            }
+        }
+    }
+
+    @Test fun longStraightOrLowAccuracyHolesDoNotTriggerExtraTurnRequest() {
+        val points = (0..9).map { i ->
+            TrackPoint(i + 1L, 40.0, -74.0 + i * 0.00013,
+                3.8f, 8f, 0f, 100_000L + 2_000L * i, i == 0 || i == 9)
+        }
+        for (attempt in listOf(points, points.mapIndexed { i, point ->
+            if (i == 3) point.copy(accuracyMeters = 24f) else point
+        })) {
+            MockWebServer().use { server ->
+                server.enqueue(MockResponse().setBody("""{"code":"NoMatch"}"""))
+                server.start()
+                assertNull(OsrmMatcher(server.url("/").toString().trimEnd('/')).match(attempt))
+                assertEquals("No additional unconstrained attempt on unproven corners",
+                    1, server.requestCount)
+            }
+        }
+    }
+
     @Test fun normalGpsUncertaintyNeverOverridesPermanentSnapPlausibility() {
         // A candidate 30+ m from the recorded route remains rejected despite high OSRM confidence.
         val recorded = listOf(
