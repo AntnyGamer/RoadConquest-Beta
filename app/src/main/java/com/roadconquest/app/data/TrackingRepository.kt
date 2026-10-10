@@ -441,14 +441,25 @@ class TrackingRepository(context: Context) {
      * Scan a bounded sample, and keep oldest-first retries in the other slots.
      */
     @Synchronized
-    fun newestEligibleAnchoredGapStartId(nowMillis: Long = System.currentTimeMillis()): Long? {
+    fun newestEligibleAnchoredGapStartId(
+        nowMillis: Long = System.currentTimeMillis(),
+        beforeId: Long? = null
+    ): Long? {
         val db = dbHelper.readableDatabase
         val eligible = ArrayList<TrackPoint>(PRIORITY_GAP_SCAN_LIMIT)
         db.query(
             "track_points",
             TRACK_COLUMNS,
-            "matched = 0 AND next_match_attempt_ms <= ?",
-            arrayOf(nowMillis.toString()),
+            if (beforeId == null) {
+                "matched = 0 AND next_match_attempt_ms <= ?"
+            } else {
+                "matched = 0 AND next_match_attempt_ms <= ? AND id < ?"
+            },
+            if (beforeId == null) {
+                arrayOf(nowMillis.toString())
+            } else {
+                arrayOf(nowMillis.toString(), beforeId.toString())
+            },
             null,
             null,
             "id DESC",
