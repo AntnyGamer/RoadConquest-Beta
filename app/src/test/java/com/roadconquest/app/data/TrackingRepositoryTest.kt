@@ -100,6 +100,29 @@ class TrackingRepositoryTest {
         assertEquals(ids.take(2).toSet(), oldest.markableIds)
     }
 
+    @Test fun olderEightPointTurnGetsFullMatchedContextInsteadOfOnePointRetry() {
+        val ids = (0..9).map { i ->
+            point(1_000_000L + i * 2_000L, lat = 40.0 + i * 0.0001)
+        }
+        repository.markMatched(listOf(ids.first(), ids.last()))
+        val window = repository.loadMatchingWindow(limit = 10, retryGapStartId = ids[1])
+        assertEquals(ids, window.points.map { it.id })
+        assertEquals(ids.subList(1, 9).toSet(), window.markableIds)
+        assertTrue(window.points.first().matched)
+        assertTrue(window.points.last().matched)
+    }
+
+    @Test fun shortOldGapStillRetainsMultipleMatchedApproachAndExitFixes() {
+        val ids = (0..7).map { i ->
+            point(1_000_000L + i * 2_000L, lat = 40.0 + i * 0.0001)
+        }
+        repository.markMatched(ids.filterIndexed { index, _ -> index !in 3..4 })
+        val window = repository.loadMatchingWindow(limit = 10, retryGapStartId = ids[3])
+        assertEquals(ids.subList(3, 5).toSet(), window.markableIds)
+        assertTrue(window.points.any { it.id == ids[1] })
+        assertTrue(window.points.any { it.id == ids[6] })
+    }
+
     @Test fun pendingGpsIntervalsRemainContinuousUntilMatchingCompletes() {
         val ids = (0..4).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
         repository.markMatched(listOf(ids.first(), ids.last()))
