@@ -796,8 +796,10 @@ class ProgressionRepository(context: Context) {
 
     companion object {
         const val POINTS_PER_ROAD = 5L
-        private const val PLACE_CANDIDATE_CELL_M = 400.0
-        private const val PLACE_CANDIDATE_VERSION_OFFSET = 1_000_000_000L
+        // 150 m real-fix cells preserve short municipal crossings missed by older 400 m sampling.
+        // Retain the old cells separately; their pending lookups remain valid after an update.
+        private const val PLACE_CANDIDATE_CELL_M = 150.0
+        private const val PLACE_CANDIDATE_VERSION_OFFSET = 2_000_000_000L
         private const val COUNTER_PLACE_BACKFILL_NEXT_ID = "place_backfill_next_track_id_v2"
         private const val BASELINE_RETRY_MS = 60_000L
         private const val BASELINE_RETRY_MAX_MS = 15 * 60_000L
