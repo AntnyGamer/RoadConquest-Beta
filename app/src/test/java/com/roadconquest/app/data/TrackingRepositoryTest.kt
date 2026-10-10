@@ -388,13 +388,13 @@ class TrackingRepositoryTest {
 
     @Test fun reverseDriveUpdatesTheSameSegmentAndKeepsFirstUnlockTime() {
         repository.upsertRoads(listOf(MatchedRoad("Main St", "[[-74,40],[-74.001,40]]", 100, 200, 1.0)))
-        repository.upsertRoads(listOf(MatchedRoad("Main St", "[[-74.001,40],[-74,40]]", 300, 400, 1.0)))
+        repository.upsertRoads(listOf(MatchedRoad("Main St", "[[-74.001,40],[-74,40]]", 180_300, 180_400, 1.0)))
         val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
         assertEquals("52f290b759a36294152d6bac", road.segmentId)
         assertEquals(100L, road.firstUnlockedAt)
-        assertEquals(400L, road.lastDrivenAt)
+        assertEquals(180_400L, road.lastDrivenAt)
         assertEquals(2, road.timesDriven)
-        assertTrue(road.timesDrivenExact)
+        assertFalse(road.timesDrivenExact)
     }
 
     @Test fun sameNamedRoadsWithTheSameEndpointsDoNotOverwriteDifferentGeometry() {
@@ -415,7 +415,26 @@ class TrackingRepositoryTest {
         repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 150, 250, 1.0)))
         assertEquals(1, repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single().timesDriven)
 
-        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 300, 400, 1.0)))
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 180_300, 180_400, 1.0)))
+        assertEquals(2, repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single().timesDriven)
+    }
+
+    @Test fun adjacentMatcherBatchesAndTrafficLightPauseRemainOneVisit() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_000_000, 1_009_000, 0.95)))
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_020_000, 1_030_000, 0.95)))
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_100_000, 1_105_000, 0.95)))
+        val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        assertEquals(1, road.timesDriven)
+        assertFalse(road.timesDrivenExact)
+    }
+
+    @Test fun leavingRoadThenQuicklyReturningCountsSeparatePasses() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_000_000, 1_010_000, 0.95)))
+        // A precise raw sample over 100 meters from this segment proves departure.
+        point(1_045_000, lat = 40.004, lon = -74.003)
+        repository.upsertRoads(listOf(MatchedRoad("Main St", geometry, 1_085_000, 1_095_000, 0.95)))
         assertEquals(2, repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single().timesDriven)
     }
 
