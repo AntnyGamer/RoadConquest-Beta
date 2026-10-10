@@ -123,6 +123,42 @@ class TrackingRepositoryTest {
         assertTrue(window.points.any { it.id == ids[6] })
     }
 
+    @Test fun newestAnchoredMultiPointGapWinsOverHundredsOfOlderIsolatedFixes() {
+        // The October 10 export has 319 old isolated unmatched fixes ahead of
+        // the six/eight-point intersections. Prioritize the latest recoverable
+        // island without dropping any previous GPS or retry records.
+        val ids = (0..420).map { i ->
+            point(1_000_000L + i * 2_000L, lat = 40.0 + i * 0.00007)
+        }
+        val olderGap = (100..105).toSet()
+        val newerGap = (355..362).toSet()
+        val isolated = (10..330 step 3).toSet() - olderGap
+        val leftUnmatched = olderGap + newerGap + isolated + setOf(420)
+        repository.markMatched(ids.filterIndexed { i, _ -> i !in leftUnmatched })
+        assertEquals(ids[355], repository.newestEligibleAnchoredGapStartId())
+
+        // Already tried: deferring the newer island should allow the next one
+        // while older isolated points remain available for separate fair retries.
+        repository.deferMatching(ids.subList(355, 363), System.currentTimeMillis() + 300_000L)
+        assertEquals(ids[100], repository.newestEligibleAnchoredGapStartId())
+        assertEquals(ids[10], repository.oldestEligibleRetryId())
+        assertTrue(repository.loadMatchingWindow(limit = 10,
+            retryGapStartId = ids[100]).markableIds.containsAll(ids.subList(100, 106)))
+    }
+
+    @Test fun prioritizationNeverIncludesOpenEndedOrUnanchoredOldGps() {
+        val ids = (0..12).map { i ->
+            point(1_000_000L + i * 2_000L, lat = 40.0 + i * 0.00007)
+        }
+        // No matched fix AFTER the latest island: do not send an unanchored
+        // bearing-free retry and risk drawing a guessed connection.
+        repository.markMatched(ids.take(5))
+        assertNull(repository.newestEligibleAnchoredGapStartId())
+        // A previously resolved gap may now have anchors.
+        repository.markMatched(listOf(ids.last()))
+        assertEquals(ids[5], repository.newestEligibleAnchoredGapStartId())
+    }
+
     @Test fun pendingGpsIntervalsRemainContinuousUntilMatchingCompletes() {
         val ids = (0..4).map { point(1_000_000L + it * 3_000L, lon = -74.0 + it * 0.0001) }
         repository.markMatched(listOf(ids.first(), ids.last()))
