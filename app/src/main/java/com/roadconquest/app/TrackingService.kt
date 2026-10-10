@@ -59,6 +59,9 @@ class TrackingService : Service(), LocationListener {
             .build()
     }
     private val persistedDrivingFixThisSession = AtomicBoolean(false)
+    // Round-robin through recoverable historical corners so an unroutable
+    // junction cannot consume the same one priority slot every cycle.
+    private var previousPriorityGapStartId: Long? = null
     private val matchingInFlight = AtomicBoolean(false)
     private val matchingRerunRequested = AtomicBoolean(false)
     private val delayedMatchScheduled = AtomicBoolean(false)
@@ -660,8 +663,13 @@ class TrackingService : Service(), LocationListener {
                 // No additional requests or relaxed matching acceptance are involved.
                 val retryStartId = when (batchIndex) {
                     0 -> null
-                    1 -> repository.newestEligibleAnchoredGapStartId()
-                        ?: repository.oldestEligibleRetryId()
+                    1 -> {
+                        val selected = repository.newestEligibleAnchoredGapStartId(
+                            beforeId = previousPriorityGapStartId
+                        ) ?: repository.newestEligibleAnchoredGapStartId()
+                        if (selected != null) previousPriorityGapStartId = selected
+                        selected ?: repository.oldestEligibleRetryId()
+                    }
                     else -> repository.oldestEligibleRetryId()
                 }
                 // Select a complete unresolved turn (up to eight fixes), not a
