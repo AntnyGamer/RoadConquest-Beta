@@ -5,8 +5,13 @@ import com.roadconquest.app.data.PendingPlaceCandidate
 import com.roadconquest.app.data.PlaceKind
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.util.Locale
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [31, 37], manifest = Config.NONE)
 class PlaceResolverTest {
     private val candidate = PendingPlaceCandidate(
         cellX = 1, cellY = 2, latitude = 39.824, longitude = -75.125,
