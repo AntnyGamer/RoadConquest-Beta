@@ -136,6 +136,10 @@ class TrackingRepositoryTest {
         val leftUnmatched = olderGap + newerGap + isolated + setOf(420)
         repository.markMatched(ids.filterIndexed { i, _ -> i !in leftUnmatched })
         assertEquals(ids[355], repository.newestEligibleAnchoredGapStartId())
+        assertEquals("Next priority slot should visit the next eligible corner",
+            ids[100], repository.newestEligibleAnchoredGapStartId(beforeId = ids[355]))
+        assertNull("After the oldest corner, priority selection wraps to the newest",
+            repository.newestEligibleAnchoredGapStartId(beforeId = ids[100]))
 
         // Already tried: deferring the newer island should allow the next one
         // while older isolated points remain available for separate fair retries.
