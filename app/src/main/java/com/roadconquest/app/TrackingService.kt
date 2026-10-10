@@ -459,7 +459,33 @@ class TrackingService : Service(), LocationListener {
             runCatching { locationManager.removeUpdates(this) }
             locationUpdatesRegistered = false
         }
-        matchingExecutor.shutdownNow()
+        // Wait for accepted GPS fixes queued on storageExecutor before final matching.
+        // A normal stop must not discard the last turn/end-of-drive evidence.
+        // Privacy deletion is different: cancel matching and let history-generation guards
+        // reject any old in-flight result instead of starting another network request.
+        if (::repository.isInitialized && !Prefs.isDeviceDataDeletionPending(this)) {
+            val queued = runCatching {
+                storageExecutor.execute {
+                    try {
+                        matchingExecutor.execute {
+                            try {
+                                repository.makePendingMatchingEligibleNow()
+                                matchingInFlight.set(true)
+                                runMatchingBatches()
+                            } catch (error: Exception) {
+                                Log.e("RoadConquest", "Final matching failed; saved GPS remains for next launch", error)
+                            }
+                        }
+                    } finally {
+                        // Graceful shutdown still runs work already queued on this executor.
+                        matchingExecutor.shutdown()
+                    }
+                }
+            }.isSuccess
+            if (!queued) matchingExecutor.shutdown()
+        } else {
+            matchingExecutor.shutdownNow()
+        }
         if (::verifiedDriving.isInitialized) verifiedDriving.close()
         // Drain accepted samples even when the user stops tracking. They were copied before enqueueing.
         storageExecutor.shutdown()
@@ -595,7 +621,13 @@ class TrackingService : Service(), LocationListener {
         }
 
         val submitted = runCatching {
-            matchingExecutor.execute {
+            matchingExecutor.execute { runMatchingBatches() }
+        }.isSuccess
+        if (!submitted) matchingInFlight.set(false)
+    }
+
+    /** Matches already persisted fixes on the serial matcher, including a final stop-time pass. */
+    private fun runMatchingBatches() {
                 var needsRecovery = false
                 try {
                     repeat(MAX_MATCH_BATCHES_PER_RUN) { batchIndex ->
@@ -605,14 +637,14 @@ class TrackingService : Service(), LocationListener {
                         val retryCap = if (batchIndex == 0) null else repository.oldestEligibleRetryId()
                         val window = repository.loadMatchingWindow(MATCH_BATCH_SIZE, maxPendingId = retryCap)
                         val points = window.points
-                        if (points.isEmpty()) return@execute
+                        if (points.isEmpty()) return
 
                         if (points.size < 2) {
-                            val onlyId = window.markableIds.singleOrNull() ?: return@execute
+                            val onlyId = window.markableIds.singleOrNull() ?: return
                             // For the current drive, keep the lone point eligible and simply wait
                             // for the next fix. If it is blocking an older backlog, defer only that
                             // singleton and continue draining older, matchable history.
-                            if (!repository.hasOlderEligiblePending(onlyId)) return@execute
+                            if (!repository.hasOlderEligiblePending(onlyId)) return
                             repository.deferMatching(
                                 window.markableIds,
                                 System.currentTimeMillis() + MATCH_SINGLE_POINT_DEFERRAL_MS
@@ -685,9 +717,6 @@ class TrackingService : Service(), LocationListener {
                     if (ready) scheduleDeferredRetry(needsRecovery)
                     if (matchingRerunRequested.getAndSet(false) && ready) maybeRunMatching()
                 }
-            }
-        }.isSuccess
-        if (!submitted) matchingInFlight.set(false)
     }
 
     private fun scheduleBacklogContinuation() {
