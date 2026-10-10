@@ -34,6 +34,7 @@ import com.roadconquest.app.util.Prefs
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
 
@@ -43,7 +44,12 @@ class TrackingService : Service(), LocationListener {
     private lateinit var progressionRepository: ProgressionRepository
     private lateinit var verifiedDriving: VerifiedDriving
     private val matcher = OsrmMatcher(BuildConfig.OSRM_API_URL)
-    private val matchingExecutor = Executors.newSingleThreadScheduledExecutor()
+    private val matchingExecutor = ScheduledThreadPoolExecutor(1).apply {
+        // Stop-time finalization should not keep the process alive for obsolete retry
+        // timers scheduled minutes into the future. Already queued immediate work still runs.
+        setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
+        setRemoveOnCancelPolicy(true)
+    }
     private val storageExecutor = Executors.newSingleThreadExecutor()
     private val highAccuracyLocationRequest by lazy(LazyThreadSafetyMode.NONE) {
         LocationRequest.Builder(LOCATION_INTERVAL_MS)
