@@ -805,9 +805,11 @@ class MainActivity : Activity() {
             String.format(Locale.getDefault(), "%.2f mi", lengthMeters / 1609.344)
         }
         val driven = if (road.timesDrivenExact) {
-            if (road.timesDriven == 1) "1 time" else road.timesDriven.toString() + " times"
+            if (road.timesDriven == 1) "1 time" else "${road.timesDriven} times"
         } else {
-            "At least " + road.timesDriven + if (road.timesDriven == 1) " time" else " times"
+            // GPS interruptions and short repeat journeys make traversal counts estimates,
+            // not guaranteed lower bounds. Avoid an inaccurate "At least" label.
+            if (road.timesDriven == 1) "About 1 time" else "About ${road.timesDriven} times"
         }
         AlertDialog.Builder(this)
             .setTitle(road.name)

@@ -16,9 +16,15 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [31, 37], manifest = Config.NONE)
-class LocationProviderRecoveryTest {
+/**
+ * Run one Android SDK per JVM fork. Robolectric 4.17 may reopen a shared font
+ * JAR filesystem when the same class creates several SDK sandboxes, causing a
+ * FileSystemAlreadyExistsException unrelated to application behavior.
+ *
+ * Gradle's forkEvery = 1 keeps these classes isolated without dropping SDK
+ * coverage or changing any assertions.
+ */
+abstract class LocationProviderRecoverySuite {
     @Test fun trackingRequestsBothPreciseSourcesWithoutUploadConsent() {
         val manager = RuntimeEnvironment.getApplication().getSystemService(LocationManager::class.java)
         val shadow = Shadows.shadowOf(manager)
@@ -96,7 +102,6 @@ class LocationProviderRecoveryTest {
         }
     }
 
-    @Config(sdk = [31, 33, 35, 37], manifest = Config.NONE)
     @Test fun providerBroadcastSwitchesBackToGpsAfterNetworkFallback() {
         val app = RuntimeEnvironment.getApplication()
         Shadows.shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -188,3 +193,19 @@ class LocationProviderRecoveryTest {
         } finally { controller.destroy() }
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [31], manifest = Config.NONE)
+class LocationProviderRecovery31Test : LocationProviderRecoverySuite()
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
+class LocationProviderRecovery33Test : LocationProviderRecoverySuite()
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], manifest = Config.NONE)
+class LocationProviderRecovery35Test : LocationProviderRecoverySuite()
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [37], manifest = Config.NONE)
+class LocationProviderRecovery37Test : LocationProviderRecoverySuite()

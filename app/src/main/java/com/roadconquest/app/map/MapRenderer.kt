@@ -663,7 +663,12 @@ class MapRenderer(
         kind: com.roadconquest.app.data.PlaceKind,
         data: List<PlaceOverlayData>
     ) {
+        // Polygon conversion can be expensive for many visited municipalities.
+        // Build immutable GeoJSON on overlayExecutor instead of blocking the map's UI thread.
         val snapshot = data.toList()
+        val keys = snapshot.map(PlaceOverlayData::key)
+        val fillFeatures = overlayFeatureCollection(snapshot)
+        val boundaries = overlayBoundaryFeatureCollection(snapshot)
         mainHandler.post {
             if (destroyed || generation != overlayGeneration || overlayMode.kind != kind) return@post
             val mode = when (kind) {
@@ -671,13 +676,12 @@ class MapRenderer(
                 com.roadconquest.app.data.PlaceKind.STATE -> PlaceOverlayMode.STATE
                 com.roadconquest.app.data.PlaceKind.TOWN -> PlaceOverlayMode.TOWN
             }
-            val keys = snapshot.map(PlaceOverlayData::key)
             val cacheGeneration = PlaceOverlayCache.generation()
             if (keys == shownOverlayKeys && cacheGeneration == shownOverlayCacheGeneration) return@post
             (map.style?.getSource(overlaySourceId(mode)) as? GeoJsonSource)
-                ?.setGeoJson(overlayFeatureCollection(snapshot))
+                ?.setGeoJson(fillFeatures)
             (map.style?.getSource(overlayBoundarySourceId(mode)) as? GeoJsonSource)
-                ?.setGeoJson(overlayBoundaryFeatureCollection(snapshot))
+                ?.setGeoJson(boundaries)
             shownOverlayKeys = keys
             shownOverlayCacheGeneration = cacheGeneration
         }

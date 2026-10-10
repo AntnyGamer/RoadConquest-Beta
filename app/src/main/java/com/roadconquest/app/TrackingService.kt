@@ -34,6 +34,7 @@ import com.roadconquest.app.util.Prefs
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
 
@@ -43,7 +44,12 @@ class TrackingService : Service(), LocationListener {
     private lateinit var progressionRepository: ProgressionRepository
     private lateinit var verifiedDriving: VerifiedDriving
     private val matcher = OsrmMatcher(BuildConfig.OSRM_API_URL)
-    private val matchingExecutor = Executors.newSingleThreadScheduledExecutor()
+    private val matchingExecutor = ScheduledThreadPoolExecutor(1).apply {
+        // Stop-time finalization should not keep the process alive for obsolete retry
+        // timers scheduled minutes into the future. Already queued immediate work still runs.
+        setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
+        setRemoveOnCancelPolicy(true)
+    }
     private val storageExecutor = Executors.newSingleThreadExecutor()
     private val highAccuracyLocationRequest by lazy(LazyThreadSafetyMode.NONE) {
         LocationRequest.Builder(LOCATION_INTERVAL_MS)
@@ -52,6 +58,7 @@ class TrackingService : Service(), LocationListener {
             .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
             .build()
     }
+    private val persistedDrivingFixThisSession = AtomicBoolean(false)
     private val matchingInFlight = AtomicBoolean(false)
     private val matchingRerunRequested = AtomicBoolean(false)
     private val delayedMatchScheduled = AtomicBoolean(false)
@@ -318,14 +325,24 @@ class TrackingService : Service(), LocationListener {
             val saveExplored = exploredCell != null && exploredCellsThisSession.add(exploredCell)
             if (savePlaceCandidate || saveExplored) {
                 storageExecutor.execute {
-                    try {
-                        if (savePlaceCandidate) progressionRepository.recordPlaceCandidate(visited)
-                        if (saveExplored && exploredCell != null &&
-                            repository.recordExploredPlace(visited, exploredCell)
-                        ) sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
-                    } catch (error: Exception) {
-                        if (saveExplored && exploredCell != null) exploredCellsThisSession.remove(exploredCell)
-                        Log.e("RoadConquest", "Could not save explored place or town candidate", error)
+                    // Independent writes: a failed optional municipal candidate must never
+                    // prevent an accurate 50 m exploration sample from being persisted.
+                    if (saveExplored && exploredCell != null) {
+                        try {
+                            if (repository.recordExploredPlace(visited, exploredCell)) {
+                                sendUiBroadcast(ACTION_EXPLORATION_UPDATED)
+                            }
+                        } catch (error: Exception) {
+                            exploredCellsThisSession.remove(exploredCell)
+                            Log.e("RoadConquest", "Could not save explored place", error)
+                        }
+                    }
+                    if (savePlaceCandidate && ::progressionRepository.isInitialized) {
+                        try {
+                            progressionRepository.recordPlaceCandidate(visited)
+                        } catch (error: Exception) {
+                            Log.e("RoadConquest", "Could not save municipal discovery candidate", error)
+                        }
                     }
                 }
             }
@@ -371,6 +388,7 @@ class TrackingService : Service(), LocationListener {
                 } else {
                     repository.insertLocations(listOf(startAnchor, accepted))
                 }
+                persistedDrivingFixThisSession.set(true)
                 sendUiBroadcast(ACTION_STATS_UPDATED)
                 maybeRunMatching()
             } catch (error: Exception) {
@@ -459,7 +477,35 @@ class TrackingService : Service(), LocationListener {
             runCatching { locationManager.removeUpdates(this) }
             locationUpdatesRegistered = false
         }
-        matchingExecutor.shutdownNow()
+        // Wait for accepted GPS fixes queued on storageExecutor before final matching.
+        // A normal stop must not discard the last turn/end-of-drive evidence.
+        // Privacy deletion is different: cancel matching and let history-generation guards
+        // reject any old in-flight result instead of starting another network request.
+        if (::repository.isInitialized && !Prefs.isDeviceDataDeletionPending(this)) {
+            val queued = runCatching {
+                storageExecutor.execute {
+                    try {
+                        // Stopping without any new driving must not wake OSRM merely to
+                        // revisit unrelated historical backlog.
+                        if (persistedDrivingFixThisSession.get()) matchingExecutor.execute {
+                            try {
+                                repository.makePendingMatchingEligibleNow()
+                                matchingInFlight.set(true)
+                                runMatchingBatches()
+                            } catch (error: Exception) {
+                                Log.e("RoadConquest", "Final matching failed; saved GPS remains for next launch", error)
+                            }
+                        }
+                    } finally {
+                        // Graceful shutdown still runs work already queued on this executor.
+                        matchingExecutor.shutdown()
+                    }
+                }
+            }.isSuccess
+            if (!queued) matchingExecutor.shutdown()
+        } else {
+            matchingExecutor.shutdownNow()
+        }
         if (::verifiedDriving.isInitialized) verifiedDriving.close()
         // Drain accepted samples even when the user stops tracking. They were copied before enqueueing.
         storageExecutor.shutdown()
@@ -595,99 +641,102 @@ class TrackingService : Service(), LocationListener {
         }
 
         val submitted = runCatching {
-            matchingExecutor.execute {
-                var needsRecovery = false
-                try {
-                    repeat(MAX_MATCH_BATCHES_PER_RUN) { batchIndex ->
-                        // Keep the first batch focused on the freshest drive for responsive live
-                        // updates. Spare slots preferentially revisit expired retries so isolated
-                        // old holes cannot stay thin/provisional forever while new fixes arrive.
-                        val retryCap = if (batchIndex == 0) null else repository.oldestEligibleRetryId()
-                        val window = repository.loadMatchingWindow(MATCH_BATCH_SIZE, maxPendingId = retryCap)
-                        val points = window.points
-                        if (points.isEmpty()) return@execute
-
-                        if (points.size < 2) {
-                            val onlyId = window.markableIds.singleOrNull() ?: return@execute
-                            // For the current drive, keep the lone point eligible and simply wait
-                            // for the next fix. If it is blocking an older backlog, defer only that
-                            // singleton and continue draining older, matchable history.
-                            if (!repository.hasOlderEligiblePending(onlyId)) return@execute
-                            repository.deferMatching(
-                                window.markableIds,
-                                System.currentTimeMillis() + MATCH_SINGLE_POINT_DEFERRAL_MS
-                            )
-                            if (batchIndex + 1 < MAX_MATCH_BATCHES_PER_RUN) {
-                                Thread.sleep(MATCH_BATCH_PAUSE_MS)
-                            } else {
-                                scheduleBacklogContinuation()
-                            }
-                            return@repeat
-                        }
-
-                        lastMatchAttempt = SystemClock.elapsedRealtime()
-                        val result = matcher.match(points)
-                        if (result == null) {
-                            repository.deferMatching(
-                                window.markableIds,
-                                System.currentTimeMillis() + MATCH_RETRY_AFTER_FAILURE_MS
-                            )
-                            // The newest batch may be intrinsically unmatchable, not merely
-                            // offline. Since it is now deferred, keep draining older eligible
-                            // history so one bad batch cannot permanently starve the queue.
-                            if (batchIndex + 1 < MAX_MATCH_BATCHES_PER_RUN) {
-                                Thread.sleep(MATCH_BATCH_PAUSE_MS)
-                            } else {
-                                scheduleBacklogContinuation()
-                            }
-                            return@repeat
-                        }
-
-                        val acceptedRoads = result.roads.filter { it.confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE }
-                        val matchedIds = result.matchedPointConfidences.mapNotNull { (id, confidence) ->
-                            id.takeIf {
-                                confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE && id in window.markableIds
-                            }
-                        }
-
-                        val resolvedIds = if (acceptedRoads.isNotEmpty() && matchedIds.isNotEmpty()) {
-                            repository.completeMatch(acceptedRoads, matchedIds)
-                            sendUiBroadcast(ACTION_ROADS_UPDATED)
-                            matchedIds.toSet()
-                        } else {
-                            emptySet()
-                        }
-
-                        val unresolvedIds = window.markableIds - resolvedIds
-                        if (unresolvedIds.isNotEmpty()) {
-                            // A valid response with only part of the trace matched usually
-                            // benefits from retrying soon with fresh neighboring fixes. Keep the
-                            // longer backoff for actual network/server failures above.
-                            repository.deferMatching(
-                                unresolvedIds,
-                                System.currentTimeMillis() + MATCH_RETRY_AFTER_PARTIAL_MS
-                            )
-                        }
-
-                        if (batchIndex + 1 < MAX_MATCH_BATCHES_PER_RUN) {
-                            Thread.sleep(MATCH_BATCH_PAUSE_MS)
-                        } else {
-                            scheduleBacklogContinuation()
-                        }
-                    }
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                } catch (error: Exception) {
-                    needsRecovery = true
-                    Log.e("RoadConquest", "Road matching failed; pending points retained for retry", error)
-                } finally {
-                    matchingInFlight.set(false)
-                    if (ready) scheduleDeferredRetry(needsRecovery)
-                    if (matchingRerunRequested.getAndSet(false) && ready) maybeRunMatching()
-                }
-            }
+            matchingExecutor.execute { runMatchingBatches() }
         }.isSuccess
         if (!submitted) matchingInFlight.set(false)
+    }
+
+    /** Matches already persisted fixes on the serial matcher, including a final stop-time pass. */
+    private fun runMatchingBatches() {
+        var needsRecovery = false
+        try {
+            repeat(MAX_MATCH_BATCHES_PER_RUN) { batchIndex ->
+                // Keep the first batch focused on the freshest drive for responsive live
+                // updates. Spare slots preferentially revisit expired retries so isolated
+                // old holes cannot stay thin/provisional forever while new fixes arrive.
+                val retryCap = if (batchIndex == 0) null else repository.oldestEligibleRetryId()
+                val window = repository.loadMatchingWindow(MATCH_BATCH_SIZE, maxPendingId = retryCap)
+                val points = window.points
+                if (points.isEmpty()) return
+
+                if (points.size < 2) {
+                    val onlyId = window.markableIds.singleOrNull() ?: return
+                    // For the current drive, keep the lone point eligible and simply wait
+                    // for the next fix. If it is blocking an older backlog, defer only that
+                    // singleton and continue draining older, matchable history.
+                    if (!repository.hasOlderEligiblePending(onlyId)) return
+                    repository.deferMatching(
+                        window.markableIds,
+                        System.currentTimeMillis() + MATCH_SINGLE_POINT_DEFERRAL_MS
+                    )
+                    if (batchIndex + 1 < MAX_MATCH_BATCHES_PER_RUN) {
+                        Thread.sleep(MATCH_BATCH_PAUSE_MS)
+                    } else {
+                        scheduleBacklogContinuation()
+                    }
+                    return@repeat
+                }
+
+                lastMatchAttempt = SystemClock.elapsedRealtime()
+                val result = matcher.match(points)
+                if (result == null) {
+                    repository.deferMatching(
+                        window.markableIds,
+                        System.currentTimeMillis() + MATCH_RETRY_AFTER_FAILURE_MS
+                    )
+                    // The newest batch may be intrinsically unmatchable, not merely
+                    // offline. Since it is now deferred, keep draining older eligible
+                    // history so one bad batch cannot permanently starve the queue.
+                    if (batchIndex + 1 < MAX_MATCH_BATCHES_PER_RUN) {
+                        Thread.sleep(MATCH_BATCH_PAUSE_MS)
+                    } else {
+                        scheduleBacklogContinuation()
+                    }
+                    return@repeat
+                }
+
+                val acceptedRoads = result.roads.filter { it.confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE }
+                val matchedIds = result.matchedPointConfidences.mapNotNull { (id, confidence) ->
+                    id.takeIf {
+                        confidence >= OsrmMatcher.MIN_ACCEPTABLE_CONFIDENCE && id in window.markableIds
+                    }
+                }
+
+                val resolvedIds = if (acceptedRoads.isNotEmpty() && matchedIds.isNotEmpty()) {
+                    repository.completeMatch(acceptedRoads, matchedIds)
+                    sendUiBroadcast(ACTION_ROADS_UPDATED)
+                    matchedIds.toSet()
+                } else {
+                    emptySet()
+                }
+
+                val unresolvedIds = window.markableIds - resolvedIds
+                if (unresolvedIds.isNotEmpty()) {
+                    // A valid response with only part of the trace matched usually
+                    // benefits from retrying soon with fresh neighboring fixes. Keep the
+                    // longer backoff for actual network/server failures above.
+                    repository.deferMatching(
+                        unresolvedIds,
+                        System.currentTimeMillis() + MATCH_RETRY_AFTER_PARTIAL_MS
+                    )
+                }
+
+                if (batchIndex + 1 < MAX_MATCH_BATCHES_PER_RUN) {
+                    Thread.sleep(MATCH_BATCH_PAUSE_MS)
+                } else {
+                    scheduleBacklogContinuation()
+                }
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        } catch (error: Exception) {
+            needsRecovery = true
+            Log.e("RoadConquest", "Road matching failed; pending points retained for retry", error)
+        } finally {
+            matchingInFlight.set(false)
+            if (ready) scheduleDeferredRetry(needsRecovery)
+            if (matchingRerunRequested.getAndSet(false) && ready) maybeRunMatching()
+        }
     }
 
     private fun scheduleBacklogContinuation() {
@@ -814,7 +863,7 @@ class TrackingService : Service(), LocationListener {
         private const val MAX_LOCATION_AGE_NANOS = MAX_LOCATION_AGE_MS * 1_000_000L
         private const val MAX_START_ANCHOR_AGE_MS = 10_000L
         private const val MATCH_INTERVAL_MS = 10_000L
-        private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 125f
+        private const val PLACE_CANDIDATE_MIN_DISTANCE_M = 55f
         private const val MAX_EXPLORED_CELL_CACHE = 4_096
         // A partial result usually means an intersection needs one or two newer fixes.
         // Retry on the normal matching cadence so turn holes close while the drive is still live.
