@@ -124,7 +124,7 @@ class AppDatabase private constructor(context: Context) :
                 first_unlocked_at INTEGER NOT NULL,
                 last_driven_at INTEGER NOT NULL,
                 drive_count INTEGER NOT NULL DEFAULT 1,
-                drive_count_exact INTEGER NOT NULL DEFAULT 1,
+                drive_count_exact INTEGER NOT NULL DEFAULT 0,
                 road_group_id TEXT NOT NULL DEFAULT '',
                 min_lat REAL NOT NULL,
                 max_lat REAL NOT NULL,
@@ -216,43 +216,50 @@ class AppDatabase private constructor(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion != 10 || newVersion != 11) {
+        if (oldVersion !in 10..11 || newVersion !in 11..12 || newVersion <= oldVersion) {
             error("Database upgrade $oldVersion -> $newVersion is unsupported")
         }
-        createExplorationGridTable(db)
-        // SQLiteOpenHelper wraps this upgrade in a transaction. If backfilling fails,
-        // the original data and version remain intact for a safe retry, never erased.
-        // Use both previously visible 50 m places and accepted raw driving fixes:
-        // some historical drives have raw points but no corresponding saved places.
-        val insert = db.compileStatement(
-            "INSERT OR IGNORE INTO explored_grid (grid_row, grid_col, latitude, longitude) VALUES (?, ?, ?, ?)"
-        )
-        try {
-            db.rawQuery(
-                "SELECT latitude, longitude FROM explored_places UNION ALL " +
-                    "SELECT latitude, longitude FROM track_points " +
-                    "WHERE accuracy_m BETWEEN 0.01 AND 25",
-                null
-            ).use { cursor ->
-                while (cursor.moveToNext()) {
-                    val tile = FogGrid.cell(cursor.getDouble(0), cursor.getDouble(1)) ?: continue
-                    val center = FogGrid.center(tile)
-                    insert.bindLong(1, tile.row.toLong())
-                    insert.bindLong(2, tile.column.toLong())
-                    insert.bindDouble(3, center.first)
-                    insert.bindDouble(4, center.second)
-                    insert.executeInsert()
-                    insert.clearBindings()
+        if (oldVersion == 10) {
+            createExplorationGridTable(db)
+            // SQLiteOpenHelper wraps this upgrade in a transaction. If backfilling fails,
+            // the original data and version remain intact for a safe retry, never erased.
+            // Use both previously visible 50 m places and accepted raw driving fixes:
+            // some historical drives have raw points but no corresponding saved places.
+            val insert = db.compileStatement(
+                "INSERT OR IGNORE INTO explored_grid (grid_row, grid_col, latitude, longitude) VALUES (?, ?, ?, ?)"
+            )
+            try {
+                db.rawQuery(
+                    "SELECT latitude, longitude FROM explored_places UNION ALL " +
+                        "SELECT latitude, longitude FROM track_points " +
+                        "WHERE accuracy_m BETWEEN 0.01 AND 25",
+                    null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val tile = FogGrid.cell(cursor.getDouble(0), cursor.getDouble(1)) ?: continue
+                        val center = FogGrid.center(tile)
+                        insert.bindLong(1, tile.row.toLong())
+                        insert.bindLong(2, tile.column.toLong())
+                        insert.bindDouble(3, center.first)
+                        insert.bindDouble(4, center.second)
+                        insert.executeInsert()
+                        insert.clearBindings()
+                    }
                 }
+            } finally {
+                insert.close()
             }
-        } finally {
-            insert.close()
+        }
+        if (newVersion >= 12) {
+            // Older releases marked inferred traversal counts as mathematically exact.
+            // Preserve every visit and road, but display historic counts as estimates.
+            db.execSQL("UPDATE roads SET drive_count_exact = 0")
         }
     }
 
     companion object {
         private const val DB_NAME = "roadconquest.db"
-        private const val DB_VERSION = 11
+        private const val DB_VERSION = 12
 
         @Volatile
         private var instance: AppDatabase? = null
