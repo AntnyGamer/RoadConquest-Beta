@@ -427,6 +427,92 @@ class TrackingRepository(context: Context) {
         ).use { it.moveToFirst() }
 
     /**
+     * Prefer the newest precise, bounded, fully anchored multi-fix gap for one
+     * spare matching batch. Long genuine turns must not wait behind hundreds of
+     * unrelated isolated unmatched fixes in an older driving history.
+     *
+     * This only orders existing pending work; it does not mark fixes matched,
+     * loosen OSRM acceptance or increase the total number of network batches.
+     * Scan a bounded sample, and keep oldest-first retries in the other slots.
+     */
+    @Synchronized
+    fun newestEligibleAnchoredGapStartId(
+        nowMillis: Long = System.currentTimeMillis(),
+        beforeId: Long? = null
+    ): Long? {
+        val db = dbHelper.readableDatabase
+        val eligible = ArrayList<TrackPoint>(PRIORITY_GAP_SCAN_LIMIT)
+        db.query(
+            "track_points",
+            TRACK_COLUMNS,
+            if (beforeId == null) {
+                "matched = 0 AND next_match_attempt_ms <= ?"
+            } else {
+                "matched = 0 AND next_match_attempt_ms <= ? AND id < ?"
+            },
+            if (beforeId == null) {
+                arrayOf(nowMillis.toString())
+            } else {
+                arrayOf(nowMillis.toString(), beforeId.toString())
+            },
+            null,
+            null,
+            "id DESC",
+            PRIORITY_GAP_SCAN_LIMIT.toString()
+        ).use { cursor ->
+            while (cursor.moveToNext()) eligible += cursor.toTrackPoint()
+        }
+
+        var offset = 0
+        while (offset < eligible.size) {
+            var until = offset + 1
+            while (until < eligible.size &&
+                eligible[until].id + 1 == eligible[until - 1].id
+            ) until++
+
+            val size = until - offset
+            if (size in PRIORITY_GAP_MIN_FIXES..PRIORITY_GAP_MAX_FIXES) {
+                val run = eligible.subList(offset, until).asReversed()
+                val first = run.first()
+                val last = run.last()
+                val continuous = last.timestampMillis - first.timestampMillis in 1..PRIORITY_GAP_MAX_MS &&
+                    run.all { it.accuracyMeters.isFinite() &&
+                        it.accuracyMeters in 0.01f..PRIORITY_GAP_MAX_ACCURACY_M
+                    } &&
+                    run.zipWithNext().all { (a, b) ->
+                        isMatchingContinuation(a, b, MATCH_CLUSTER_GAP_MS)
+                    }
+                if (continuous && first.id > 0 && last.id < Long.MAX_VALUE) {
+                    val anchorIds = listOf(first.id - 1, last.id + 1)
+                    val anchors = HashMap<Long, TrackPoint>(2)
+                    db.query(
+                        "track_points",
+                        TRACK_COLUMNS,
+                        "id IN (?, ?)",
+                        anchorIds.map(Long::toString).toTypedArray(),
+                        null, null, null
+                    ).use { cursor ->
+                        while (cursor.moveToNext()) {
+                            val point = cursor.toTrackPoint()
+                            anchors[point.id] = point
+                        }
+                    }
+                    val before = anchors[first.id - 1]
+                    val after = anchors[last.id + 1]
+                    if (before?.matched == true && after?.matched == true &&
+                        before.accuracyMeters in 0.01f..PRIORITY_GAP_MAX_ACCURACY_M &&
+                        after.accuracyMeters in 0.01f..PRIORITY_GAP_MAX_ACCURACY_M &&
+                        isMatchingContinuation(before, first, MATCH_ANCHOR_MAX_GAP_MS) &&
+                        isMatchingContinuation(last, after, MATCH_ANCHOR_MAX_GAP_MS)
+                    ) return first.id
+                }
+            }
+            offset = until
+        }
+        return null
+    }
+
+    /**
      * Return the oldest eligible hole for spare matching batches, including points without a
      * scheduled backoff. Otherwise old zero-deadline corners can starve behind newer retries.
      * The first batch still selects the newest pending driving fixes for low live latency.
@@ -1609,6 +1695,11 @@ class TrackingRepository(context: Context) {
 
         private const val EARTH_RADIUS_M = 6_371_008.8
         private const val WEB_MERCATOR_RADIUS_M = 6_378_137.0
+        private const val PRIORITY_GAP_SCAN_LIMIT = 512
+        private const val PRIORITY_GAP_MIN_FIXES = 4
+        private const val PRIORITY_GAP_MAX_FIXES = 8
+        private const val PRIORITY_GAP_MAX_MS = 30_000L
+        private const val PRIORITY_GAP_MAX_ACCURACY_M = 12f
         private const val VISIT_CONTINUATION_MS = 120_000L
         private const val VISIT_DEPARTURE_DISTANCE_M = 75.0
         private const val EXPLORED_CELL_SIZE_M = 50.0
