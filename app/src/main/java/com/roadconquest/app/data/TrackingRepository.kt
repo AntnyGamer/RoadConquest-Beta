@@ -783,6 +783,13 @@ class TrackingRepository(context: Context) {
         val groupId: String?
     )
 
+    /**
+     * One road traversal can produce many overlapping or adjacent OSRM legs.
+     * Coalesce those fragments, including a genuine pause at a traffic light.
+     * Only count a quick return as a separate pass when accepted GPS fixes show
+     * that the car actually left this road in between. This is an estimate, not
+     * an exact trip counter: a GPS outage cannot prove an additional traversal.
+     */
     private fun recordRoadVisit(
         db: SQLiteDatabase,
         segmentId: String,
@@ -793,24 +800,49 @@ class TrackingRepository(context: Context) {
         val endedAt = max(firstTimestamp, lastTimestamp)
         var mergedStart = startedAt
         var mergedEnd = endedAt
-        var overlaps = 0L
+        val merged = ArrayList<Pair<Long, Long>>()
+
+        // First collect candidates. Removing rows inside an active cursor would
+        // make the result dependent on the SQLite cursor implementation.
+        val candidateWindows = ArrayList<Pair<Long, Long>>()
         db.rawQuery(
-            "SELECT MIN(started_at),MAX(ended_at),COUNT(*) FROM road_visits " +
-                "WHERE segment_id = ? AND started_at <= ? AND ended_at >= ?",
-            arrayOf(segmentId, endedAt.toString(), startedAt.toString())
+            "SELECT started_at, ended_at FROM road_visits " +
+                "WHERE segment_id = ? AND started_at <= ? AND ended_at >= ? ORDER BY started_at",
+            arrayOf(
+                segmentId,
+                (endedAt + VISIT_CONTINUATION_MS).toString(),
+                (startedAt - VISIT_CONTINUATION_MS).toString()
+            )
         ).use { cursor ->
-            check(cursor.moveToFirst())
-            overlaps = cursor.getLong(2)
-            if (overlaps > 0) {
-                mergedStart = min(mergedStart, cursor.getLong(0))
-                mergedEnd = max(mergedEnd, cursor.getLong(1))
-            }
+            while (cursor.moveToNext()) candidateWindows += cursor.getLong(0) to cursor.getLong(1)
         }
-        if (overlaps > 0) {
+
+        // Multiple matcher batches can arrive out of order. Expand the merged
+        // interval until no neighboring fragment can attach to it.
+        var changed: Boolean
+        do {
+            changed = false
+            for ((start, end) in candidateWindows) {
+                if ((start to end) in merged) continue
+                val gapStart = if (end < mergedStart) end else mergedEnd
+                val gapEnd = if (end < mergedStart) mergedStart else start
+                val overlaps = start <= mergedEnd && end >= mergedStart
+                val close = gapEnd >= gapStart && gapEnd - gapStart <= VISIT_CONTINUATION_MS
+                if (!overlaps && !(close && !hasConfirmedDeparture(
+                        db, segmentId, gapStart, gapEnd
+                    ))) continue
+                merged += start to end
+                mergedStart = min(mergedStart, start)
+                mergedEnd = max(mergedEnd, end)
+                changed = true
+            }
+        } while (changed)
+
+        merged.forEach { (start, end) ->
             db.delete(
                 "road_visits",
-                "segment_id = ? AND started_at <= ? AND ended_at >= ?",
-                arrayOf(segmentId, endedAt.toString(), startedAt.toString())
+                "segment_id = ? AND started_at = ? AND ended_at = ?",
+                arrayOf(segmentId, start.toString(), end.toString())
             )
         }
         db.insertOrThrow(
@@ -831,10 +863,40 @@ class TrackingRepository(context: Context) {
         }
         check(db.update(
             "roads",
-            ContentValues().apply { put("drive_count", count) },
+            ContentValues().apply {
+                put("drive_count", count)
+                // Even verified matching cannot establish a mathematically exact number
+                // of separate passes through a segment when GPS evidence is missing.
+                put("drive_count_exact", 0)
+            },
             "segment_id = ?",
             arrayOf(segmentId)
         ) == 1)
+    }
+
+    private fun hasConfirmedDeparture(
+        db: SQLiteDatabase,
+        segmentId: String,
+        after: Long,
+        before: Long
+    ): Boolean {
+        if (before <= after) return false
+        val geometry = db.rawQuery(
+            "SELECT geometry_json FROM roads WHERE segment_id = ?", arrayOf(segmentId)
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else return false }
+        db.rawQuery(
+            "SELECT latitude, longitude FROM track_points " +
+                "WHERE timestamp_ms > ? AND timestamp_ms < ? AND accuracy_m BETWEEN 0.01 AND 25 " +
+                "ORDER BY timestamp_ms LIMIT 120",
+            arrayOf(after.toString(), before.toString())
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                if (distanceToRoadMeters(cursor.getDouble(0), cursor.getDouble(1), geometry) >
+                    VISIT_DEPARTURE_DISTANCE_M
+                ) return true
+            }
+        }
+        return false
     }
 
     /**
@@ -1482,6 +1544,8 @@ class TrackingRepository(context: Context) {
 
         private const val EARTH_RADIUS_M = 6_371_008.8
         private const val WEB_MERCATOR_RADIUS_M = 6_378_137.0
+        private const val VISIT_CONTINUATION_MS = 120_000L
+        private const val VISIT_DEPARTURE_DISTANCE_M = 75.0
         private const val EXPLORED_CELL_SIZE_M = 50.0
         private const val METERS_PER_DEGREE = 111_320.0
     }
