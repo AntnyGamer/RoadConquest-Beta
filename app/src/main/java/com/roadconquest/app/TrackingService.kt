@@ -654,10 +654,18 @@ class TrackingService : Service(), LocationListener {
                 // Keep the first batch focused on the freshest drive for responsive live
                 // updates. Spare slots preferentially revisit expired retries so isolated
                 // old holes cannot stay thin/provisional forever while new fixes arrive.
-                val retryStartId = if (batchIndex == 0) null else repository.oldestEligibleRetryId()
-                // Select the full oldest contiguous unresolved turn (up to eight fixes),
-                // not just its first point with seven unmarkable neighbors. Otherwise
-                // a genuine 12–16 second corner can never regain both route anchors.
+                // First batch still favors fresh tracking. Give ONE spare batch
+                // to a recent accurate and fully anchored multi-fix turn. The other
+                // spare batches stay oldest-first so ordinary history is not starved.
+                // No additional requests or relaxed matching acceptance are involved.
+                val retryStartId = when (batchIndex) {
+                    0 -> null
+                    1 -> repository.newestEligibleAnchoredGapStartId()
+                        ?: repository.oldestEligibleRetryId()
+                    else -> repository.oldestEligibleRetryId()
+                }
+                // Select a complete unresolved turn (up to eight fixes), not a
+                // single old fix with seven context points and no opposite anchor.
                 val window = repository.loadMatchingWindow(MATCH_BATCH_SIZE, retryGapStartId = retryStartId)
                 val points = window.points
                 if (points.isEmpty()) return
