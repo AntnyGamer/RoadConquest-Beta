@@ -915,6 +915,46 @@ class TrackingRepository(context: Context) {
     }
 
     /**
+     * Reconcile legacy pre-Beta-32 matcher fragments when a user opens road details.
+     * This is a read-only estimate: old visit rows and saved roads remain untouched,
+     * while large histories incur the scan only for the single selected road.
+     */
+    @Synchronized
+    fun estimatedRoadVisitCount(road: RoadRecord): Int {
+        var count = 0
+        var mergedEnd = Long.MIN_VALUE
+        dbHelper.readableDatabase.query(
+            "road_visits",
+            arrayOf("started_at", "ended_at"),
+            "segment_id = ?",
+            arrayOf(road.segmentId),
+            null,
+            null,
+            "started_at ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val startedAt = cursor.getLong(0)
+                val endedAt = cursor.getLong(1)
+                if (count == 0) {
+                    count = 1
+                    mergedEnd = endedAt
+                } else if (startedAt <= mergedEnd ||
+                    (startedAt - mergedEnd <= VISIT_CONTINUATION_MS &&
+                        !hasConfirmedDeparture(dbHelper.readableDatabase, road.segmentId, mergedEnd, startedAt))
+                ) {
+                    mergedEnd = max(mergedEnd, endedAt)
+                } else {
+                    count++
+                    mergedEnd = endedAt
+                }
+            }
+        }
+        // Early versions might lack individual visit windows; never replace a
+        // recorded count with zero just because optional history is absent.
+        return if (count == 0) road.timesDriven else count
+    }
+
+    /**
      * Extra observed visit intervals for display-only corner repair. On busy map views,
      * stay with the existing first/last repair instead of querying unbounded history.
      */
