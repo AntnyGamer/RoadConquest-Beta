@@ -427,11 +427,6 @@ class TrackingRepository(context: Context) {
         ).use { it.moveToFirst() }
 
     /**
-     * Return the oldest eligible hole for spare matching batches, including points without a
-     * scheduled backoff. Otherwise old zero-deadline corners can starve behind newer retries.
-     * The first batch still selects the newest pending driving fixes for low live latency.
-     */
-    /**
      * Prefer the newest precise, bounded, fully anchored multi-fix gap for one
      * spare matching batch. Long genuine turns must not wait behind hundreds of
      * unrelated isolated unmatched fixes in an older driving history.
@@ -517,6 +512,11 @@ class TrackingRepository(context: Context) {
         return null
     }
 
+    /**
+     * Return the oldest eligible hole for spare matching batches, including points without a
+     * scheduled backoff. Otherwise old zero-deadline corners can starve behind newer retries.
+     * The first batch still selects the newest pending driving fixes for low live latency.
+     */
     @Synchronized
     fun oldestEligibleRetryId(nowMillis: Long = System.currentTimeMillis()): Long? =
         dbHelper.readableDatabase.rawQuery(
