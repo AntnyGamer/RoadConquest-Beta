@@ -22,7 +22,14 @@ object PlaceResolver {
             emptyList()
         }
         if (addresses.isEmpty()) return null
+        return resolveAddresses(candidate, addresses)
+    }
 
+    /** Prefer an explicitly named municipality over a nearby postal locality. */
+    internal fun resolveAddresses(
+        candidate: PendingPlaceCandidate,
+        addresses: List<android.location.Address>
+    ): List<PlaceDiscovery> {
         fun firstValue(selector: (android.location.Address) -> String?): String =
             addresses.asSequence().mapNotNull(selector).map(String::trim).firstOrNull(String::isNotBlank).orEmpty()
 
@@ -33,7 +40,17 @@ object PlaceResolver {
         val countryCode = firstValue { it.countryCode }
         val countryKey = canonical(countryCode.ifBlank { countryName })
         val stateName = firstValue { it.adminArea }
-        val townName = firstValue { it.locality }
+        val namedMunicipality = firstValue { address ->
+            address.subAdminArea?.trim()?.takeIf { name ->
+                val lower = name.lowercase(Locale.ROOT)
+                lower.startsWith("township of ") ||
+                    MUNICIPALITY_SUFFIXES.any { lower.endsWith(it) }
+            }
+        }
+        // Android often supplies the county in subAdminArea. Never award a county
+        // as a town; only override locality when the administrative value clearly
+        // identifies a municipality (such as a named NJ township).
+        val townName = namedMunicipality.ifBlank { firstValue { it.locality } }
         val result = ArrayList<PlaceDiscovery>(3)
 
         if (countryKey.isNotBlank() && countryName.isNotBlank()) {
@@ -72,6 +89,9 @@ object PlaceResolver {
     private fun canonical(value: String): String =
         value.trim().lowercase(Locale.ROOT).replace(WHITESPACE_RE, " ")
 
+    private val MUNICIPALITY_SUFFIXES = listOf(
+        " township", " borough", " municipality", " village", " town", " city"
+    )
     private val WHITESPACE_RE = Regex("\\s+")
     private const val MAX_RESULTS = 5
 }
