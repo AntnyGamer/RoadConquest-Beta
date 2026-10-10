@@ -481,6 +481,37 @@ class TrackingRepositoryTest {
         assertEquals(2, repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single().timesDriven)
     }
 
+    @Test fun tappingHistoricRoadEstimatesMergedPassesWithoutModifyingSavedVisits() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Legacy St", geometry, 1_000_000, 1_010_000, 0.99)))
+        val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        val db = repository.readableDatabase()
+        db.execSQL("INSERT INTO road_visits(segment_id, started_at, ended_at) VALUES (?,?,?)",
+            arrayOf(road.segmentId, 1_080_000L, 1_095_000L))
+        db.execSQL("UPDATE roads SET drive_count = 2 WHERE segment_id = ?", arrayOf(road.segmentId))
+
+        val stored = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        assertEquals(2, stored.timesDriven)
+        assertEquals(1, repository.estimatedRoadVisitCount(stored))
+        assertEquals("Read-only recount must preserve original intervals", 2L,
+            db.rawQuery("SELECT COUNT(*) FROM road_visits WHERE segment_id = ?",
+                arrayOf(road.segmentId)).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                cursor.getLong(0)
+            })
+    }
+
+    @Test fun historicRecountRetainsGpsConfirmedSeparateTrips() {
+        val geometry = "[[-74,40],[-74.001,40]]"
+        repository.upsertRoads(listOf(MatchedRoad("Legacy St", geometry, 1_000_000, 1_010_000, 0.99)))
+        val road = repository.getRoadsInBounds(41.0, -73.0, 39.0, -75.0).single()
+        val db = repository.readableDatabase()
+        db.execSQL("INSERT INTO road_visits(segment_id, started_at, ended_at) VALUES (?,?,?)",
+            arrayOf(road.segmentId, 1_080_000L, 1_095_000L))
+        point(1_045_000L, lat = 40.004, lon = -74.003)
+        assertEquals(2, repository.estimatedRoadVisitCount(road))
+    }
+
     @Test fun roadHitTestingReturnsOnlyNearbySavedRoads() {
         repository.upsertRoads(listOf(
             MatchedRoad("Tap Me", "[[-74.001,40],[-74.000,40]]", 100, 200, 1.0)
