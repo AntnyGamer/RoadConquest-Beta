@@ -57,6 +57,10 @@ the Google Play listing is created; changing it later would create a different a
 
 ## Explore
 
+- The first-use Quick tour previews a discovery without location access, then highlights the real
+  tracking, Layers, Trips/Badges/Goals, Garage and Settings controls. Skip it or replay it from
+  Settings → Quick tour. The optional Back-to-exit prompt explains whether tracking remains on;
+  Settings can turn this prompt off or back on. Leaving the map does not stop the tracking service.
 - Recorded driving appears while matching is pending; confirmed road geometry then refines it.
 - A tightly bounded, GPS-supported connector can close a short split between differently named
   roads; it does not grant extra unlocked roads. Certain short pending turns can be retried once
@@ -293,6 +297,9 @@ styles, map data, imagery and dependencies retain their own licenses and service
 [NOTICE](NOTICE) and the credits under `app/src/main/assets/`.
 
 ## License
+
+The proposed community feed, automated moderation and optional Forum Plus setup are documented in
+[COMMUNITY_FORUM.md](COMMUNITY_FORUM.md). The forum defaults off until its server configuration is ready.
 
 Road Conquest's original source is licensed under GNU Affero General Public License v3 only
 (`AGPL-3.0-only`). The complete license is in [LICENSE](LICENSE) and bundled with the app.
